@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg[binary]
+pydantic-settings
+python-dotenv
+celery
+redis
+httpx
+structlog
+prometheus-fastapi-instrumentator
+apscheduler
+pytest

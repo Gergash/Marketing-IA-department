@@ -16,6 +16,7 @@ class Brief(Base):
     red_social: Mapped[str] = mapped_column(String(80))
     objetivo: Mapped[str] = mapped_column(String(80))
     tono_marca: Mapped[str] = mapped_column(String(120), default="profesional y cercano")
+    idioma: Mapped[str] = mapped_column(String(16), default="es")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

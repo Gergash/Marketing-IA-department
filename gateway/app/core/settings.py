@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     default_tenant_id: str = "demo-tenant"
     go_publisher_url: str = "http://localhost:8088"
+    # Comma-separated origins for browser dev (Vite on 5173/4173). Override in .env if needed.
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173"
+    )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

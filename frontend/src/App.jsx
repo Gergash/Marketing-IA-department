@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 
-const API_URL = "http://localhost:8000/api";
+/** En dev: rutas relativas /api → proxy de Vite a FastAPI. En prod o override: VITE_API_URL (sin /api final). */
+function apiOrigin() {
+  const explicit = import.meta.env.VITE_API_URL;
+  if (explicit) return String(explicit).replace(/\/$/, "");
+  if (import.meta.env.DEV) return "";
+  return "http://localhost:8000";
+}
+
+const API_BASE = `${apiOrigin()}/api`;
 
 async function api(path, method = "GET", body = null, role = "admin") {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -87,7 +95,7 @@ export default function App() {
         <h2>Historial de ejecuciones</h2>
         <ul>
           {history.map((item) => (
-            <li key={item.id}>
+            <li key={item.run_id}>
               #{item.run_id} - {item.status}
             </li>
           ))}

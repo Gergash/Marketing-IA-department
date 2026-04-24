@@ -99,6 +99,7 @@ def execute_pipeline(
         red_social=brief.red_social,
         objetivo=brief.objetivo,
         tono_marca=brief.tono_marca,
+        idioma=brief.idioma,
     )
     result = pipeline.run(
         brief_in,

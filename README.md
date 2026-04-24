@@ -48,13 +48,34 @@ MVP implementado por fases con base lista para escalar:
 - `microservices/social-publisher-go/`: adaptador de publicacion en Go
 - `infra/`: docker compose para Postgres/Redis
 
-## Quick start
+## Happy path local (API + frontend, sin fricción)
+
+Desde la **raíz del repositorio** (donde está `gateway/` y `frontend/`). No hace falta Docker para esta prueba: la API usa SQLite por defecto.
+
+**Terminal 1 — API**
+
+```bash
+python -m pip install -r requirements.txt
+uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+**Terminal 2 — dashboard**
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Abre [http://localhost:5173](http://localhost:5173). El frontend en desarrollo usa **proxy** hacia la API (`/api` → `http://127.0.0.1:8000`). La API también expone **CORS** para esos orígenes por si llamas a `http://127.0.0.1:8000` desde el navegador.
+
+Opcional: copia `.env.example` a `.env` y ajusta `CORS_ORIGINS` o `DATABASE_URL` si usas Postgres.
+
+## Quick start (stack completo)
 
 1. Copia `.env.example` a `.env` y completa credenciales.
 2. Levanta dependencias:
    - `docker compose -f infra/docker-compose.yml up -d`
 3. Inicia API:
-   - `uvicorn gateway.app.main:app --reload --port 8000`
+   - `uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000`
 4. Inicia worker:
    - `celery -A workers.celery_app.celery_app worker -l info`
 5. Inicia frontend:

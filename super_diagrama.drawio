@@ -1,0 +1,375 @@
+<mxfile host="app.diagrams.net" modified="2026-04-22T00:00:00.000Z" agent="merge-script" version="24.0.0" type="device">
+<diagram id="super-diagram" name="Super Diagrama SaaS IA">
+<mxGraphModel dx="2400" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3200" pageHeight="5000" math="0" shadow="0">
+<root>
+<mxCell id="0"/>
+<mxCell id="1" parent="0"/>
+<mxCell id="MASTER_TITLE" value="SUPER DIAGRAMA · Plataforma SaaS con Agentes IA para Redes Sociales" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=32;fontStyle=1;fontColor=#333333;" vertex="1" parent="1"><mxGeometry x="80" y="-120" width="2680" height="60" as="geometry"/></mxCell>
+<mxCell id="d1_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="80" y="0" width="1190" height="770" as="geometry"/></mxCell>
+<mxCell id="d1_title" value="01 · Arquitectura General + Roadmap MVP" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d1_group"><mxGeometry x="10" y="10" width="1170" height="60" as="geometry"/></mxCell>
+<mxCell id="d1_frontend" value="Frontend (React + Tailwind)&#10;Dashboard SaaS&#10;- Gestión contenido&#10;- Aprobación humana&#10;- Métricas" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="d1_group"><mxGeometry x="560.0" y="150.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d1_backend" value="Backend API (FastAPI)&#10;- Multi-tenant&#10;- Autenticación&#10;- Control de agentes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="d1_group"><mxGeometry x="560.0" y="290.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d1_agents" value="Orquestación de Agentes (LangGraph + Python)&#10;- Estratega&#10;- Copywriter&#10;- Diseñador&#10;- Publicador" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="d1_group"><mxGeometry x="560.0" y="430.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d1_workers" value="Workers (Celery + Redis)&#10;- Procesos async&#10;- Generación contenido&#10;- Publicación programada" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="d1_group"><mxGeometry x="560.0" y="590.0" width="260" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d1_db" value="Base de Datos&#10;PostgreSQL&#10;Redis (cache)&#10;Qdrant (vectores)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="d1_group"><mxGeometry x="240.0" y="430.0" width="220" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d1_ai" value="IA Local&#10;(Ollama + Llama3 + Mistral)&#10;Stable Diffusion (imágenes)&#10;Coqui TTS (voz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="d1_group"><mxGeometry x="890.0" y="430.0" width="240" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d1_micro" value="Microservicios (Go)&#10;- MCP Servers&#10;- Webhooks&#10;- Integraciones" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="d1_group"><mxGeometry x="890.0" y="610.0" width="240" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d1_apis" value="APIs Externas&#10;- Facebook&#10;- LinkedIn&#10;- Instagram" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="d1_group"><mxGeometry x="890.0" y="760.0" width="240" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d1_fase1" value="Fase 1 (Semana 1-2)&#10;- Setup backend&#10;- Primer agente (copy)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#3399ff;" vertex="1" parent="d1_group"><mxGeometry x="80.0" y="150.0" width="220" height="90" as="geometry" /></mxCell>
+    
+<mxCell id="d1_fase2" value="Fase 2 (Semana 3-4)&#10;- Generación imágenes&#10;- Flujo completo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#3399ff;" vertex="1" parent="d1_group"><mxGeometry x="80.0" y="260.0" width="220" height="90" as="geometry" /></mxCell>
+    
+<mxCell id="d1_fase3" value="Fase 3 (Semana 5-6)&#10;- Publicación automática&#10;- Dashboard básico" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#3399ff;" vertex="1" parent="d1_group"><mxGeometry x="80.0" y="370.0" width="220" height="90" as="geometry" /></mxCell>
+    
+<mxCell id="d1_scale" value="Escalabilidad (Post-MVP)&#10;- Kubernetes&#10;- Multi-tenant avanzado&#10;- IA híbrida (local + APIs)&#10;- Automatización video" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6ffcc;strokeColor=#66cc00;" vertex="1" parent="d1_group"><mxGeometry x="80.0" y="510.0" width="220" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d1_e1" style="endArrow=block;" edge="1" parent="d1_group" source="d1_frontend" target="d1_backend"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d1_e2" style="endArrow=block;" edge="1" parent="d1_group" source="d1_backend" target="d1_agents"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d1_e3" style="endArrow=block;" edge="1" parent="d1_group" source="d1_agents" target="d1_workers"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d1_e4" style="endArrow=block;" edge="1" parent="d1_group" source="d1_agents" target="d1_db"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d1_e5" style="endArrow=block;" edge="1" parent="d1_group" source="d1_agents" target="d1_ai"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d1_e6" style="endArrow=block;" edge="1" parent="d1_group" source="d1_workers" target="d1_micro"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d1_e7" style="endArrow=block;" edge="1" parent="d1_group" source="d1_micro" target="d1_apis"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d2_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="1400" y="0" width="1140" height="1050" as="geometry"/></mxCell>
+<mxCell id="d2_title" value="02 · Flujo Usuario → Sistema (E2E)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d2_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d2_user" value="Usuario (Empresa / Marketing)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="d2_group"><mxGeometry x="560.0" y="130.0" width="200" height="80" as="geometry" /></mxCell>
+    
+<mxCell id="d2_dashboard" value="Frontend SaaS (React + Tailwind)&#10;Dashboard Principal" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="d2_group"><mxGeometry x="490.0" y="230.0" width="320" height="80" as="geometry" /></mxCell>
+    
+<mxCell id="d2_content" value="Gestión de Contenido&#10;- Crear / editar post&#10;- Programación" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d2_group"><mxGeometry x="190.0" y="340.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d2_approval" value="Aprobación Humana&#10;- Validación IA&#10;- Ajustes manuales" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="d2_group"><mxGeometry x="490.0" y="340.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d2_metrics" value="Métricas&#10;- Engagement&#10;- Alcance&#10;- Rendimiento" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d2_group"><mxGeometry x="790.0" y="340.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d2_backend" value="Backend API (FastAPI)&#10;- Auth&#10;- Multi-tenant&#10;- Control de agentes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d2_group"><mxGeometry x="490.0" y="470.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d2_agents" value="Agentes IA (LangGraph)&#10;- Estratega&#10;- Copywriter&#10;- Diseñador&#10;- Publicador" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="d2_group"><mxGeometry x="490.0" y="610.0" width="300" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d2_workers" value="Workers (Celery + Redis)&#10;Procesos Async" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d2_group"><mxGeometry x="490.0" y="760.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d2_db" value="Base de Datos&#10;PostgreSQL&#10;Redis&#10;Qdrant" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d2_group"><mxGeometry x="190.0" y="610.0" width="220" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d2_ai" value="IA Local&#10;(Ollama + LLMs)&#10;Stable Diffusion&#10;Coqui TTS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d2_group"><mxGeometry x="840.0" y="610.0" width="240" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d2_micro" value="Microservicios (Go)&#10;MCP + Integraciones" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d2_group"><mxGeometry x="840.0" y="760.0" width="240" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d2_apis" value="APIs Redes Sociales&#10;Facebook / LinkedIn / IG" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1" parent="d2_group"><mxGeometry x="840.0" y="890.0" width="240" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e1" edge="1" parent="d2_group" source="d2_user" target="d2_dashboard" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e2" edge="1" parent="d2_group" source="d2_dashboard" target="d2_content" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e3" edge="1" parent="d2_group" source="d2_dashboard" target="d2_approval" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e4" edge="1" parent="d2_group" source="d2_dashboard" target="d2_metrics" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e5" edge="1" parent="d2_group" source="d2_content" target="d2_approval" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e6" edge="1" parent="d2_group" source="d2_approval" target="d2_backend" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e7" edge="1" parent="d2_group" source="d2_backend" target="d2_agents" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e8" edge="1" parent="d2_group" source="d2_agents" target="d2_workers" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e9" edge="1" parent="d2_group" source="d2_agents" target="d2_db" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e10" edge="1" parent="d2_group" source="d2_agents" target="d2_ai" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e11" edge="1" parent="d2_group" source="d2_workers" target="d2_micro" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e12" edge="1" parent="d2_group" source="d2_micro" target="d2_apis" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d2_e13" edge="1" parent="d2_group" source="d2_metrics" target="d2_backend" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d3_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="80" y="890" width="1140" height="920" as="geometry"/></mxCell>
+<mxCell id="d3_title" value="03 · Capa API + Orquestador de Agentes" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d3_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d3_api" value="API Backend (FastAPI)&#10;- REST endpoints&#10;- Auth&#10;- Multi-tenant&#10;- Control de flujo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="d3_group"><mxGeometry x="490.0" y="150.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d3_orq" value="Orquestador IA (LangGraph)&#10;- Flujo de agentes&#10;- Estado&#10;- Decisiones" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="d3_group"><mxGeometry x="490.0" y="290.0" width="300" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d3_agents" value="Agentes&#10;- Estratega&#10;- Copywriter&#10;- Diseñador&#10;- Publicador" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d3_group"><mxGeometry x="490.0" y="430.0" width="300" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d3_queue" value="Cola de Tareas&#10;Redis" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d3_group"><mxGeometry x="190.0" y="430.0" width="200" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d3_workers" value="Workers (Celery)&#10;- Procesos async&#10;- Generación contenido&#10;- Publicación" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d3_group"><mxGeometry x="190.0" y="570.0" width="200" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d3_db" value="Base de Datos&#10;PostgreSQL&#10;Qdrant (vectores)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d3_group"><mxGeometry x="490.0" y="590.0" width="300" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d3_ai" value="IA Local&#10;(Ollama - LLMs)&#10;Stable Diffusion&#10;TTS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d3_group"><mxGeometry x="840.0" y="430.0" width="240" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d3_micro" value="Microservicios (Go)&#10;- MCP Servers&#10;- Webhooks&#10;- Integraciones" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d3_group"><mxGeometry x="840.0" y="610.0" width="240" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d3_apis" value="APIs Externas&#10;- Redes sociales&#10;- Servicios externos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1" parent="d3_group"><mxGeometry x="840.0" y="760.0" width="240" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e1" edge="1" parent="d3_group" source="d3_api" target="d3_orq" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e2" edge="1" parent="d3_group" source="d3_orq" target="d3_agents" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e3" edge="1" parent="d3_group" source="d3_agents" target="d3_queue" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e4" edge="1" parent="d3_group" source="d3_queue" target="d3_workers" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e5" edge="1" parent="d3_group" source="d3_workers" target="d3_db" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e6" edge="1" parent="d3_group" source="d3_workers" target="d3_micro" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e7" edge="1" parent="d3_group" source="d3_agents" target="d3_ai" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e8" edge="1" parent="d3_group" source="d3_micro" target="d3_apis" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d3_e9" edge="1" parent="d3_group" source="d3_db" target="d3_api" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d4_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="1400" y="1170" width="860" height="1290" as="geometry"/></mxCell>
+<mxCell id="d4_title" value="04 · Flujo de Trabajo de Agentes IA" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d4_group"><mxGeometry x="10" y="10" width="840" height="60" as="geometry"/></mxCell>
+<mxCell id="d4_input" value="Entrada (Brief)&#10;- Tema&#10;- Público objetivo&#10;- Red social&#10;- Objetivo" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="150.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d4_estratega" value="Agente Estratega&#10;- Define enfoque&#10;- Hook&#10;- Tipo de contenido" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="290.0" width="260" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d4_copy" value="Agente Copywriter&#10;- Redacción del copy&#10;- CTA&#10;- Hashtags" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="430.0" width="260" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d4_decision_copy" value="¿Copy válido?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="570.0" width="200" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d4_design" value="Agente Diseñador&#10;- Generación imagen&#10;- Adaptación a formato" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="710.0" width="260" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d4_decision_design" value="¿Diseño válido?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="850.0" width="200" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d4_publisher" value="Agente Publicador&#10;- Programar/publicar&#10;- Selección de canal" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="990.0" width="260" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d4_output" value="Salida Final&#10;- Post publicado&#10;- URL&#10;- Métricas iniciales" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d4_group"><mxGeometry x="540.0" y="1130.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e1" edge="1" parent="d4_group" source="d4_input" target="d4_estratega" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e2" edge="1" parent="d4_group" source="d4_estratega" target="d4_copy" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e3" edge="1" parent="d4_group" source="d4_copy" target="d4_decision_copy" style="endArrow=block"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e4" edge="1" parent="d4_group" source="d4_decision_copy" target="d4_copy" style="endArrow=block;strokeColor=#ff0000;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e5" edge="1" parent="d4_group" source="d4_decision_copy" target="d4_design" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e6" edge="1" parent="d4_group" source="d4_design" target="d4_decision_design" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e7" edge="1" parent="d4_group" source="d4_decision_design" target="d4_design" style="endArrow=block;strokeColor=#ff0000;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e8" edge="1" parent="d4_group" source="d4_decision_design" target="d4_publisher" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d4_e9" edge="1" parent="d4_group" source="d4_publisher" target="d4_output" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d5_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="80" y="1930" width="1140" height="950" as="geometry"/></mxCell>
+<mxCell id="d5_title" value="05 · Microservicios en Go (MCP/Webhooks)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d5_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d5_backend" value="Backend API (FastAPI)&#10;- Orquestación&#10;- Lógica de negocio&#10;- Llamadas a servicios" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="d5_group"><mxGeometry x="490.0" y="150.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d5_gateway" value="Gateway de Microservicios (Go)&#10;- Routing interno&#10;- Balanceo&#10;- Seguridad" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d5_group"><mxGeometry x="490.0" y="290.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d5_mcp" value="MCP Servers (Go)&#10;- Exponen herramientas a IA&#10;- Acceso a datos&#10;- Integración con sistemas" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d5_group"><mxGeometry x="190.0" y="450.0" width="260" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d5_webhooks" value="Webhook Handlers (Go)&#10;- Recepción eventos externos&#10;- Procesamiento en tiempo real&#10;- Validación de seguridad" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d5_group"><mxGeometry x="490.0" y="450.0" width="260" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d5_integrations" value="Servicios de Integración (Go)&#10;- APIs redes sociales&#10;- Sistemas externos&#10;- Automatizaciones" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d5_group"><mxGeometry x="840.0" y="450.0" width="260" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d5_external" value="APIs Externas&#10;- Facebook&#10;- LinkedIn&#10;- Instagram&#10;- Otros servicios" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1" parent="d5_group"><mxGeometry x="840.0" y="630.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d5_events" value="Eventos Externos&#10;(Webhooks entrantes)&#10;- Comentarios&#10;- Likes&#10;- Mensajes&#10;- Notificaciones" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="d5_group"><mxGeometry x="490.0" y="630.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d5_response" value="Respuesta al Backend&#10;- Resultados&#10;- Estados&#10;- Datos procesados" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d5_group"><mxGeometry x="490.0" y="790.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e1" edge="1" parent="d5_group" source="d5_backend" target="d5_gateway" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e2" edge="1" parent="d5_group" source="d5_gateway" target="d5_mcp" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e3" edge="1" parent="d5_group" source="d5_gateway" target="d5_webhooks" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e4" edge="1" parent="d5_group" source="d5_gateway" target="d5_integrations" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e5" edge="1" parent="d5_group" source="d5_integrations" target="d5_external" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e6" edge="1" parent="d5_group" source="d5_events" target="d5_webhooks" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e7" edge="1" parent="d5_group" source="d5_mcp" target="d5_response" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e8" edge="1" parent="d5_group" source="d5_webhooks" target="d5_response" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e9" edge="1" parent="d5_group" source="d5_integrations" target="d5_response" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d5_e10" edge="1" parent="d5_group" source="d5_response" target="d5_backend" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d6_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="1400" y="2580" width="1140" height="940" as="geometry"/></mxCell>
+<mxCell id="d6_title" value="06 · Integración con Redes Sociales" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d6_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d6_backend" value="Backend / Microservicios&#10;(FastAPI + Go)&#10;- Gestión de publicaciones&#10;- Manejo de tokens&#10;- Orquestación" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="d6_group"><mxGeometry x="490.0" y="150.0" width="320" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d6_auth" value="Autenticación OAuth2&#10;- Login con redes sociales&#10;- Obtención de Access Token&#10;- Refresh Token" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="d6_group"><mxGeometry x="490.0" y="290.0" width="320" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d6_publisher" value="Servicio de Publicación&#10;- Formateo de contenido&#10;- Adaptación por red social&#10;- Envío API REST" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d6_group"><mxGeometry x="490.0" y="430.0" width="320" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d6_webhook" value="Webhook Receiver&#10;- Comentarios&#10;- Reacciones&#10;- Mensajes&#10;- Eventos en tiempo real" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d6_group"><mxGeometry x="490.0" y="580.0" width="320" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d6_facebook" value="Facebook Graph API&#10;- Publicación&#10;- Insights&#10;- Webhooks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d6_group"><mxGeometry x="190.0" y="760.0" width="240" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d6_linkedin" value="LinkedIn API&#10;- Publicación empresa&#10;- Métricas&#10;- Comentarios" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d6_group"><mxGeometry x="490.0" y="760.0" width="240" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d6_instagram" value="Instagram Graph API&#10;- Publicación&#10;- Historias&#10;- Engagement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d6_group"><mxGeometry x="790.0" y="760.0" width="240" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d6_ratelimit" value="Gestión de Rate Limits&#10;- Retry automático&#10;- Backoff exponencial&#10;- Logs de errores" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d6_group"><mxGeometry x="840.0" y="430.0" width="260" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d6_tokens" value="Almacenamiento Tokens&#10;(PostgreSQL / Redis)&#10;- Access tokens&#10;- Refresh tokens&#10;- Expiración" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="d6_group"><mxGeometry x="840.0" y="290.0" width="260" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e1" edge="1" parent="d6_group" source="d6_backend" target="d6_auth" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e2" edge="1" parent="d6_group" source="d6_auth" target="d6_tokens" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e3" edge="1" parent="d6_group" source="d6_backend" target="d6_publisher" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e4" edge="1" parent="d6_group" source="d6_publisher" target="d6_ratelimit" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e5" edge="1" parent="d6_group" source="d6_publisher" target="d6_facebook" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e6" edge="1" parent="d6_group" source="d6_publisher" target="d6_linkedin" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e7" edge="1" parent="d6_group" source="d6_publisher" target="d6_instagram" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e8" edge="1" parent="d6_group" source="d6_facebook" target="d6_webhook" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e9" edge="1" parent="d6_group" source="d6_linkedin" target="d6_webhook" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e10" edge="1" parent="d6_group" source="d6_instagram" target="d6_webhook" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d6_e11" edge="1" parent="d6_group" source="d6_webhook" target="d6_backend" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d7_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="80" y="3000" width="1140" height="850" as="geometry"/></mxCell>
+<mxCell id="d7_title" value="07 · Frontend / Dashboard SaaS" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d7_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d7_dashboard" value="Dashboard SaaS (React + Tailwind)&#10;Vista principal del usuario&#10;- Resumen de actividad&#10;- Estado de campañas&#10;- Acceso rápido" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="d7_group"><mxGeometry x="460.0" y="150.0" width="300" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d7_content" value="Gestión de Contenido&#10;- Crear publicaciones&#10;- Editar copy&#10;- Adjuntar imágenes&#10;- Programar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="d7_group"><mxGeometry x="160.0" y="330.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d7_approval" value="Aprobación Humana&#10;- Revisión de contenido IA&#10;- Ajustes manuales&#10;- Validación antes de publicar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="d7_group"><mxGeometry x="460.0" y="330.0" width="300" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d7_metrics" value="Métricas y Analítica&#10;- Engagement&#10;- Alcance&#10;- CTR&#10;- Rendimiento por post" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="d7_group"><mxGeometry x="820.0" y="330.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d7_api" value="Backend API (FastAPI)&#10;- Autenticación&#10;- Gestión datos&#10;- Ejecución agentes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="d7_group"><mxGeometry x="460.0" y="530.0" width="300" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d7_user" value="Usuario (Marketing / Empresa)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="d7_group"><mxGeometry x="540.0" y="710.0" width="160" height="80" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e1" style="endArrow=block;" edge="1" parent="d7_group" source="d7_dashboard" target="d7_content"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e2" style="endArrow=block;" edge="1" parent="d7_group" source="d7_dashboard" target="d7_approval"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e3" style="endArrow=block;" edge="1" parent="d7_group" source="d7_dashboard" target="d7_metrics"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e4" style="endArrow=block;" edge="1" parent="d7_group" source="d7_content" target="d7_approval"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e5" style="endArrow=block;" edge="1" parent="d7_group" source="d7_approval" target="d7_api"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e6" style="endArrow=block;" edge="1" parent="d7_group" source="d7_metrics" target="d7_api"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e7" style="endArrow=block;" edge="1" parent="d7_group" source="d7_api" target="d7_dashboard"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d7_e8" style="endArrow=block;" edge="1" parent="d7_group" source="d7_user" target="d7_dashboard"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d8_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="1400" y="3640" width="1140" height="750" as="geometry"/></mxCell>
+<mxCell id="d8_title" value="08 · Capa de Datos (Postgres/Redis/Qdrant)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d8_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d8_backend" value="Backend / Agentes&#10;(FastAPI + LangGraph)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="d8_group"><mxGeometry x="490.0" y="150.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d8_postgres" value="PostgreSQL&#10;(Base de datos principal)&#10;- Usuarios&#10;- Empresas (multi-tenant)&#10;- Publicaciones&#10;- Historial&#10;- Métricas" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d8_group"><mxGeometry x="240.0" y="360.0" width="260" height="160" as="geometry" /></mxCell>
+    
+<mxCell id="d8_redis" value="Redis&#10;(Cache + Cola)&#10;- Cache de consultas&#10;- Sesiones&#10;- Cola de tareas (Celery)&#10;- Locks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d8_group"><mxGeometry x="540.0" y="360.0" width="260" height="160" as="geometry" /></mxCell>
+    
+<mxCell id="d8_qdrant" value="Qdrant&#10;(Base de datos vectorial)&#10;- Embeddings de contenido&#10;- Memoria de agentes&#10;- Búsqueda semántica&#10;- Contexto de marca" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d8_group"><mxGeometry x="840.0" y="360.0" width="260" height="160" as="geometry" /></mxCell>
+    
+<mxCell id="d8_tables" value="Tablas clave:&#10;- users&#10;- organizations&#10;- posts&#10;- assets&#10;- metrics&#10;- schedules" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="d8_group"><mxGeometry x="240.0" y="550.0" width="260" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d8_redis_use" value="Uso:&#10;- Celery broker&#10;- Cache API&#10;- Rate limiting&#10;- Pub/Sub" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;" vertex="1" parent="d8_group"><mxGeometry x="540.0" y="550.0" width="260" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d8_qdrant_use" value="Uso IA:&#10;- Similaridad semántica&#10;- Recuperación de contexto&#10;- Memoria de conversaciones&#10;- Recomendaciones" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="d8_group"><mxGeometry x="840.0" y="550.0" width="260" height="140" as="geometry" /></mxCell>
+    
+<mxCell id="d8_e1" edge="1" parent="d8_group" source="d8_backend" target="d8_postgres" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d8_e2" edge="1" parent="d8_group" source="d8_backend" target="d8_redis" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d8_e3" edge="1" parent="d8_group" source="d8_backend" target="d8_qdrant" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d8_e4" edge="1" parent="d8_group" source="d8_redis" target="d8_postgres" style="dashed=1;endArrow=open;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d8_e5" edge="1" parent="d8_group" source="d8_postgres" target="d8_qdrant" style="dashed=1;endArrow=open;"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d9_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="80" y="3970" width="1140" height="960" as="geometry"/></mxCell>
+<mxCell id="d9_title" value="09 · IA Local (LLMs + SD + TTS)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d9_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d9_input" value="Entrada desde Agentes IA&#10;- Prompt estructurado&#10;- Contexto (Qdrant)&#10;- Parámetros de generación" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="d9_group"><mxGeometry x="490.0" y="150.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d9_orchestrator" value="Orquestador IA Local&#10;(Python Service)&#10;- Routing de tareas&#10;- Selección de modelo&#10;- Control de flujo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="d9_group"><mxGeometry x="490.0" y="290.0" width="300" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d9_llm" value="LLMs (Ollama)&#10;- Llama 3&#10;- Mistral&#10;- Mixtral&#10;Funciones:&#10;- Generación de texto&#10;- Razonamiento&#10;- Estructuración" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d9_group"><mxGeometry x="140.0" y="450.0" width="260" height="160" as="geometry" /></mxCell>
+    
+<mxCell id="d9_image" value="Stable Diffusion&#10;(ComfyUI / API)&#10;Funciones:&#10;- Generación imágenes&#10;- Variaciones&#10;- Estilo de marca" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d9_group"><mxGeometry x="490.0" y="450.0" width="260" height="160" as="geometry" /></mxCell>
+    
+<mxCell id="d9_voice" value="Coqui TTS&#10;(Text-to-Speech)&#10;Funciones:&#10;- Generación de voz&#10;- Clonación&#10;- Narración" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d9_group"><mxGeometry x="840.0" y="450.0" width="260" height="160" as="geometry" /></mxCell>
+    
+<mxCell id="d9_post" value="Post-Procesamiento&#10;- Formateo de outputs&#10;- Validación&#10;- Conversión formatos (JSON, media)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d9_group"><mxGeometry x="490.0" y="650.0" width="300" height="110" as="geometry" /></mxCell>
+    
+<mxCell id="d9_output" value="Salida hacia Backend / Agentes&#10;- Texto generado&#10;- Imagen&#10;- Audio&#10;- Metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d9_group"><mxGeometry x="490.0" y="800.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e1" edge="1" parent="d9_group" source="d9_input" target="d9_orchestrator" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e2" edge="1" parent="d9_group" source="d9_orchestrator" target="d9_llm" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e3" edge="1" parent="d9_group" source="d9_orchestrator" target="d9_image" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e4" edge="1" parent="d9_group" source="d9_orchestrator" target="d9_voice" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e5" edge="1" parent="d9_group" source="d9_llm" target="d9_post" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e6" edge="1" parent="d9_group" source="d9_image" target="d9_post" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e7" edge="1" parent="d9_group" source="d9_voice" target="d9_post" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d9_e8" edge="1" parent="d9_group" source="d9_post" target="d9_output" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+<mxCell id="d10_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=3;fillOpacity=15;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="1400" y="4510" width="1140" height="950" as="geometry"/></mxCell>
+<mxCell id="d10_title" value="10 · Workers + Colas Asíncronas (Celery)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="d10_group"><mxGeometry x="10" y="10" width="1120" height="60" as="geometry"/></mxCell>
+<mxCell id="d10_backend" value="Backend / API&#10;(FastAPI)&#10;- Recibe requests&#10;- Envía tareas async" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="d10_group"><mxGeometry x="490.0" y="150.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d10_redis" value="Redis (Broker / Queue)&#10;- Cola de tareas&#10;- Pub/Sub&#10;- Scheduling buffer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="d10_group"><mxGeometry x="490.0" y="290.0" width="300" height="100" as="geometry" /></mxCell>
+    
+<mxCell id="d10_workers" value="Workers (Celery)&#10;- Ejecutan tareas&#10;- Escalables horizontalmente&#10;- Concurrencia" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="d10_group"><mxGeometry x="490.0" y="430.0" width="300" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d10_task_content" value="Tarea: Generación de Contenido&#10;- Llamar agentes IA&#10;- Generar copy&#10;- Generar imagen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d10_group"><mxGeometry x="190.0" y="610.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d10_task_publish" value="Tarea: Publicación&#10;- Enviar a APIs redes sociales&#10;- Manejar errores&#10;- Confirmar publicación" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="d10_group"><mxGeometry x="490.0" y="610.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d10_scheduler" value="Scheduler (Celery Beat)&#10;- Programación de tareas&#10;- Ejecución por tiempo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="d10_group"><mxGeometry x="840.0" y="610.0" width="260" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d10_db" value="Base de Datos&#10;(PostgreSQL)&#10;- Estado tareas&#10;- Resultados&#10;- Logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="d10_group"><mxGeometry x="490.0" y="770.0" width="300" height="120" as="geometry" /></mxCell>
+    
+<mxCell id="d10_e1" edge="1" parent="d10_group" source="d10_backend" target="d10_redis" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d10_e2" edge="1" parent="d10_group" source="d10_redis" target="d10_workers" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d10_e3" edge="1" parent="d10_group" source="d10_workers" target="d10_task_content" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d10_e4" edge="1" parent="d10_group" source="d10_workers" target="d10_task_publish" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d10_e5" edge="1" parent="d10_group" source="d10_scheduler" target="d10_redis" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d10_e6" edge="1" parent="d10_group" source="d10_task_content" target="d10_db" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+    
+<mxCell id="d10_e7" edge="1" parent="d10_group" source="d10_task_publish" target="d10_db" style="endArrow=block;"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+</root>
+</mxGraphModel>
+</diagram>
+</mxfile>

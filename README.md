@@ -16,41 +16,43 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 | Capa | Tecnología |
 |---|---|
 | Orquestación IA | LangGraph + LangChain |
-| Modelos IA | Ollama (Llama 3, Mistral, Mixtral) |
+| Modelos IA | LLMs vía API (OpenAI, Anthropic, Ollama) |
 | Backend API | FastAPI (Python) |
 | Microservicios | Go |
-| Base de datos | PostgreSQL + Redis + Qdrant |
-| Cola de tareas | Celery / Temporal |
-| Frontend | React + Tailwind CSS |
-| Contenido visual | Stable Diffusion (AUTOMATIC1111 / ComfyUI) |
-| Video | FFmpeg + MoviePy |
-| Voz | Coqui TTS |
+| Base de datos | PostgreSQL + Redis |
+| Migraciones | Alembic |
+| Cola de tareas | Celery |
+| Frontend | React + Vite |
+| Contenido visual | Canva API / Stable Diffusion |
+| Video | Shotstack |
 | Contenedores | Docker |
-| Autenticación | Keycloak |
-| Analítica | Metabase |
 
-## Estado
+## Estado del roadmap
 
-MVP implementado por fases con base lista para escalar:
-
-- Fase 0: estructura monorepo + contratos base
-- Fase 1: pipeline sincronico end-to-end
-- Fase 2: cola Redis + workers Celery + jobs asincornos
-- Fase 3: primer microservicio en Go para publicacion social
-- Fase 4: observabilidad, calidad de contenido, RBAC, scheduler
+- **Paso 1** ✅ Happy path local: API + frontend sin fricciones (CORS + proxy Vite)
+- **Paso 2** ✅ PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
+- **Paso 3** 🔲 APIs reales: LLMs, imagen, redes sociales
+- **Paso 4** 🔲 Seguridad: Auth real, secrets, human-in-the-loop
+- **Paso 5** 🔲 LangGraph: solo donde haya flujos cíclicos o recuperación compleja
+- **Paso 6** 🔲 Go/infra: microservicios MCP, contenedores, Kubernetes
 
 ## Estructura
 
-- `frontend/`: dashboard React para briefing, vista previa, publicacion e historial
-- `gateway/`: API Gateway en FastAPI (sincronico + asincronico)
-- `agents/`: agentes Python (estratega, copywriter, diseno, publicador)
-- `workers/`: worker Celery para ejecucion en background
-- `microservices/social-publisher-go/`: adaptador de publicacion en Go
-- `infra/`: docker compose para Postgres/Redis
+```
+gateway/        API Gateway FastAPI (sync + async)
+agents/         Agentes Python (estratega, copywriter, diseño, publicador)
+workers/        Worker Celery para ejecución en background
+microservices/  social-publisher-go: adaptador de publicación en Go
+frontend/       Dashboard React/Vite
+infra/          docker-compose.yml (Postgres + Redis)
+alembic/        Migraciones de base de datos
+```
 
-## Happy path local (API + frontend, sin fricción)
+---
 
-Desde la **raíz del repositorio** (donde está `gateway/` y `frontend/`). No hace falta Docker para esta prueba: la API usa SQLite por defecto.
+## Paso 1 — Happy path local (SQLite, sin Docker)
+
+Desde la **raíz del repositorio**. No requiere Docker: la API usa SQLite por defecto.
 
 **Terminal 1 — API**
 
@@ -59,24 +61,116 @@ python -m pip install -r requirements.txt
 uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**Terminal 2 — dashboard**
+**Terminal 2 — Dashboard**
 
 ```bash
 cd frontend && npm install && npm run dev
 ```
 
-Abre [http://localhost:5173](http://localhost:5173). El frontend en desarrollo usa **proxy** hacia la API (`/api` → `http://127.0.0.1:8000`). La API también expone **CORS** para esos orígenes por si llamas a `http://127.0.0.1:8000` desde el navegador.
+Abre http://localhost:5173. El frontend en dev usa **proxy Vite** (`/api` → `http://127.0.0.1:8000`).
 
-Opcional: copia `.env.example` a `.env` y ajusta `CORS_ORIGINS` o `DATABASE_URL` si usas Postgres.
+**Async (Celery + Redis)** — requiere Redis levantado:
 
-## Quick start (stack completo)
+```bash
+docker compose -f infra/docker-compose.yml up -d redis
+python -m celery -A workers.celery_app.celery_app worker -l info
+```
 
-1. Copia `.env.example` a `.env` y completa credenciales.
-2. Levanta dependencias:
-   - `docker compose -f infra/docker-compose.yml up -d`
-3. Inicia API:
-   - `uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000`
-4. Inicia worker:
-   - `celery -A workers.celery_app.celery_app worker -l info`
-5. Inicia frontend:
-   - `cd frontend && npm install && npm run dev`
+En **Windows PowerShell** (si `celery` no se reconoce en PATH):
+
+```powershell
+.\.venv\Scripts\python.exe -m celery -A workers.celery_app.celery_app worker -l info
+```
+
+`workers/celery_app.py` fuerza `worker_pool=solo` en Windows para evitar `PermissionError [WinError 5]` del pool `prefork`.
+
+---
+
+## Paso 2 — PostgreSQL + Alembic
+
+### Levantar la base de datos
+
+```bash
+docker compose -f infra/docker-compose.yml up -d postgres
+```
+
+Espera el healthcheck (`pg_isready`). Verifica con:
+
+```bash
+docker compose -f infra/docker-compose.yml ps
+```
+
+### Configurar el entorno
+
+```bash
+copy .env.example .env      # Windows
+# cp .env.example .env      # Linux/macOS
+```
+
+`DATABASE_URL` en `.env` ya viene configurada para Postgres local:
+
+```
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/marketing_mvp
+```
+
+### Aplicar migraciones
+
+```bash
+python -m pip install -r requirements.txt   # incluye alembic
+alembic upgrade head
+```
+
+Esto crea todas las tablas (`briefs`, `agent_runs`, `generated_assets`, `publications`, `campaign_schedules`).
+
+### Iniciar la API contra Postgres
+
+```bash
+uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Con `DATABASE_URL` apuntando a Postgres, la API **no ejecuta** `create_all` — Alembic es la única fuente de verdad para el esquema.
+
+### Flujo de trabajo con Alembic
+
+| Acción | Comando |
+|---|---|
+| Aplicar todas las migraciones | `alembic upgrade head` |
+| Ver migración actual | `alembic current` |
+| Ver historial | `alembic history` |
+| Revertir última migración | `alembic downgrade -1` |
+| Generar nueva migración (auto) | `alembic revision --autogenerate -m "descripcion"` |
+
+> **Importante:** después de modificar modelos en `gateway/app/models/entities.py`, genera siempre una nueva migración con `--autogenerate` y revisa el archivo generado antes de hacer `upgrade head`.
+
+### Stack completo (Postgres + Redis + Worker + Frontend)
+
+```bash
+# 1. Infraestructura
+docker compose -f infra/docker-compose.yml up -d
+
+# 2. Migraciones
+alembic upgrade head
+
+# 3. API
+uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
+
+# 4. Worker Celery (otro terminal)
+python -m celery -A workers.celery_app.celery_app worker -l info
+
+# 5. Frontend (otro terminal)
+cd frontend && npm run dev
+```
+
+---
+
+## Documentación adicional
+
+- **Swagger UI:** http://127.0.0.1:8000/docs
+- **Métricas Prometheus:** http://127.0.0.1:8000/metrics
+- **Endpoints principales:**
+  - `POST /api/briefs` — crear brief de campaña
+  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente
+  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker)
+  - `GET /api/runs/{run_id}` — consultar estado
+  - `GET /api/runs` — historial de ejecuciones
+  - `POST /api/campaigns` — crear campaña programada (cron)

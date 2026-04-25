@@ -10,4 +10,5 @@ httpx
 structlog
 prometheus-fastapi-instrumentator
 apscheduler
+alembic
 pytest

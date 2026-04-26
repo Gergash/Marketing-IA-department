@@ -11,4 +11,6 @@ structlog
 prometheus-fastapi-instrumentator
 apscheduler
 alembic
+anthropic
+openai
 pytest

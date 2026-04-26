@@ -31,7 +31,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 
 - **Paso 1** ✅ Happy path local: API + frontend sin fricciones (CORS + proxy Vite)
 - **Paso 2** ✅ PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
-- **Paso 3** 🔲 APIs reales: LLMs, imagen, redes sociales
+- **Paso 3** ✅ APIs reales: LLMs (Anthropic/OpenAI), imagen (DALL-E 3/Canva), social (LinkedIn/Upload-Post)
 - **Paso 4** 🔲 Seguridad: Auth real, secrets, human-in-the-loop
 - **Paso 5** 🔲 LangGraph: solo donde haya flujos cíclicos o recuperación compleja
 - **Paso 6** 🔲 Go/infra: microservicios MCP, contenedores, Kubernetes
@@ -82,7 +82,7 @@ En **Windows PowerShell** (si `celery` no se reconoce en PATH):
 .\.venv\Scripts\python.exe -m celery -A workers.celery_app.celery_app worker -l info
 ```
 
-`workers/celery_app.py` fuerza `worker_pool=solo` en Windows para evitar `PermissionError [WinError 5]` del pool `prefork`.
+`workers/celery_app.py` fuerza `worker_pool=threads` (4 hilos) en Windows para evitar `PermissionError [WinError 5]` del pool `prefork`.
 
 ---
 
@@ -160,6 +160,69 @@ python -m celery -A workers.celery_app.celery_app worker -l info
 # 5. Frontend (otro terminal)
 cd frontend && npm run dev
 ```
+
+---
+
+## Paso 3 — APIs reales
+
+Todos los agentes tienen **fallback automático a stubs mockeados** si no hay API key configurada. El pipeline siempre funciona; las keys activan las integraciones reales.
+
+### 3A — LLMs (estrategia y copywriting)
+
+```env
+# .env
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-haiku-4-5-20251001   # más rápido y económico; cambiar a claude-sonnet-4-6 para mayor calidad
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+O con OpenAI:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+```
+
+Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto estático (stub).
+
+### 3B — Imagen (diseño de posts)
+
+**DALL-E 3** (requiere `OPENAI_API_KEY`):
+
+```env
+IMAGE_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+```
+
+**Canva API** (requiere OAuth — ver comentarios en `agents/marketing_agents/image_providers.py`):
+
+```env
+IMAGE_PROVIDER=canva
+CANVA_CLIENT_ID=...
+CANVA_CLIENT_SECRET=...
+CANVA_TEMPLATE_ID=...
+```
+
+Si `IMAGE_PROVIDER=mock` (por defecto), se genera una URL placeholder de dummyimage.com.
+
+### 3C — Publicación en redes sociales
+
+**LinkedIn** (token de usuario con scope `w_member_social`):
+
+```env
+SOCIAL_PROVIDER=linkedin
+LINKEDIN_ACCESS_TOKEN=...
+# LINKEDIN_PERSON_URN=urn:li:person:xxx  # opcional; se obtiene automáticamente
+```
+
+**Upload-Post** (API unificada — LinkedIn, Instagram, Facebook, X, TikTok):
+
+```env
+SOCIAL_PROVIDER=uploadpost
+UPLOADPOST_API_KEY=...
+```
+
+Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.
 
 ---
 

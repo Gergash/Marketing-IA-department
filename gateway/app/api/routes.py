@@ -1,5 +1,7 @@
 import json
 
+import kombu.exceptions
+import redis.exceptions
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -97,12 +99,34 @@ def run_pipeline_async(
         run_mode="async",
         idempotency_key=payload.idempotency_key,
     )
-    execute_pipeline_task.delay(
-        run.id,
-        payload.publish,
-        payload.requires_approval,
-        payload.idempotency_key,
-    )
+    try:
+        execute_pipeline_task.apply_async(
+            args=[
+                run.id,
+                payload.publish,
+                payload.requires_approval,
+                payload.idempotency_key,
+            ],
+        )
+    except (
+        redis.exceptions.ConnectionError,
+        kombu.exceptions.OperationalError,
+        OSError,
+        RuntimeError,
+    ) as exc:
+        run.status = "failed"
+        run.error_message = f"celery_broker_unavailable: {exc}"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Redis no esta disponible en localhost:6379 (broker de Celery). "
+                "Levanta Redis: docker compose -f infra/docker-compose.yml up -d redis. "
+                "Luego inicia el worker: celery -A workers.celery_app.celery_app worker -l info "
+                "(desde la raiz del repo, con el venv activado). "
+                "Si aparecio antes 'Celery application must be restarted', reinicia tambien uvicorn."
+            ),
+        ) from exc
     return RunResponse(run_id=run.id, status="queued")
 
 

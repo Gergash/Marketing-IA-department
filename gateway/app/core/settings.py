@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Go microservice (social publisher sidecar)
     go_publisher_url: str = "http://localhost:8088"
 
+    # Seguridad — Paso 4
+    # Vacío = auth desactivada (dev local). En producción, pon un valor aleatorio largo.
+    api_key: str = ""
+    # Slack Incoming Webhook para notificaciones human-in-the-loop
+    slack_webhook_url: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

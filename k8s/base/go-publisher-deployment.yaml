@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-publisher
+  namespace: marketing-depa
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: go-publisher }
+  template:
+    metadata:
+      labels: { app: go-publisher }
+    spec:
+      containers:
+        - name: go-publisher
+          image: marketing-depa/go-publisher:latest
+          ports: [{containerPort: 8088}]
+          readinessProbe:
+            httpGet: { path: /health, port: 8088 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-publisher
+  namespace: marketing-depa
+spec:
+  selector: { app: go-publisher }
+  ports:
+    - port: 8088
+      targetPort: 8088

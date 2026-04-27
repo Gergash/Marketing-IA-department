@@ -1,0 +1,11 @@
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY microservices/social-publisher-go/go.mod ./go.mod
+COPY microservices/social-publisher-go/cmd ./cmd
+RUN go build -o /out/social-publisher ./cmd/server
+
+FROM alpine:3.20
+RUN apk add --no-cache wget
+COPY --from=builder /out/social-publisher /usr/local/bin/social-publisher
+EXPOSE 8088
+CMD ["/usr/local/bin/social-publisher"]

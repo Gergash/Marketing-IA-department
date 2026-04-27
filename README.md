@@ -226,6 +226,70 @@ Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa si
 
 ---
 
+
+## Paso 6 — Escalado e infraestructura Go (Post-MVP)
+
+### 6.1 Endurecimiento de tareas en background (Celery)
+
+- Configuracion reforzada en `workers/celery_app.py`:
+  - `task_acks_late=True`
+  - `task_reject_on_worker_lost=True`
+  - `worker_prefetch_multiplier=1`
+  - `broker_connection_retry_on_startup=True`
+  - `broker_transport_options.visibility_timeout=3600`
+- Health task minima: `workers.healthcheck_task`.
+- Health endpoints en API:
+  - `GET /api/health/background` (broker Redis + workers Celery)
+
+### 6.2 Capa de conectividad Go (mcp-golang)
+
+- Nuevo servidor MCP: `microservices/mcp-connect-go/` (stdio).
+- Base para mover integraciones pesadas de Python a Go:
+  - `health_status`
+  - `publish_social_stub`
+
+Run local:
+
+```bash
+cd microservices/mcp-connect-go
+go mod tidy
+go run ./cmd/server
+```
+
+### 6.3 Contenedores para plataforma completa
+
+Archivo: `infra/docker-compose.platform.yml`
+
+```bash
+docker compose -f infra/docker-compose.platform.yml up -d --build
+```
+
+Incluye `postgres`, `redis`, `api`, `worker` y `go-publisher`, todos con healthchecks.
+
+Nota: `mcp-connect-go` usa transporte stdio (no HTTP), por lo que no se expone como servicio de red en Compose/K8s en esta etapa.
+
+### 6.4 Preparación Kubernetes
+
+Manifiestos base en `k8s/base/`:
+- `namespace.yaml`
+- `configmap.yaml`
+- `secret.example.yaml`
+- `api-deployment.yaml`
+- `worker-deployment.yaml`
+- `go-publisher-deployment.yaml`
+
+Aplicación rápida:
+
+```bash
+kubectl apply -f k8s/base/namespace.yaml
+kubectl apply -f k8s/base/configmap.yaml
+kubectl apply -f k8s/base/secret.example.yaml
+kubectl apply -f k8s/base/api-deployment.yaml
+kubectl apply -f k8s/base/worker-deployment.yaml
+kubectl apply -f k8s/base/go-publisher-deployment.yaml
+```
+
+
 ## Documentación adicional
 
 - **Swagger UI:** http://127.0.0.1:8000/docs

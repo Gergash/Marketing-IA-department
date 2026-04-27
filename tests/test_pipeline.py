@@ -13,6 +13,8 @@ def test_pipeline_without_publish() -> None:
     assert "strategy" in result
     assert "copy" in result
     assert "design" in result
+    assert "copy_qa_trace" in result
+    assert isinstance(result["copy_qa_trace"], list)
     assert result["publish_result"] is None
 
 

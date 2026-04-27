@@ -33,14 +33,14 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 2** ✅ PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
 - **Paso 3** ✅ APIs reales: LLMs (Anthropic/OpenAI), imagen (DALL-E 3/Canva), social (LinkedIn/Upload-Post)
 - **Paso 4** 🔲 Seguridad: Auth real, secrets, human-in-the-loop
-- **Paso 5** 🔲 LangGraph: solo donde haya flujos cíclicos o recuperación compleja
+- **Paso 5** 🔄 LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Paso 6** 🔲 Go/infra: microservicios MCP, contenedores, Kubernetes
 
 ## Estructura
 
 ```
 gateway/        API Gateway FastAPI (sync + async)
-agents/         Agentes Python (estratega, copywriter, diseño, publicador)
+agents/         Agentes Python + `PIPELINE.md` (orquestación lineal vs LangGraph)
 workers/        Worker Celery para ejecución en background
 microservices/  social-publisher-go: adaptador de publicación en Go
 frontend/       Dashboard React/Vite

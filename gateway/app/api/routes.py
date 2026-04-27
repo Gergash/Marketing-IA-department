@@ -1,22 +1,31 @@
 import json
 
+import kombu.exceptions
+import redis.exceptions
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from gateway.app.core.auth import require_auth
 from gateway.app.db.session import get_db
 from gateway.app.models import AgentRun, Brief, CampaignSchedule
 from gateway.app.schemas.contracts import (
+    ApproveRequest,
     BriefCreate,
     BriefResponse,
     CampaignScheduleCreate,
     CampaignScheduleResponse,
     JobStatusResponse,
+    RejectRequest,
     RunRequest,
     RunResponse,
 )
-from gateway.app.services.pipeline_service import create_run, execute_pipeline
-from gateway.app.core.security import require_role
+from gateway.app.services.pipeline_service import (
+    approve_run,
+    create_run,
+    execute_pipeline,
+    reject_run,
+)
 from workers.tasks import execute_pipeline_task
 
 router = APIRouter(prefix="/api")
@@ -30,10 +39,9 @@ def health() -> dict:
 @router.post("/briefs", response_model=BriefResponse)
 def create_brief(
     payload: BriefCreate,
-    user=Depends(require_role("editor")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> Brief:
-    tenant_id, _ = user
     brief = Brief(tenant_id=tenant_id, **payload.model_dump())
     db.add(brief)
     db.commit()
@@ -43,10 +51,9 @@ def create_brief(
 
 @router.get("/briefs", response_model=list[BriefResponse])
 def list_briefs(
-    user=Depends(require_role("viewer")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list[Brief]:
-    tenant_id, _ = user
     return list(
         db.execute(select(Brief).where(Brief.tenant_id == tenant_id).order_by(Brief.id.desc())).scalars().all()
     )
@@ -55,10 +62,9 @@ def list_briefs(
 @router.post("/runs/sync", response_model=RunResponse)
 def run_pipeline_sync(
     payload: RunRequest,
-    user=Depends(require_role("editor")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> RunResponse:
-    tenant_id, _ = user
     run = create_run(
         db,
         brief_id=payload.brief_id,
@@ -80,16 +86,16 @@ def run_pipeline_sync(
         db.commit()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
-    return RunResponse(run_id=run.id, status="completed", result=result)
+    db.refresh(run)
+    return RunResponse(run_id=run.id, status=run.status, result=result)
 
 
 @router.post("/runs/async", response_model=RunResponse)
 def run_pipeline_async(
     payload: RunRequest,
-    user=Depends(require_role("editor")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> RunResponse:
-    tenant_id, _ = user
     run = create_run(
         db,
         brief_id=payload.brief_id,
@@ -97,42 +103,107 @@ def run_pipeline_async(
         run_mode="async",
         idempotency_key=payload.idempotency_key,
     )
-    execute_pipeline_task.delay(
-        run.id,
-        payload.publish,
-        payload.requires_approval,
-        payload.idempotency_key,
-    )
+    try:
+        execute_pipeline_task.apply_async(
+            args=[
+                run.id,
+                payload.publish,
+                payload.requires_approval,
+                payload.idempotency_key,
+            ],
+        )
+    except (
+        redis.exceptions.ConnectionError,
+        kombu.exceptions.OperationalError,
+        OSError,
+        RuntimeError,
+    ) as exc:
+        run.status = "failed"
+        run.error_message = f"celery_broker_unavailable: {exc}"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Redis no esta disponible en localhost:6379 (broker de Celery). "
+                "Levanta Redis: docker compose -f infra/docker-compose.yml up -d redis. "
+                "Luego inicia el worker: celery -A workers.celery_app.celery_app worker -l info "
+                "(desde la raiz del repo, con el venv activado). "
+                "Si aparecio antes 'Celery application must be restarted', reinicia tambien uvicorn."
+            ),
+        ) from exc
     return RunResponse(run_id=run.id, status="queued")
+
+
+@router.post("/runs/{run_id}/approve", response_model=RunResponse)
+def approve_run_endpoint(
+    run_id: int,
+    payload: ApproveRequest = ApproveRequest(),
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> RunResponse:
+    run = db.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    try:
+        result = approve_run(db, run_id, approved_by=payload.approved_by)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return RunResponse(run_id=run_id, status="completed", result=result)
+
+
+@router.post("/runs/{run_id}/reject", response_model=RunResponse)
+def reject_run_endpoint(
+    run_id: int,
+    payload: RejectRequest = RejectRequest(),
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> RunResponse:
+    run = db.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    try:
+        reject_run(db, run_id, reason=payload.reason, approved_by=payload.approved_by)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return RunResponse(run_id=run_id, status="rejected")
 
 
 @router.get("/runs/{run_id}", response_model=JobStatusResponse)
 def get_run_status(
     run_id: int,
-    user=Depends(require_role("viewer")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> JobStatusResponse:
-    tenant_id, _ = user
     run = db.get(AgentRun, run_id)
     if not run or run.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     result = json.loads(run.result_json) if run.result_json else None
-    return JobStatusResponse(run_id=run.id, status=run.status, result=result, error_message=run.error_message)
+    return JobStatusResponse(
+        run_id=run.id,
+        status=run.status,
+        result=result,
+        error_message=run.error_message,
+        approved_at=run.approved_at,
+        approved_by=run.approved_by,
+    )
 
 
 @router.get("/runs", response_model=list[JobStatusResponse])
 def list_runs(
-    user=Depends(require_role("viewer")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list[JobStatusResponse]:
-    tenant_id, _ = user
-    runs = db.execute(select(AgentRun).where(AgentRun.tenant_id == tenant_id).order_by(AgentRun.id.desc())).scalars().all()
+    runs = db.execute(
+        select(AgentRun).where(AgentRun.tenant_id == tenant_id).order_by(AgentRun.id.desc())
+    ).scalars().all()
     return [
         JobStatusResponse(
             run_id=run.id,
             status=run.status,
             result=json.loads(run.result_json) if run.result_json else None,
             error_message=run.error_message,
+            approved_at=run.approved_at,
+            approved_by=run.approved_by,
         )
         for run in runs
     ]
@@ -141,10 +212,9 @@ def list_runs(
 @router.post("/campaigns", response_model=CampaignScheduleResponse)
 def create_campaign(
     payload: CampaignScheduleCreate,
-    user=Depends(require_role("admin")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> CampaignSchedule:
-    tenant_id, _ = user
     item = CampaignSchedule(tenant_id=tenant_id, **payload.model_dump())
     db.add(item)
     db.commit()
@@ -154,8 +224,9 @@ def create_campaign(
 
 @router.get("/campaigns", response_model=list[CampaignScheduleResponse])
 def list_campaigns(
-    user=Depends(require_role("viewer")),
+    tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list[CampaignSchedule]:
-    tenant_id, _ = user
-    return list(db.execute(select(CampaignSchedule).where(CampaignSchedule.tenant_id == tenant_id)).scalars().all())
+    return list(
+        db.execute(select(CampaignSchedule).where(CampaignSchedule.tenant_id == tenant_id)).scalars().all()
+    )

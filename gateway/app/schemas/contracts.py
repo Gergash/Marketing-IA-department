@@ -38,7 +38,18 @@ class JobStatusResponse(BaseModel):
     run_id: int
     status: str
     error_message: str | None = None
+    approved_at: datetime | None = None
+    approved_by: str | None = None
     result: dict | None = None
+
+
+class ApproveRequest(BaseModel):
+    approved_by: str = "human"
+
+
+class RejectRequest(BaseModel):
+    reason: str = ""
+    approved_by: str = "human"
 
 
 class CampaignScheduleCreate(BaseModel):

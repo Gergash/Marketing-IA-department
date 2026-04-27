@@ -10,4 +10,8 @@ httpx
 structlog
 prometheus-fastapi-instrumentator
 apscheduler
+alembic
+anthropic
+openai
 pytest
+langgraph>=0.2.0

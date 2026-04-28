@@ -46,7 +46,7 @@ export default function App() {
   const [form, setForm] = useState({
     tema: "",
     publico_objetivo: "",
-    red_social: "linkedin",
+    red_social: "instagram",
     objetivo: "branding",
     tono_marca: "profesional y cercano",
   });

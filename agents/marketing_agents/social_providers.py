@@ -21,7 +21,72 @@ def publish_post(
         return _linkedin(copy_text, image_url, s.linkedin_access_token, s.linkedin_person_urn)
     if s.social_provider == "uploadpost" and s.uploadpost_api_key:
         return _uploadpost(platform, copy_text, image_url, s.uploadpost_api_key)
+    if (
+        s.social_provider == "meta"
+        and s.meta_page_access_token
+        and s.instagram_business_account_id
+        and platform.lower() in ("instagram", "ig")
+    ):
+        return _meta_instagram(copy_text, image_url, s)
     return _mock(platform, copy_text, image_url, idempotency_key)
+
+
+# ---------------------------------------------------------------------------
+# Meta — Instagram Graph API (cuenta profesional vinculada a Meta Business)
+# Docs: https://developers.facebook.com/docs/instagram-api/guides/content-publishing
+# La imagen debe ser URL HTTPS pública accesible por los servidores de Meta.
+# ---------------------------------------------------------------------------
+
+
+def _meta_instagram(copy_text: str, image_url: str, s) -> dict:
+    import httpx
+
+    ig_id = s.instagram_business_account_id.strip()
+    token = s.meta_page_access_token.strip()
+    ver = s.graph_api_version.strip().lstrip("/") or "v21.0"
+    base = f"https://graph.facebook.com/{ver}"
+
+    params = {"access_token": token}
+    with httpx.Client(timeout=60) as client:
+        r_media = client.post(
+            f"{base}/{ig_id}/media",
+            params={
+                **params,
+                "image_url": image_url,
+                "caption": copy_text[:2200],
+            },
+        )
+        if not r_media.is_success:
+            logger.warning("meta.instagram.media_container_failed", body=r_media.text)
+        r_media.raise_for_status()
+        creation_id = r_media.json().get("id")
+        if not creation_id:
+            raise ValueError("Meta IG: respuesta sin id de contenedor de media")
+
+        r_pub = client.post(
+            f"{base}/{ig_id}/media_publish",
+            params={**params, "creation_id": creation_id},
+        )
+        if not r_pub.is_success:
+            logger.warning("meta.instagram.publish_failed", body=r_pub.text)
+        r_pub.raise_for_status()
+        media_id = str(r_pub.json().get("id", ""))
+
+        permalink = f"https://www.instagram.com/p/{media_id}/"
+        r_link = client.get(
+            f"{base}/{media_id}",
+            params={**params, "fields": "permalink,shortcode"},
+        )
+        if r_link.is_success:
+            data = r_link.json()
+            permalink = data.get("permalink") or permalink
+
+        logger.info("meta.instagram.published", media_id=media_id)
+        return {
+            "status": "published",
+            "publication_url": permalink,
+            "platform_post_id": media_id,
+        }
 
 
 # ---------------------------------------------------------------------------

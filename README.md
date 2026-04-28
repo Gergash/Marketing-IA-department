@@ -107,18 +107,22 @@ copy .env.example .env      # Windows
 # cp .env.example .env      # Linux/macOS
 ```
 
-`DATABASE_URL` en `.env` ya viene configurada para Postgres local:
+`DATABASE_URL` en `.env` apunta al Postgres del **Compose en el puerto host 5433** (evita choque con un PostgreSQL instalado en el sistema que suele usar 5432):
 
 ```
-DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/marketing_mvp
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 ```
+
+Si tras `docker compose ... up -d postgres` ves `FATAL: password authentication failed for user postgres`, casi siempre estás conectando al Postgres **nativo** (puerto 5432), no al contenedor: revisa que `DATABASE_URL` use `:5433` o detén el servicio local de PostgreSQL.
 
 ### Aplicar migraciones
 
 ```bash
 python -m pip install -r requirements.txt   # incluye alembic
-alembic upgrade head
+python -m alembic upgrade head
 ```
+
+En **Windows (PowerShell)**, si `alembic` no se reconoce, usa siempre `python -m alembic ...` (o `.\.venv\Scripts\python.exe -m alembic ...` con tu venv).
 
 Esto crea todas las tablas (`briefs`, `agent_runs`, `generated_assets`, `publications`, `campaign_schedules`).
 
@@ -134,11 +138,11 @@ Con `DATABASE_URL` apuntando a Postgres, la API **no ejecuta** `create_all` — 
 
 | Acción | Comando |
 |---|---|
-| Aplicar todas las migraciones | `alembic upgrade head` |
-| Ver migración actual | `alembic current` |
-| Ver historial | `alembic history` |
-| Revertir última migración | `alembic downgrade -1` |
-| Generar nueva migración (auto) | `alembic revision --autogenerate -m "descripcion"` |
+| Aplicar todas las migraciones | `python -m alembic upgrade head` |
+| Ver migración actual | `python -m alembic current` |
+| Ver historial | `python -m alembic history` |
+| Revertir última migración | `python -m alembic downgrade -1` |
+| Generar nueva migración (auto) | `python -m alembic revision --autogenerate -m "descripcion"` |
 
 > **Importante:** después de modificar modelos en `gateway/app/models/entities.py`, genera siempre una nueva migración con `--autogenerate` y revisa el archivo generado antes de hacer `upgrade head`.
 
@@ -149,7 +153,7 @@ Con `DATABASE_URL` apuntando a Postgres, la API **no ejecuta** `create_all` — 
 docker compose -f infra/docker-compose.yml up -d
 
 # 2. Migraciones
-alembic upgrade head
+python -m alembic upgrade head
 
 # 3. API
 uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000

@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: marketing_mvp
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,6 +28,9 @@ services:
       context: ..
       dockerfile: infra/docker/Dockerfile.api
     env_file: [../.env]
+    environment:
+      # Dentro de Compose el host es el servicio `postgres`, no localhost del .env de desarrollo.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/marketing_mvp
     ports: ["8000:8000"]
     depends_on:
       postgres:
@@ -46,6 +49,8 @@ services:
       context: ..
       dockerfile: infra/docker/Dockerfile.worker
     env_file: [../.env]
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/marketing_mvp
     depends_on:
       redis:
         condition: service_healthy

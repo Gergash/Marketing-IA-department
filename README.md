@@ -29,11 +29,11 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 
 ## Estado del roadmap
 
-- **Paso 1** ✅ Happy path local: API + frontend sin fricciones (CORS + proxy Vite)
-- **Paso 2** ✅ PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
-- **Paso 3** ✅ APIs reales: LLMs (Anthropic/OpenAI), imagen (DALL-E 3/Canva), social (LinkedIn/Upload-Post)
-- **Paso 4** 🔲 Seguridad: Auth real, secrets, human-in-the-loop
-- **Paso 5** 🔄 LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
+- **Paso 1** Happy path local: API + frontend sin fricciones (CORS + proxy Vite)
+- **Paso 2** PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
+- **Paso 3** APIs reales: LLMs (Anthropic/OpenAI), imagen (DALL-E 3/Canva), social (LinkedIn/Upload-Post)
+- **Paso 4** Seguridad: Auth real, secrets, human-in-the-loop
+- **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Paso 6** 🔲 Go/infra: microservicios MCP, contenedores, Kubernetes
 
 ## Estructura

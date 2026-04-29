@@ -58,7 +58,7 @@ Desde la **raíz del repositorio**. No requiere Docker: la API usa SQLite por de
 
 ```bash
 python -m pip install -r requirements.txt
-uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 **Terminal 2 — Dashboard**
@@ -129,7 +129,7 @@ Esto crea todas las tablas (`briefs`, `agent_runs`, `generated_assets`, `publica
 ### Iniciar la API contra Postgres
 
 ```bash
-uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Con `DATABASE_URL` apuntando a Postgres, la API **no ejecuta** `create_all` — Alembic es la única fuente de verdad para el esquema.
@@ -156,7 +156,7 @@ docker compose -f infra/docker-compose.yml up -d
 python -m alembic upgrade head
 
 # 3. API
-uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 
 # 4. Worker Celery (otro terminal)
 python -m celery -A workers.celery_app.celery_app worker -l info

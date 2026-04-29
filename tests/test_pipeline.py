@@ -6,7 +6,7 @@ def test_pipeline_without_publish() -> None:
     brief = BriefInput(
         tema="automatizacion de contenido",
         publico_objetivo="duenos de negocio",
-        red_social="linkedin",
+        red_social="instagram",
         objetivo="branding",
     )
     result = pipeline.run(brief, publish=False)
@@ -23,7 +23,7 @@ def test_pipeline_with_publish() -> None:
     brief = BriefInput(
         tema="agentes IA para marketing",
         publico_objetivo="equipos B2B",
-        red_social="linkedin",
+        red_social="instagram",
         objetivo="ventas",
     )
     result = pipeline.run(brief, publish=True, idempotency_key="abc123")

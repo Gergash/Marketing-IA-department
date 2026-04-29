@@ -5,8 +5,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: marketing_mvp
+    # Host 5433 evita choque con PostgreSQL nativo en Windows/macOS (suele usar 5432).
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

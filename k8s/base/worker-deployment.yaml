@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: marketing-depa
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+    spec:
+      containers:
+        - name: worker
+          image: marketing-depa/worker:latest
+          command: ["python", "-m", "celery", "-A", "workers.celery_app.celery_app", "worker", "-l", "info"]
+          envFrom:
+            - configMapRef: { name: marketing-config }
+            - secretRef: { name: marketing-secrets }
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "celery", "-A", "workers.celery_app.celery_app", "inspect", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 30

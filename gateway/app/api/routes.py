@@ -1,12 +1,14 @@
 import json
 
 import kombu.exceptions
+import redis
 import redis.exceptions
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from gateway.app.core.auth import require_auth
+from gateway.app.core.settings import get_settings
 from gateway.app.db.session import get_db
 from gateway.app.models import AgentRun, Brief, CampaignSchedule
 from gateway.app.schemas.contracts import (
@@ -26,6 +28,7 @@ from gateway.app.services.pipeline_service import (
     execute_pipeline,
     reject_run,
 )
+from workers.celery_app import celery_app
 from workers.tasks import execute_pipeline_task
 
 router = APIRouter(prefix="/api")
@@ -34,6 +37,35 @@ router = APIRouter(prefix="/api")
 @router.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@router.get("/health/background")
+def background_health() -> dict:
+    """Broker/worker health for background processing."""
+    s = get_settings()
+    broker_ok = False
+    worker_ok = False
+    worker_nodes: list[str] = []
+
+    try:
+        client = redis.Redis.from_url(s.redis_url)
+        broker_ok = bool(client.ping())
+    except Exception:  # noqa: BLE001
+        broker_ok = False
+
+    try:
+        pings = celery_app.control.ping(timeout=1.5)
+        worker_ok = bool(pings)
+        worker_nodes = [list(item.keys())[0] for item in pings if item]
+    except Exception:  # noqa: BLE001
+        worker_ok = False
+
+    return {
+        "status": "ok" if broker_ok and worker_ok else "degraded",
+        "broker_ok": broker_ok,
+        "worker_ok": worker_ok,
+        "worker_nodes": worker_nodes,
+    }
 
 
 @router.post("/briefs", response_model=BriefResponse)
@@ -126,7 +158,7 @@ def run_pipeline_async(
             detail=(
                 "Redis no esta disponible en localhost:6379 (broker de Celery). "
                 "Levanta Redis: docker compose -f infra/docker-compose.yml up -d redis. "
-                "Luego inicia el worker: celery -A workers.celery_app.celery_app worker -l info "
+                "Luego inicia el worker: python -m celery -A workers.celery_app.celery_app worker -l info "
                 "(desde la raiz del repo, con el venv activado). "
                 "Si aparecio antes 'Celery application must be restarted', reinicia tambien uvicorn."
             ),

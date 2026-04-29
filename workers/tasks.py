@@ -33,3 +33,9 @@ def execute_pipeline_task(
         )
         logger.info("execute_pipeline_task.done", run_id=run_id)
         return result
+
+
+@celery_app.task(name="workers.healthcheck_task")
+def healthcheck_task() -> dict:
+    """Lightweight task used by liveness/readiness checks."""
+    return {"status": "ok"}

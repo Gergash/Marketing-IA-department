@@ -29,7 +29,7 @@ def test_copy_qa_graph_retries_then_approves(monkeypatch: pytest.MonkeyPatch) ->
     brief = BriefInput(
         tema="marketing",
         publico_objetivo="pymes",
-        red_social="linkedin",
+        red_social="instagram",
         objetivo="branding",
     )
     strategy = StrategyOutput(
@@ -64,7 +64,7 @@ def test_copy_qa_graph_exhausts_attempts(monkeypatch: pytest.MonkeyPatch) -> Non
     brief = BriefInput(
         tema="marketing",
         publico_objetivo="pymes",
-        red_social="linkedin",
+        red_social="instagram",
         objetivo="branding",
     )
     strategy = StrategyOutput(

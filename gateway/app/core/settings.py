@@ -27,11 +27,18 @@ class Settings(BaseSettings):
     canva_client_secret: str = ""
     canva_template_id: str = ""
 
-    # Social publishing — provider: mock | linkedin | uploadpost
+    # Social publishing — provider: mock | linkedin | uploadpost | meta
     social_provider: str = "mock"
     linkedin_access_token: str = ""
     linkedin_person_urn: str = ""  # optional: auto-fetched from /v2/me if blank
     uploadpost_api_key: str = ""
+    # Meta (Instagram Business / Graph API) — SOCIAL_PROVIDER=meta
+    # Token: Page long-lived con permisos instagram_basic, instagram_content_publish, pages_show_list
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_page_access_token: str = ""
+    instagram_business_account_id: str = ""
+    graph_api_version: str = "v21.0"
 
     # Go microservice (social publisher sidecar)
     go_publisher_url: str = "http://localhost:8088"

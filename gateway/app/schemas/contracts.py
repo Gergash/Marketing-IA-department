@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class BriefCreate(BaseModel):
     tema: str = Field(min_length=3)
     publico_objetivo: str
-    red_social: str
+    red_social: str = "instagram"
     objetivo: str
     tono_marca: str = "profesional y cercano"
     idioma: str = "es"
@@ -54,7 +54,7 @@ class RejectRequest(BaseModel):
 
 class CampaignScheduleCreate(BaseModel):
     tema: str
-    red_social: str
+    red_social: str = "instagram"
     objetivo: str
     cron_expr: str = "0 9 * * 1"
 

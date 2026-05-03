@@ -20,3 +20,7 @@ microservices/**/server
 *.db
 *.db-shm
 *.db-wal
+
+# Imágenes generadas localmente por Stable Diffusion
+static/images/*.png
+static/images/*.jpg

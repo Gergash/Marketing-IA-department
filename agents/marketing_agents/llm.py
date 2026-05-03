@@ -5,6 +5,35 @@ import re
 from typing import Any
 
 
+class OllamaLLM:
+    """Llama3/Mistral (u otro modelo) via Ollama REST API local."""
+
+    def __init__(self, base_url: str, model: str = "llama3") -> None:
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+
+    def complete_json(self, system: str, user: str, *, max_tokens: int = 1024) -> dict[str, Any]:
+        import httpx
+
+        payload = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system + "\n\nRespond ONLY with valid JSON. No markdown, no code fences.",
+                },
+                {"role": "user", "content": user},
+            ],
+            "format": "json",
+            "stream": False,
+            "options": {"num_predict": max_tokens},
+        }
+        resp = httpx.post(f"{self._base_url}/api/chat", json=payload, timeout=180)
+        resp.raise_for_status()
+        content = resp.json()["message"]["content"]
+        return _parse_json(content)
+
+
 class AnthropicLLM:
     def __init__(self, api_key: str, model: str = "claude-haiku-4-5-20251001") -> None:
         import anthropic
@@ -53,10 +82,12 @@ def _parse_json(text: str) -> dict[str, Any]:
     return json.loads(cleaned.strip())
 
 
-def get_llm() -> AnthropicLLM | OpenAILLM | None:
+def get_llm() -> OllamaLLM | AnthropicLLM | OpenAILLM | None:
     """Return configured LLM client, or None to fall back to stub output."""
     from gateway.app.core.settings import get_settings
     s = get_settings()
+    if s.llm_provider == "ollama":
+        return OllamaLLM(s.ollama_base_url, s.ollama_model)
     if s.llm_provider == "anthropic" and s.anthropic_api_key:
         return AnthropicLLM(s.anthropic_api_key, s.llm_model)
     if s.llm_provider == "openai" and s.openai_api_key:

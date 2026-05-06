@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from gateway.app.api.routes import router
@@ -22,6 +25,10 @@ app.add_middleware(
 )
 app.include_router(router)
 Instrumentator().instrument(app).expose(app)
+
+_static_dir = Path(__file__).resolve().parents[3] / "static" / "images"
+_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir.parent)), name="static")
 
 
 def _init_db() -> None:

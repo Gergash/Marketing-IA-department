@@ -15,14 +15,18 @@ class Settings(BaseSettings):
         "http://localhost:4173,http://127.0.0.1:4173"
     )
 
-    # LLM — provider: anthropic | openai
-    llm_provider: str = "anthropic"
-    llm_model: str = "claude-haiku-4-5-20251001"
+    # LLM — provider: ollama | anthropic | openai
+    llm_provider: str = "ollama"
+    llm_model: str = "claude-haiku-4-5-20251001"  # usado si provider=anthropic
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    # Ollama (IA local)
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3"
 
-    # Image generation — provider: mock | openai | canva
-    image_provider: str = "mock"
+    # Image generation — provider: stable_diffusion | mock | openai | canva
+    image_provider: str = "stable_diffusion"
+    stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
     canva_client_id: str = ""
     canva_client_secret: str = ""
     canva_template_id: str = ""

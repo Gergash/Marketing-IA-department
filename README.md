@@ -17,7 +17,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 |---|---|
 | Orquestación IA | LangGraph + LangChain |
 | Modelos IA | LLMs vía API (OpenAI, Anthropic, Ollama) |
-| Backend API | FastAPI (Python) |
+| Backend API | FastAPI (Python 3.10) |
 | Microservicios | Go |
 | Base de datos | PostgreSQL + Redis |
 | Migraciones | Alembic |
@@ -50,14 +50,35 @@ alembic/        Migraciones de base de datos
 
 ---
 
+## Requisito de Python
+
+El proyecto está pensado para **Python 3.10** (misma línea que muchos entornos **Stable Diffusion / Automatic1111**). Hay un archivo `.python-version` para **pyenv**. Las imágenes Docker usan `python:3.10-slim`.
+
+```bash
+python -m venv .venv
+# Windows: .\.venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+```
+
+## Stable Diffusion (Realistic Vision u otro checkpoint)
+
+Con `IMAGE_PROVIDER=stable_diffusion` en `.env`:
+
+1. Arranca **Automatic1111 WebUI** con la API activa (por ejemplo `--api`, puerto por defecto 7860).
+2. Coloca el checkpoint en `models/Stable-diffusion/` y anota el nombre **exacto** como aparece en el desplegable del WebUI.
+3. Configura `STABLE_DIFFUSION_URL` (típicamente `http://127.0.0.1:7860/sdapi/v1/txt2img`) y `STABLE_DIFFUSION_CHECKPOINT` (p. ej. `Realistic_Vision_V5.1_fp16-no-ema.safetensors` si ese es el nombre del archivo en disco).
+
+Cada petición `txt2img` envía `override_settings.sd_model_checkpoint` para forzar ese modelo.
+
 ## Paso 1 — Happy path local (SQLite, sin Docker)
 
-Desde la **raíz del repositorio**. No requiere Docker: la API usa SQLite por defecto.
+Desde la **raíz del repositorio**. No requiere Docker: la API usa SQLite por defecto. Activa el venv e instala dependencias como en **Requisito de Python** antes de los comandos siguientes.
 
 **Terminal 1 — API**
 
 ```bash
-python -m pip install -r requirements.txt
 python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 

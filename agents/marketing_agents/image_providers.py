@@ -21,7 +21,11 @@ def generate_image(prompt: str) -> str:
     s = get_settings()
 
     if s.image_provider == "stable_diffusion":
-        return _stable_diffusion(prompt, s.stable_diffusion_url)
+        return _stable_diffusion(
+            prompt,
+            s.stable_diffusion_url,
+            checkpoint=(s.stable_diffusion_checkpoint or "").strip() or None,
+        )
     if s.image_provider == "openai" and s.openai_api_key:
         return _dalle(prompt, s.openai_api_key)
     if s.image_provider == "canva":
@@ -29,15 +33,18 @@ def generate_image(prompt: str) -> str:
     return _placeholder(prompt)
 
 
-def _stable_diffusion(prompt: str, sd_url: str) -> str:
+def _stable_diffusion(prompt: str, sd_url: str, *, checkpoint: str | None) -> str:
     """
     Llama a la API REST de Automatic1111 / AUTOMATIC1111 WebUI.
     Guarda la imagen en static/images/ y devuelve la URL local.
     La imagen queda disponible en http://localhost:8000/static/images/<uuid>.png
+
+    Si `checkpoint` está definido, se envía override_settings.sd_model_checkpoint para forzar
+    el modelo (debe coincidir con el nombre en el desplegable de checkpoints del WebUI).
     """
     import httpx
 
-    payload = {
+    payload: dict = {
         "prompt": prompt[:500],
         "negative_prompt": "blurry, low quality, text, watermark, signature",
         "width": _SD_WIDTH,
@@ -48,6 +55,8 @@ def _stable_diffusion(prompt: str, sd_url: str) -> str:
         "n_iter": 1,
         "batch_size": 1,
     }
+    if checkpoint:
+        payload["override_settings"] = {"sd_model_checkpoint": checkpoint}
 
     try:
         resp = httpx.post(sd_url, json=payload, timeout=300)

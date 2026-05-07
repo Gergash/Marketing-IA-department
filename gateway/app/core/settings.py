@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # Image generation — provider: stable_diffusion | mock | openai | canva
     image_provider: str = "stable_diffusion"
     stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
+    # Nombre exacto del checkpoint en Automatic1111 (como en el desplegable), p. ej. archivo .safetensors
+    stable_diffusion_checkpoint: str = ""
     canva_client_id: str = ""
     canva_client_secret: str = ""
     canva_template_id: str = ""

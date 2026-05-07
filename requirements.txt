@@ -1,3 +1,4 @@
+# Entorno recomendado: Python 3.10 (alineado con Stable Diffusion / Automatic1111).
 fastapi
 uvicorn
 aiofiles

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from gateway.app.api.auth_social import router as auth_social_router
 from gateway.app.api.routes import router
 from gateway.app.core.logging import configure_logging
 from gateway.app.core.settings import get_settings
@@ -26,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(auth_social_router)
 Instrumentator().instrument(app).expose(app)
 
 _static_dir = Path(__file__).resolve().parents[3] / "static" / "images"

@@ -1,4 +1,4 @@
-"""Entidades persistentes: briefs, ejecuciones, assets, publicaciones y campañas programadas."""
+"""Entidades persistentes: briefs, ejecuciones, assets, publicaciones, campañas y tokens OAuth."""
 
 from datetime import datetime
 
@@ -91,3 +91,19 @@ class CampaignSchedule(Base):
     cron_expr: Mapped[str] = mapped_column(String(64))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OAuthToken(Base):
+    """Token OAuth 2.0 por tenant y proveedor (meta, linkedin)."""
+
+    __tablename__ = "oauth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)  # 'meta' | 'linkedin'
+    access_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    account_id: Mapped[str] = mapped_column(String(256))  # IG Business Account ID o URN de LinkedIn
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

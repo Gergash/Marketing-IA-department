@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     # Go microservice (social publisher sidecar)
     go_publisher_url: str = "http://localhost:8088"
 
+    # OAuth 2.0 — Meta (Facebook/Instagram Graph API)
+    meta_client_id: str = ""
+    meta_client_secret: str = ""
+    meta_redirect_uri: str = "http://localhost:8000/api/auth/callback/meta"
+
+    # OAuth 2.0 — LinkedIn
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    linkedin_redirect_uri: str = "http://localhost:8000/api/auth/callback/linkedin"
+
+    # URL pública base para imágenes — Meta exige HTTPS accesible públicamente (ej. ngrok en dev)
+    public_image_base_url: str = "http://localhost:8000"
+
     # Seguridad — Paso 4
     # Vacío = auth desactivada (dev local). En producción, pon un valor aleatorio largo.
     api_key: str = ""

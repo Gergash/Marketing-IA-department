@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from agents.marketing_agents import BriefInput, MarketingPipeline
 from agents.marketing_agents.schemas import CopyOutput, DesignOutput
 from gateway.app.core.settings import get_settings
-from gateway.app.models import AgentRun, Brief, GeneratedAsset, Publication
+from gateway.app.models import AgentRun, Brief, GeneratedAsset, OAuthToken, Publication
 
 logger = structlog.get_logger(__name__)
 
@@ -97,21 +97,68 @@ def _notify_slack(webhook_url: str, run_id: int, brief_tema: str) -> None:
         logger.warning("slack.notify_error", error=str(exc))
 
 
-def _publish_via_go(result: dict, brief: Brief, idempotency_key: str | None, run: AgentRun) -> None:
-    """POST al sidecar Go `/publish`; si responde OK, sustituye `publish_result` en `result` (sin re-ejecutar agentes)."""
+_OAUTH_PROVIDER_MAP = {
+    "instagram": "meta",
+    "ig": "meta",
+    "facebook": "meta",
+    "linkedin": "linkedin",
+}
+
+
+def _publish_via_go(
+    result: dict,
+    brief: Brief,
+    idempotency_key: str | None,
+    run: AgentRun,
+    db: Session,
+) -> None:
+    """POST al sidecar Go `/publish` con token OAuth extraído de BD.
+
+    Pasa access_token + account_id para que Go llame a la API oficial sin intermediarios.
+    Si Go no está disponible o no hay token, el resultado queda sin publish_result
+    y el caller puede aplicar fallback.
+    """
     settings = get_settings()
+    platform = brief.red_social.lower()
+    oauth_provider = _OAUTH_PROVIDER_MAP.get(platform)
+
+    access_token = ""
+    account_id = ""
+
+    if oauth_provider:
+        token_row = db.execute(
+            select(OAuthToken).where(
+                OAuthToken.tenant_id == run.tenant_id,
+                OAuthToken.provider == oauth_provider,
+            )
+        ).scalar_one_or_none()
+        if token_row:
+            access_token = token_row.access_token
+            account_id = token_row.account_id
+
+    # Sustituye localhost por la URL pública (Meta exige HTTPS accesible externamente)
+    image_url = result["design"]["image_url"]
+    public_base = settings.public_image_base_url.rstrip("/")
+    if image_url.startswith("http://localhost:8000"):
+        image_url = image_url.replace("http://localhost:8000", public_base, 1)
+
     try:
         payload = {
             "platform": brief.red_social,
             "copy": result["copy"]["copy_final"],
-            "image_url": result["design"]["image_url"],
-            "idempotency_key": idempotency_key,
+            "image_url": image_url,
+            "idempotency_key": idempotency_key or "",
             "content_format": getattr(run, "content_format", None) or "feed",
+            "access_token": access_token,
+            "account_id": account_id,
         }
-        with httpx.Client(timeout=15) as client:
+        with httpx.Client(timeout=60) as client:
             published = client.post(f"{settings.go_publisher_url}/publish", json=payload)
         if published.is_success:
             result["publish_result"] = published.json()
+            logger.info("go_publisher.ok", platform=brief.red_social)
+        else:
+            logger.warning("go_publisher.non_2xx", status=published.status_code, body=published.text[:200])
     except Exception as exc:  # noqa: BLE001
         run.error_message = f"go_publisher_error: {exc}"
         logger.warning("go_publisher.error", error=str(exc))
@@ -216,7 +263,7 @@ def execute_pipeline(
     )
 
     if publish and result.get("quality", {}).get("approved", False):
-        _publish_via_go(result, brief, idempotency_key, run)
+        _publish_via_go(result, brief, idempotency_key, run, db)
 
     _persist_result(db, run, result, brief.red_social)
     db.commit()
@@ -243,19 +290,23 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
     if not result.get("quality", {}).get("approved", False):
         raise ValueError("QA rechazó el contenido; no se puede publicar")
 
-    # Publicar usando los datos ya generados (no se vuelven a gastar créditos de LLM/imagen).
-    copy = CopyOutput(**result["copy"])
-    design = DesignOutput(**result["design"])
+    # 1er intento: sidecar Go con token OAuth de BD
+    _publish_via_go(result, brief, run.idempotency_key, run, db)
 
-    pipeline = MarketingPipeline()
-    publish_result = pipeline.publisher.run(
-        brief.red_social,
-        copy,
-        design,
-        idempotency_key=run.idempotency_key,
-        content_format=_normalize_content_format(getattr(run, "content_format", None)),
-    )
-    result["publish_result"] = publish_result.model_dump()
+    # Fallback: publicador Python si Go no respondió o no hay token
+    if not result.get("publish_result"):
+        logger.warning("approve_run.go_fallback", run_id=run_id)
+        copy = CopyOutput(**result["copy"])
+        design = DesignOutput(**result["design"])
+        pipeline = MarketingPipeline()
+        publish_out = pipeline.publisher.run(
+            brief.red_social,
+            copy,
+            design,
+            idempotency_key=run.idempotency_key,
+            content_format=_normalize_content_format(getattr(run, "content_format", None)),
+        )
+        result["publish_result"] = publish_out.model_dump()
 
     run.approved_at = datetime.utcnow()
     run.approved_by = approved_by

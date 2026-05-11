@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Integrations from "./Integrations";
 
 // ---------------------------------------------------------------------------
 // API key — almacenada en sessionStorage (no persiste entre sesiones)
@@ -144,6 +145,9 @@ export default function App() {
           </div>
         )}
       </section>
+
+      {/* Integraciones OAuth */}
+      <Integrations apiKey={apiKey} />
 
       {/* Estado redes (sin secretos) */}
       <section className="card">

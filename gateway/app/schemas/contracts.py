@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,8 @@ class RunRequest(BaseModel):
     publish: bool = True
     requires_approval: bool = True
     idempotency_key: str | None = None
+    # Instagram/Meta: story = historia; linkedin/uploadpost suelen publicar como post de feed
+    content_format: Literal["feed", "story"] = "feed"
 
 
 class RunResponse(BaseModel):
@@ -41,6 +44,20 @@ class JobStatusResponse(BaseModel):
     approved_at: datetime | None = None
     approved_by: str | None = None
     result: dict | None = None
+    content_format: str = "feed"
+
+
+class SocialPublishStatusResponse(BaseModel):
+    """Estado de configuración para publicar (sin secretos)."""
+
+    social_provider: str
+    linkedin_ready: bool
+    uploadpost_ready: bool
+    meta_instagram_ready: bool
+    hint: str = (
+        "Configura SOCIAL_PROVIDER y las credenciales en .env. "
+        "Instagram feed/historia requieren cuenta profesional + Graph API (meta)."
+    )
 
 
 class ApproveRequest(BaseModel):

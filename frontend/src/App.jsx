@@ -50,22 +50,21 @@ export default function App() {
     objetivo: "branding",
     tono_marca: "profesional y cercano",
   });
-  const [history, setHistory] = useState([]);
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [socialStatus, setSocialStatus] = useState(null);
+  const [contentFormat, setContentFormat] = useState("feed");
 
-  const loadHistory = async () => {
+  const loadSocialStatus = async () => {
     try {
-      const items = await api("/runs");
-      setHistory(items);
-    } catch (e) {
-      setError(e.message);
+      const s = await api("/social/publish-status");
+      setSocialStatus(s);
+    } catch {
+      setSocialStatus(null);
     }
   };
 
   useEffect(() => {
     loadHistory();
+    loadSocialStatus();
   }, [apiKey]);
 
   const applyKey = () => {
@@ -85,6 +84,7 @@ export default function App() {
         publish: true,
         requires_approval: true,         // human-in-the-loop activo por defecto
         idempotency_key: `${brief.id}-${Date.now()}`,
+        content_format: contentFormat,
       };
       const run = await api(asyncMode ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -145,6 +145,29 @@ export default function App() {
         )}
       </section>
 
+      {/* Estado redes (sin secretos) */}
+      <section className="card">
+        <h2>Publicación en redes</h2>
+        {socialStatus ? (
+          <ul style={{ fontSize: "0.9rem" }}>
+            <li><strong>Proveedor activo:</strong> <code>{socialStatus.social_provider}</code></li>
+            <li>LinkedIn listo: {socialStatus.linkedin_ready ? "sí" : "no"}</li>
+            <li>Upload-Post listo: {socialStatus.uploadpost_ready ? "sí" : "no"}</li>
+            <li>Meta / Instagram (credenciales): {socialStatus.meta_instagram_ready ? "sí" : "no"}</li>
+          </ul>
+        ) : (
+          <p style={{ color: "#888" }}>No se pudo cargar el estado (¿API caída?).</p>
+        )}
+        <p style={{ fontSize: "0.8rem", color: "#888" }}>{socialStatus?.hint}</p>
+        <label>
+          Formato de publicación
+          <select value={contentFormat} onChange={(e) => setContentFormat(e.target.value)}>
+            <option value="feed">Post en feed (reel/post clásico)</option>
+            <option value="story">Historia (Instagram con SOCIAL_PROVIDER=meta)</option>
+          </select>
+        </label>
+      </section>
+
       {/* Formulario */}
       <section className="card">
         <h2>Nuevo Brief</h2>
@@ -185,6 +208,9 @@ export default function App() {
           {history.map((item) => (
             <li key={item.run_id} style={{ marginBottom: "0.5rem" }}>
               <strong>#{item.run_id}</strong> — <code>{item.status}</code>
+              {item.content_format && (
+                <span style={{ marginLeft: "0.5rem", color: "#666" }}>({item.content_format})</span>
+              )}
               {item.approved_by && (
                 <span style={{ marginLeft: "0.5rem", color: "#888" }}>
                   (por {item.approved_by})

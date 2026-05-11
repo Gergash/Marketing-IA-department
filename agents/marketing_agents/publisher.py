@@ -9,11 +9,14 @@ class PublisherAgent:
         copy: CopyOutput,
         design: DesignOutput,
         idempotency_key: str | None = None,
+        *,
+        content_format: str = "feed",
     ) -> PublishOutput:
         result = publish_post(
             platform=platform,
             copy_text=copy.copy_final,
             image_url=design.image_url,
             idempotency_key=idempotency_key,
+            content_format=content_format,
         )
         return PublishOutput(**result)

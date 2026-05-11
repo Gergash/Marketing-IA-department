@@ -6,6 +6,7 @@ from .contracts import (
     JobStatusResponse,
     RunRequest,
     RunResponse,
+    SocialPublishStatusResponse,
 )
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "RunRequest",
     "RunResponse",
     "JobStatusResponse",
+    "SocialPublishStatusResponse",
     "CampaignScheduleCreate",
     "CampaignScheduleResponse",
 ]

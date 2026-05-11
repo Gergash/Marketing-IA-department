@@ -145,7 +145,7 @@ python -m alembic upgrade head
 
 En **Windows (PowerShell)**, si `alembic` no se reconoce, usa siempre `python -m alembic ...` (o `.\.venv\Scripts\python.exe -m alembic ...` con tu venv).
 
-Esto crea todas las tablas (`briefs`, `agent_runs`, `generated_assets`, `publications`, `campaign_schedules`).
+Esto crea todas las tablas y columnas versionadas (`briefs`, `agent_runs` incluye `content_format` feed/story, `generated_assets`, `publications`, `campaign_schedules`).
 
 ### Iniciar la API contra Postgres
 
@@ -246,6 +246,19 @@ LINKEDIN_ACCESS_TOKEN=...
 SOCIAL_PROVIDER=uploadpost
 UPLOADPOST_API_KEY=...
 ```
+
+**Meta / Instagram Business** (publicación en feed o **historia** con Graph API; imagen en URL HTTPS pública):
+
+```env
+SOCIAL_PROVIDER=meta
+META_PAGE_ACCESS_TOKEN=...
+INSTAGRAM_BUSINESS_ACCOUNT_ID=...
+# Opcional: META_APP_ID, META_APP_SECRET, GRAPH_API_VERSION=v21.0
+```
+
+- Comprueba credenciales sin exponer secretos: `GET /api/social/publish-status`.
+- Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"` o `"story"`. **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional. LinkedIn hoy publica solo post de texto (historia no soportada en API UGC usada aquí).
+- Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (Meta descarga la imagen desde tu servidor o CDN).
 
 Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.
 

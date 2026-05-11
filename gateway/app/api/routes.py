@@ -21,6 +21,7 @@ from gateway.app.schemas.contracts import (
     RejectRequest,
     RunRequest,
     RunResponse,
+    SocialPublishStatusResponse,
 )
 from gateway.app.services.pipeline_service import (
     approve_run,
@@ -32,6 +33,23 @@ from workers.celery_app import celery_app
 from workers.tasks import execute_pipeline_task
 
 router = APIRouter(prefix="/api")
+
+
+@router.get("/social/publish-status", response_model=SocialPublishStatusResponse)
+def social_publish_status(
+    tenant_id: str = Depends(require_auth),
+) -> SocialPublishStatusResponse:
+    """Indica qué integraciones de publicación están configuradas (sin exponer secretos)."""
+    _ = tenant_id
+    s = get_settings()
+    return SocialPublishStatusResponse(
+        social_provider=s.social_provider,
+        linkedin_ready=bool(s.linkedin_access_token.strip()),
+        uploadpost_ready=bool(s.uploadpost_api_key.strip()),
+        meta_instagram_ready=bool(
+            s.meta_page_access_token.strip() and s.instagram_business_account_id.strip()
+        ),
+    )
 
 
 @router.get("/health")
@@ -103,6 +121,7 @@ def run_pipeline_sync(
         tenant_id=tenant_id,
         run_mode="sync",
         idempotency_key=payload.idempotency_key,
+        content_format=payload.content_format,
     )
     try:
         result = execute_pipeline(
@@ -134,6 +153,7 @@ def run_pipeline_async(
         tenant_id=tenant_id,
         run_mode="async",
         idempotency_key=payload.idempotency_key,
+        content_format=payload.content_format,
     )
     try:
         execute_pipeline_task.apply_async(
@@ -217,6 +237,7 @@ def get_run_status(
         error_message=run.error_message,
         approved_at=run.approved_at,
         approved_by=run.approved_by,
+        content_format=getattr(run, "content_format", "feed") or "feed",
     )
 
 
@@ -236,6 +257,7 @@ def list_runs(
             error_message=run.error_message,
             approved_at=run.approved_at,
             approved_by=run.approved_by,
+            content_format=getattr(run, "content_format", "feed") or "feed",
         )
         for run in runs
     ]

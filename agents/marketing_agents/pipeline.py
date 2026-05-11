@@ -25,6 +25,7 @@ class MarketingPipeline:
         *,
         publish: bool,
         idempotency_key: str | None = None,
+        content_format: str = "feed",
     ) -> dict:
         strategy = self.strategist.run(brief)
         gout = invoke_copy_qa(
@@ -46,6 +47,7 @@ class MarketingPipeline:
                 copy,
                 design,
                 idempotency_key=idempotency_key,
+                content_format=content_format,
             )
 
         return {

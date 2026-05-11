@@ -31,6 +31,8 @@ class AgentRun(Base):
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # feed | story — Instagram/Meta; otras redes suelen ignorar o mapear a feed
+    content_format: Mapped[str] = mapped_column(String(16), default="feed")
     # Human-in-the-loop: quién y cuándo aprobó (o rechazó) el run
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)

@@ -101,6 +101,7 @@ def _publish_via_go(result: dict, brief: Brief, idempotency_key: str | None, run
             "copy": result["copy"]["copy_final"],
             "image_url": result["design"]["image_url"],
             "idempotency_key": idempotency_key,
+            "content_format": getattr(run, "content_format", None) or "feed",
         }
         with httpx.Client(timeout=15) as client:
             published = client.post(f"{settings.go_publisher_url}/publish", json=payload)
@@ -115,6 +116,11 @@ def _publish_via_go(result: dict, brief: Brief, idempotency_key: str | None, run
 # API pública
 # ---------------------------------------------------------------------------
 
+def _normalize_content_format(value: str | None) -> str:
+    v = (value or "feed").lower()
+    return v if v in ("feed", "story") else "feed"
+
+
 def create_run(
     db: Session,
     *,
@@ -122,6 +128,7 @@ def create_run(
     tenant_id: str,
     run_mode: str,
     idempotency_key: str | None,
+    content_format: str = "feed",
 ) -> AgentRun:
     run = AgentRun(
         tenant_id=tenant_id,
@@ -129,6 +136,7 @@ def create_run(
         run_mode=run_mode,
         status="queued",
         idempotency_key=idempotency_key,
+        content_format=_normalize_content_format(content_format),
     )
     db.add(run)
     db.commit()
@@ -172,11 +180,17 @@ def execute_pipeline(
 
     pipeline = MarketingPipeline()
     brief_in = _brief_input(brief)
+    content_format = _normalize_content_format(getattr(run, "content_format", None))
 
     if requires_approval:
         # Human-in-the-loop: generar estrategia + copy + diseño + QA,
         # pero NO publicar. Esperar aprobación humana.
-        result = pipeline.run(brief_in, publish=False, idempotency_key=idempotency_key)
+        result = pipeline.run(
+            brief_in,
+            publish=False,
+            idempotency_key=idempotency_key,
+            content_format=content_format,
+        )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
         db.add(run)
@@ -186,7 +200,12 @@ def execute_pipeline(
         return result
 
     # Sin aprobación requerida: ejecutar y publicar directamente.
-    result = pipeline.run(brief_in, publish=publish, idempotency_key=idempotency_key)
+    result = pipeline.run(
+        brief_in,
+        publish=publish,
+        idempotency_key=idempotency_key,
+        content_format=content_format,
+    )
 
     if publish and result.get("quality", {}).get("approved", False):
         _publish_via_go(result, brief, idempotency_key, run)
@@ -222,7 +241,11 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
 
     pipeline = MarketingPipeline()
     publish_result = pipeline.publisher.run(
-        brief.red_social, copy, design, idempotency_key=run.idempotency_key
+        brief.red_social,
+        copy,
+        design,
+        idempotency_key=run.idempotency_key,
+        content_format=_normalize_content_format(getattr(run, "content_format", None)),
     )
     result["publish_result"] = publish_result.model_dump()
 

@@ -32,3 +32,4 @@ class PublishOutput(BaseModel):
     status: str
     publication_url: str
     platform_post_id: str
+    content_format: str = "feed"

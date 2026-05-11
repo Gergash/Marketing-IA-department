@@ -17,3 +17,4 @@ anthropic
 openai
 pytest
 langgraph>=0.2.0
+pillow

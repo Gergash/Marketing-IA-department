@@ -17,6 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """Añade content_format (feed|story) para publicación Instagram/Meta u otros canales."""
     with op.batch_alter_table("agent_runs") as batch_op:
         batch_op.add_column(
             sa.Column("content_format", sa.String(length=16), nullable=False, server_default="feed")
@@ -24,5 +25,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Elimina la columna content_format."""
     with op.batch_alter_table("agent_runs") as batch_op:
         batch_op.drop_column("content_format")

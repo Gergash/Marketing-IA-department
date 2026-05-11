@@ -1,7 +1,10 @@
+"""Pruebas del pipeline completo (sin publicación y con mock de publicación)."""
+
 from agents.marketing_agents import BriefInput, MarketingPipeline
 
 
 def test_pipeline_without_publish() -> None:
+    """El pipeline debe producir estrategia, copy, diseño y traza QA sin llamar al publicador."""
     pipeline = MarketingPipeline()
     brief = BriefInput(
         tema="automatizacion de contenido",
@@ -19,6 +22,7 @@ def test_pipeline_without_publish() -> None:
 
 
 def test_pipeline_with_publish() -> None:
+    """Con publish=True y proveedor mock, debe existir `publish_result` no nulo."""
     pipeline = MarketingPipeline()
     brief = BriefInput(
         tema="agentes IA para marketing",

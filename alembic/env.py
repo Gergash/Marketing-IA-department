@@ -1,3 +1,5 @@
+"""Entorno de migraciones Alembic: carga modelos y ejecuta upgrade online/offline."""
+
 import os
 from logging.config import fileConfig
 
@@ -26,6 +28,7 @@ def _db_url() -> str:
 
 
 def run_migrations_offline() -> None:
+    """Modo Alembic sin conexión activa: emite SQL a partir de la URL configurada."""
     url = _db_url()
     context.configure(
         url=url,
@@ -39,6 +42,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Conecta a la BD, asocia la conexión al contexto Alembic y aplica migraciones pendientes."""
     cfg = config.get_section(config.config_ini_section, {})
     cfg["sqlalchemy.url"] = _db_url()
     connectable = engine_from_config(

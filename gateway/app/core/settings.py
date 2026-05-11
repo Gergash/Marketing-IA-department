@@ -1,9 +1,13 @@
+"""Carga de configuración desde entorno y `.env` (pydantic-settings)."""
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Configuración cargada desde variables de entorno y archivo `.env` (pydantic-settings)."""
+
     # Core
     app_env: str = "dev"
     log_level: str = "INFO"
@@ -60,4 +64,5 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    """Devuelve la instancia única de configuración (memoizada)."""
     return Settings()

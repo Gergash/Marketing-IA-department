@@ -1,3 +1,5 @@
+"""Pipeline principal: orquestación lineal + subgrafo LangGraph copy/QA."""
+
 from .copywriter import CopywriterAgent
 from .designer import DesignerAgent
 from .graph_copy_qa import build_copy_qa_graph, invoke_copy_qa
@@ -11,6 +13,7 @@ class MarketingPipeline:
     """Orquestación híbrida: tramo lineal en Python + bucle Copy/QA en LangGraph."""
 
     def __init__(self, *, max_copy_qa_attempts: int = 3) -> None:
+        """Instancia agentes y compila una vez el subgrafo LangGraph copy/QA con el tope de reintentos dado."""
         self.strategist = ContentStrategistAgent()
         self.copywriter = CopywriterAgent()
         self.designer = DesignerAgent()
@@ -27,6 +30,7 @@ class MarketingPipeline:
         idempotency_key: str | None = None,
         content_format: str = "feed",
     ) -> dict:
+        """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable."""
         strategy = self.strategist.run(brief)
         gout = invoke_copy_qa(
             self._copy_qa_graph,

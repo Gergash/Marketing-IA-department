@@ -1,3 +1,5 @@
+"""Punto de entrada FastAPI: CORS, rutas, métricas Prometheus, estáticos y ciclo de vida BD/scheduler."""
+
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -32,6 +34,7 @@ app.mount("/static", StaticFiles(directory=str(_static_dir.parent)), name="stati
 
 
 def _init_db() -> None:
+    """Inicializa o valida la BD: SQLite crea tablas y aplica parches; Postgres solo comprueba conexión (esquema vía Alembic)."""
     dialect = engine.dialect.name
     if dialect == "sqlite":
         # Dev rápido: create_all + parche de columnas (sin Alembic).
@@ -48,10 +51,12 @@ def _init_db() -> None:
 
 @app.on_event("startup")
 def on_startup() -> None:
+    """Al arrancar la app: BD y scheduler en segundo plano."""
     _init_db()
     start_scheduler()
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    """Al apagar: detiene el scheduler de campañas."""
     stop_scheduler()

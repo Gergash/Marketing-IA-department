@@ -1,3 +1,5 @@
+"""Generación de imágenes: Stable Diffusion (A1111), DALL·E, Canva placeholder y dummy."""
+
 from __future__ import annotations
 
 import base64
@@ -50,12 +52,7 @@ def _stable_diffusion(
     overlay_text: str | None = None,
     overlay_cta: str | None = None,
 ) -> str:
-    """
-    Calls Automatic1111 / Forge WebUI REST API.
-    Saves image to static/images/ and returns local URL.
-    If overlay_text is provided, Pillow composites the marketing copy and CTA
-    on top of the generated background — SD handles the scene, Pillow the text.
-    """
+    """POST a txt2img de A1111/Forge, decodifica PNG, opcionalmente superpone texto y guarda bajo `/static/images/`."""
     import httpx
 
     payload: dict = {
@@ -97,7 +94,7 @@ def _stable_diffusion(
 
 
 def _add_text_overlay(img_bytes: bytes, copy_text: str, cta: str | None) -> bytes:
-    """Composites marketing copy and CTA over the SD-generated background."""
+    """Dibuja franja inferior semitransparente, copy envuelto y pastilla de CTA con Pillow."""
     from PIL import Image, ImageDraw, ImageFont
 
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
@@ -143,6 +140,7 @@ def _add_text_overlay(img_bytes: bytes, copy_text: str, cta: str | None) -> byte
 
 
 def _dalle(prompt: str, api_key: str) -> str:
+    """Genera imagen con DALL·E 3 y devuelve la URL remota de OpenAI."""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
@@ -162,6 +160,7 @@ def _dalle(prompt: str, api_key: str) -> str:
 
 
 def _canva(prompt: str, settings) -> str:
+    """Placeholder: Canva requiere OAuth; devuelve placeholder si no está implementado."""
     if not settings.canva_client_id:
         logger.warning("image.canva_not_configured")
         return _placeholder(prompt)
@@ -170,5 +169,6 @@ def _canva(prompt: str, settings) -> str:
 
 
 def _placeholder(prompt: str) -> str:
+    """URL de imagen sintética (dummyimage) para desarrollo sin GPU ni APIs."""
     text = prompt[:50].replace(" ", "+")
     return f"https://dummyimage.com/{_SD_WIDTH}x{_SD_HEIGHT}/1a202c/ffffff&text={text}"

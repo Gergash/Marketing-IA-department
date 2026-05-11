@@ -1,3 +1,5 @@
+"""Agente copywriter: genera texto de post desde la estrategia (LLM o stub)."""
+
 import structlog
 
 from .llm import get_llm
@@ -27,12 +29,15 @@ Rules:
 
 
 class CopywriterAgent:
+    """Genera el texto final del post a partir de la estrategia (LLM o stub); admite revisiones por feedback de QA."""
+
     def run(
         self,
         strategy: StrategyOutput,
         *,
         qa_feedback: list[str] | None = None,
     ) -> CopyOutput:
+        """Produce `CopyOutput` vía LLM configurado o `_stub` si no hay LLM o falla la llamada."""
         llm = get_llm()
         if llm is None:
             logger.warning("copywriter.using_stub", reason="no_llm_configured")
@@ -57,6 +62,7 @@ class CopywriterAgent:
             return self._stub(strategy, qa_feedback=qa_feedback)
 
     def _stub(self, strategy: StrategyOutput, *, qa_feedback: list[str] | None = None) -> CopyOutput:
+        """Salida determinista de desarrollo; aplica transformaciones simples si hay feedback de QA."""
         copy_text = (
             f"{strategy.hook}\n\n"
             f"{strategy.mensaje_base}\n"

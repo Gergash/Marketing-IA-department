@@ -17,12 +17,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """Añade approved_at y approved_by a agent_runs para human-in-the-loop."""
     with op.batch_alter_table("agent_runs") as batch_op:
         batch_op.add_column(sa.Column("approved_at", sa.DateTime(), nullable=True))
         batch_op.add_column(sa.Column("approved_by", sa.String(length=128), nullable=True))
 
 
 def downgrade() -> None:
+    """Revierte columnas de aprobación en agent_runs."""
     with op.batch_alter_table("agent_runs") as batch_op:
         batch_op.drop_column("approved_by")
         batch_op.drop_column("approved_at")

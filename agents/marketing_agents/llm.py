@@ -1,3 +1,5 @@
+"""Abstracción de LLM: Ollama, Anthropic y OpenAI con salida JSON parseada."""
+
 from __future__ import annotations
 
 import json
@@ -6,13 +8,15 @@ from typing import Any
 
 
 class OllamaLLM:
-    """Llama3/Mistral (u otro modelo) via Ollama REST API local."""
+    """Cliente LLM local vía API HTTP de Ollama (`/api/chat` con salida JSON)."""
 
     def __init__(self, base_url: str, model: str = "llama3") -> None:
+        """Guarda URL base del servidor Ollama y nombre del modelo."""
         self._base_url = base_url.rstrip("/")
         self._model = model
 
     def complete_json(self, system: str, user: str, *, max_tokens: int = 1024) -> dict[str, Any]:
+        """Pide una respuesta JSON al modelo y la parsea como dict."""
         import httpx
 
         payload = {
@@ -35,12 +39,16 @@ class OllamaLLM:
 
 
 class AnthropicLLM:
+    """Cliente Messages API de Anthropic con respuesta forzada a JSON parseable."""
+
     def __init__(self, api_key: str, model: str = "claude-haiku-4-5-20251001") -> None:
+        """Inicializa el cliente oficial `anthropic` con la clave y el modelo."""
         import anthropic
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
     def complete_json(self, system: str, user: str, *, max_tokens: int = 1024) -> dict[str, Any]:
+        """Envía system+user y devuelve el primer bloque de texto como JSON."""
         import anthropic
         msg = self._client.messages.create(
             model=self._model,
@@ -58,12 +66,16 @@ class AnthropicLLM:
 
 
 class OpenAILLM:
+    """Cliente Chat Completions de OpenAI con `response_format` json_object."""
+
     def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
+        """Crea el cliente OpenAI con API key y modelo de chat."""
         from openai import OpenAI
         self._client = OpenAI(api_key=api_key)
         self._model = model
 
     def complete_json(self, system: str, user: str, *, max_tokens: int = 1024) -> dict[str, Any]:
+        """Obtiene un objeto JSON del asistente y lo parsea."""
         resp = self._client.chat.completions.create(
             model=self._model,
             max_tokens=max_tokens,
@@ -77,13 +89,14 @@ class OpenAILLM:
 
 
 def _parse_json(text: str) -> dict[str, Any]:
+    """Quita fences Markdown opcionales y decodifica JSON estricto."""
     cleaned = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
     cleaned = re.sub(r"```\s*$", "", cleaned.strip(), flags=re.MULTILINE)
     return json.loads(cleaned.strip())
 
 
 def get_llm() -> OllamaLLM | AnthropicLLM | OpenAILLM | None:
-    """Return configured LLM client, or None to fall back to stub output."""
+    """Instancia el cliente según `LLM_PROVIDER` y claves en settings; `None` activa stubs en agentes."""
     from gateway.app.core.settings import get_settings
     s = get_settings()
     if s.llm_provider == "ollama":

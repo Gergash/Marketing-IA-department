@@ -1,3 +1,5 @@
+"""Entidades persistentes: briefs, ejecuciones, assets, publicaciones y campañas programadas."""
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
@@ -7,6 +9,8 @@ from gateway.app.db.session import Base
 
 
 class Brief(Base):
+    """Brief de campaña: tema, audiencia, canal, objetivo y tono por tenant."""
+
     __tablename__ = "briefs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -21,6 +25,8 @@ class Brief(Base):
 
 
 class AgentRun(Base):
+    """Una ejecución del pipeline: estado, resultado JSON, idempotencia y aprobación humana."""
+
     __tablename__ = "agent_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -45,6 +51,8 @@ class AgentRun(Base):
 
 
 class GeneratedAsset(Base):
+    """Imagen generada vinculada a un run (URL servida y prompt usado)."""
+
     __tablename__ = "generated_assets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -56,6 +64,8 @@ class GeneratedAsset(Base):
 
 
 class Publication(Base):
+    """Registro de publicación en red social tras un run exitoso."""
+
     __tablename__ = "publications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -69,6 +79,8 @@ class Publication(Base):
 
 
 class CampaignSchedule(Base):
+    """Programación recurrente (expresión cron) para futuras campañas por tenant."""
+
     __tablename__ = "campaign_schedules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

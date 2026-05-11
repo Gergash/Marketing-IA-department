@@ -4,6 +4,7 @@ from sqlalchemy import Engine, text
 
 
 def apply_lightweight_migrations(engine: Engine) -> None:
+    """Añade columnas faltantes en SQLite/Postgres sin migración Alembic (solo desarrollo / parches)."""
     dialect = engine.dialect.name
     with engine.begin() as conn:
         if dialect == "sqlite":

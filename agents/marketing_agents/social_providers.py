@@ -1,3 +1,5 @@
+"""Integraciones de publicación en redes (mock, LinkedIn, Upload-Post, Meta/Instagram)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -15,7 +17,7 @@ def publish_post(
     *,
     content_format: str = "feed",
 ) -> dict:
-    """Route to the configured social provider. Returns publish result dict."""
+    """Enruta la publicación según `SOCIAL_PROVIDER` en settings (LinkedIn, Upload-Post, Meta/IG o mock)."""
     from gateway.app.core.settings import get_settings
     s = get_settings()
     cf = (content_format or "feed").lower()
@@ -51,6 +53,7 @@ def publish_post(
 
 
 def _meta_instagram(copy_text: str, image_url: str, s, *, content_format: str) -> dict:
+    """Crea contenedor de media y publica en Instagram vía Graph API (post con caption o historia STORIES)."""
     import httpx
 
     ig_id = s.instagram_business_account_id.strip()
@@ -117,6 +120,7 @@ def _mock(
     idempotency_key: str | None,
     content_format: str,
 ) -> dict:
+    """Simula publicación con URL y id determinísticos (desarrollo sin APIs reales)."""
     raw = f"{platform}:{copy_text}:{image_url}:{idempotency_key or ''}:{content_format}"
     post_id = hashlib.sha256(raw.encode()).hexdigest()[:16]
     kind = "stories" if content_format == "story" else "posts"
@@ -139,6 +143,7 @@ def _linkedin(
     person_urn: str,
     content_format: str,
 ) -> dict:
+    """Publica un UGC Post de solo texto en LinkedIn (la imagen no se adjunta en este flujo simplificado)."""
     import httpx
 
     if not person_urn:
@@ -180,6 +185,7 @@ def _linkedin(
 
 
 def _linkedin_fetch_urn(token: str) -> str:
+    """Obtiene el URN `urn:li:person:{id}` del miembro autenticado para usar como autor del post."""
     import httpx
     with httpx.Client(timeout=10) as client:
         r = client.get(
@@ -204,6 +210,7 @@ def _uploadpost(
     *,
     content_format: str,
 ) -> dict:
+    """Publica vía API unificada upload-post.com (texto + media opcional por URL)."""
     import httpx
 
     # Platform slug mapping (Upload-Post uses lowercase platform names)

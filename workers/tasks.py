@@ -1,3 +1,5 @@
+"""Tareas Celery ejecutadas por workers (pipeline asíncrono y healthcheck)."""
+
 import structlog
 from celery import Task
 
@@ -9,6 +11,8 @@ logger = structlog.get_logger(__name__)
 
 
 class BaseTaskWithRetry(Task):
+    """Tarea Celery base con reintentos exponenciales ante cualquier excepción (hasta 3 veces)."""
+
     autoretry_for = (Exception,)
     retry_backoff = True
     retry_kwargs = {"max_retries": 3}
@@ -22,6 +26,7 @@ def execute_pipeline_task(
     requires_approval: bool,
     idempotency_key: str | None,
 ) -> dict:
+    """Tarea asíncrona: abre sesión BD y ejecuta `execute_pipeline` con los mismos flags que en la API."""
     with SessionLocal() as db:
         logger.info("execute_pipeline_task.start", run_id=run_id)
         result = execute_pipeline(
@@ -37,5 +42,5 @@ def execute_pipeline_task(
 
 @celery_app.task(name="workers.healthcheck_task")
 def healthcheck_task() -> dict:
-    """Lightweight task used by liveness/readiness checks."""
+    """Tarea mínima para comprobar que el worker puede consumir y ejecutar jobs."""
     return {"status": "ok"}

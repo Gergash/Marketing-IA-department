@@ -36,6 +36,7 @@ def build_copy_qa_graph(
     """Compila el grafo copy -> QA -> (revisar | fin). `max_attempts` va en el `invoke`."""
 
     def copywriter_node(state: CopyQAState) -> dict:
+        """Nodo LangGraph: invoca al copywriter, opcionalmente con feedback del QA previo, y registra evento."""
         q_prev = state.get("quality")
         feedback = q_prev.reasons if q_prev is not None and not q_prev.approved else None
         prev = state.get("attempt", 0)
@@ -49,6 +50,7 @@ def build_copy_qa_graph(
         return {"copy": copy, "attempt": prev + 1, "events": [evt]}
 
     def qa_node(state: CopyQAState) -> dict:
+        """Nodo LangGraph: valida el copy actual y añade evento de aprobación o motivos de rechazo."""
         q = guard.validate(state["copy"].copy_final, state["brief"].tono_marca)
         evt = {
             "node": "qa",
@@ -58,6 +60,7 @@ def build_copy_qa_graph(
         return {"quality": q, "events": [evt]}
 
     def route_after_qa(state: CopyQAState) -> str:
+        """Arista condicional: terminar, o volver al copywriter si quedan intentos y el QA falló."""
         if state["quality"].approved:
             return "finish"
         if state["attempt"] < state["max_attempts"]:
@@ -84,6 +87,7 @@ def invoke_copy_qa(
     strategy: StrategyOutput,
     max_attempts: int,
 ) -> CopyQAState:
+    """Ejecuta el grafo compilado con estado inicial (brief, strategy, contador de intentos y eventos vacíos)."""
     return compiled.invoke(
         {
             "brief": brief,

@@ -1,3 +1,5 @@
+"""Servicio de dominio: creación de runs, ejecución del pipeline de agentes, aprobación y persistencia."""
+
 from __future__ import annotations
 
 import json
@@ -21,6 +23,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 def _brief_input(brief: Brief) -> BriefInput:
+    """Convierte la entidad ORM `Brief` al DTO `BriefInput` del pipeline de agentes."""
     return BriefInput(
         tema=brief.tema,
         publico_objetivo=brief.publico_objetivo,
@@ -32,6 +35,7 @@ def _brief_input(brief: Brief) -> BriefInput:
 
 
 def _persist_result(db: Session, run: AgentRun, result: dict, platform: str) -> None:
+    """Guarda JSON del resultado, marca run completado y persiste asset gráfico y publicación si aplica."""
     run.result_json = json.dumps(result, ensure_ascii=True)
     run.status = "completed"
     db.add(run)
@@ -61,6 +65,7 @@ def _persist_result(db: Session, run: AgentRun, result: dict, platform: str) -> 
 
 
 def _notify_slack(webhook_url: str, run_id: int, brief_tema: str) -> None:
+    """Envía un mensaje a Slack cuando un run queda pendiente de aprobación humana."""
     if not webhook_url:
         return
     payload = {
@@ -93,7 +98,7 @@ def _notify_slack(webhook_url: str, run_id: int, brief_tema: str) -> None:
 
 
 def _publish_via_go(result: dict, brief: Brief, idempotency_key: str | None, run: AgentRun) -> None:
-    """Intenta publicar mediante el microservicio Go. Actualiza result in-place."""
+    """POST al sidecar Go `/publish`; si responde OK, sustituye `publish_result` en `result` (sin re-ejecutar agentes)."""
     settings = get_settings()
     try:
         payload = {
@@ -117,6 +122,7 @@ def _publish_via_go(result: dict, brief: Brief, idempotency_key: str | None, run
 # ---------------------------------------------------------------------------
 
 def _normalize_content_format(value: str | None) -> str:
+    """Normaliza el formato de publicación a `feed` o `story` (valores desconocidos → feed)."""
     v = (value or "feed").lower()
     return v if v in ("feed", "story") else "feed"
 
@@ -130,6 +136,7 @@ def create_run(
     idempotency_key: str | None,
     content_format: str = "feed",
 ) -> AgentRun:
+    """Inserta un `AgentRun` en cola con modo sync/async, clave de idempotencia y formato feed/story."""
     run = AgentRun(
         tenant_id=tenant_id,
         brief_id=brief_id,
@@ -152,6 +159,7 @@ def execute_pipeline(
     requires_approval: bool,
     idempotency_key: str | None,
 ) -> dict:
+    """Orquesta el pipeline completo: deduplicación, agentes, aprobación humana opcional, persistencia y publicación."""
     run = db.get(AgentRun, run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")
@@ -217,7 +225,7 @@ def execute_pipeline(
 
 
 def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict:
-    """Aprueba un run en estado pending_approval y ejecuta la publicación."""
+    """Aprueba un run en `pending_approval`, publica con el mismo `content_format` guardado y persiste resultado."""
     run = db.get(AgentRun, run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")
@@ -259,7 +267,7 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
 
 
 def reject_run(db: Session, run_id: int, *, reason: str = "", approved_by: str = "human") -> None:
-    """Rechaza un run en estado pending_approval."""
+    """Marca el run como rechazado y opcionalmente guarda el motivo en `error_message`."""
     run = db.get(AgentRun, run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")

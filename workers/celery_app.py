@@ -1,3 +1,5 @@
+"""Aplicación Celery: broker Redis, sin backend de resultados (estado en PostgreSQL)."""
+
 import sys
 
 from celery import Celery

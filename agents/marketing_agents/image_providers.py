@@ -169,6 +169,33 @@ def _canva(prompt: str, settings) -> str:
 
 
 def _placeholder(prompt: str) -> str:
-    """URL de imagen sintética (dummyimage) para desarrollo sin GPU ni APIs."""
-    text = prompt[:50].replace(" ", "+")
-    return f"https://dummyimage.com/{_SD_WIDTH}x{_SD_HEIGHT}/1a202c/ffffff&text={text}"
+    """Genera imagen placeholder local con Pillow para desarrollo sin GPU ni APIs."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        img = Image.new("RGB", (_SD_WIDTH, _SD_HEIGHT), color=(26, 32, 44))
+        draw = ImageDraw.Draw(img)
+
+        try:
+            font_big = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", size=22)
+            font_small = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", size=15)
+        except Exception:
+            font_big = ImageFont.load_default()
+            font_small = font_big
+
+        label = "[MOCK IMAGE — sin GPU]"
+        draw.text((20, 20), label, font=font_big, fill=(255, 130, 0))
+
+        wrapped = textwrap.fill(prompt[:200], width=70)
+        draw.text((20, 60), wrapped, font=font_small, fill=(200, 200, 200))
+
+        _STATIC_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"mock_{uuid.uuid4().hex}.png"
+        img.save(_STATIC_DIR / filename, format="PNG")
+        url = f"http://localhost:8000/static/images/{filename}"
+        logger.info("image.placeholder_generated", url=url)
+        return url
+    except Exception as exc:
+        logger.warning("image.placeholder_fallback", error=str(exc))
+        text = prompt[:50].replace(" ", "+")
+        return f"https://dummyimage.com/{_SD_WIDTH}x{_SD_HEIGHT}/1a202c/ffffff&text={text}"

@@ -53,6 +53,19 @@ export default function App() {
   });
   const [socialStatus, setSocialStatus] = useState(null);
   const [contentFormat, setContentFormat] = useState("feed");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+
+  const loadHistory = async () => {
+    try {
+      const data = await api("/runs");
+      setHistory(Array.isArray(data) ? data : data.runs ?? []);
+    } catch {
+      setHistory([]);
+    }
+  };
 
   const loadSocialStatus = async () => {
     try {
@@ -201,6 +214,18 @@ export default function App() {
       <section className="card">
         <h2>Resultado</h2>
         {error && <p style={{ color: "red" }}>{error}</p>}
+        {result?.result?.design?.image_url && (
+          <div style={{ marginBottom: "1rem" }}>
+            <p style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.4rem" }}>
+              Imagen generada:
+            </p>
+            <img
+              src={result.result.design.image_url}
+              alt="Imagen generada"
+              style={{ maxWidth: "100%", borderRadius: "6px", border: "1px solid #333" }}
+            />
+          </div>
+        )}
         <pre>{result ? JSON.stringify(result, null, 2) : "Sin ejecución sincrónica aún."}</pre>
       </section>
 

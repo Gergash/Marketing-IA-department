@@ -1,3 +1,5 @@
+"""Endpoints REST bajo el prefijo `/api` (briefs, runs, campañas, salud)."""
+
 import json
 
 import kombu.exceptions
@@ -21,6 +23,7 @@ from gateway.app.schemas.contracts import (
     RejectRequest,
     RunRequest,
     RunResponse,
+    SocialPublishStatusResponse,
 )
 from gateway.app.services.pipeline_service import (
     approve_run,
@@ -34,14 +37,32 @@ from workers.tasks import execute_pipeline_task
 router = APIRouter(prefix="/api")
 
 
+@router.get("/social/publish-status", response_model=SocialPublishStatusResponse)
+def social_publish_status(
+    tenant_id: str = Depends(require_auth),
+) -> SocialPublishStatusResponse:
+    """Indica qué integraciones de publicación están configuradas (sin exponer secretos)."""
+    _ = tenant_id
+    s = get_settings()
+    return SocialPublishStatusResponse(
+        social_provider=s.social_provider,
+        linkedin_ready=bool(s.linkedin_access_token.strip()),
+        uploadpost_ready=bool(s.uploadpost_api_key.strip()),
+        meta_instagram_ready=bool(
+            s.meta_page_access_token.strip() and s.instagram_business_account_id.strip()
+        ),
+    )
+
+
 @router.get("/health")
 def health() -> dict:
+    """Comprueba que el proceso de la API responde."""
     return {"status": "ok"}
 
 
 @router.get("/health/background")
 def background_health() -> dict:
-    """Broker/worker health for background processing."""
+    """Comprueba Redis (broker) y que al menos un worker Celery responda al ping."""
     s = get_settings()
     broker_ok = False
     worker_ok = False
@@ -74,6 +95,7 @@ def create_brief(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> Brief:
+    """Crea un brief de campaña asociado al tenant autenticado."""
     brief = Brief(tenant_id=tenant_id, **payload.model_dump())
     db.add(brief)
     db.commit()
@@ -86,6 +108,7 @@ def list_briefs(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list[Brief]:
+    """Lista briefs del tenant, más recientes primero."""
     return list(
         db.execute(select(Brief).where(Brief.tenant_id == tenant_id).order_by(Brief.id.desc())).scalars().all()
     )
@@ -97,12 +120,14 @@ def run_pipeline_sync(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> RunResponse:
+    """Ejecuta el pipeline de agentes de forma síncrona en el mismo proceso que la API."""
     run = create_run(
         db,
         brief_id=payload.brief_id,
         tenant_id=tenant_id,
         run_mode="sync",
         idempotency_key=payload.idempotency_key,
+        content_format=payload.content_format,
     )
     try:
         result = execute_pipeline(
@@ -128,12 +153,14 @@ def run_pipeline_async(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> RunResponse:
+    """Encola la ejecución del pipeline en Celery; responde con run en estado queued."""
     run = create_run(
         db,
         brief_id=payload.brief_id,
         tenant_id=tenant_id,
         run_mode="async",
         idempotency_key=payload.idempotency_key,
+        content_format=payload.content_format,
     )
     try:
         execute_pipeline_task.apply_async(
@@ -173,6 +200,7 @@ def approve_run_endpoint(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> RunResponse:
+    """Tras revisión humana: publica el contenido ya generado y marca el run como completado."""
     run = db.get(AgentRun, run_id)
     if not run or run.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
@@ -190,6 +218,7 @@ def reject_run_endpoint(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> RunResponse:
+    """Rechaza un run pendiente de aprobación sin publicar."""
     run = db.get(AgentRun, run_id)
     if not run or run.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
@@ -206,6 +235,7 @@ def get_run_status(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> JobStatusResponse:
+    """Devuelve estado, resultado JSON y metadatos de un run concreto."""
     run = db.get(AgentRun, run_id)
     if not run or run.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
@@ -217,6 +247,7 @@ def get_run_status(
         error_message=run.error_message,
         approved_at=run.approved_at,
         approved_by=run.approved_by,
+        content_format=getattr(run, "content_format", "feed") or "feed",
     )
 
 
@@ -225,6 +256,7 @@ def list_runs(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list[JobStatusResponse]:
+    """Lista todas las ejecuciones del tenant."""
     runs = db.execute(
         select(AgentRun).where(AgentRun.tenant_id == tenant_id).order_by(AgentRun.id.desc())
     ).scalars().all()
@@ -236,6 +268,7 @@ def list_runs(
             error_message=run.error_message,
             approved_at=run.approved_at,
             approved_by=run.approved_by,
+            content_format=getattr(run, "content_format", "feed") or "feed",
         )
         for run in runs
     ]
@@ -247,6 +280,7 @@ def create_campaign(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> CampaignSchedule:
+    """Crea una entrada de campaña programada (cron); el disparo automático es extensible vía scheduler."""
     item = CampaignSchedule(tenant_id=tenant_id, **payload.model_dump())
     db.add(item)
     db.commit()
@@ -259,6 +293,7 @@ def list_campaigns(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list[CampaignSchedule]:
+    """Lista campañas programadas del tenant."""
     return list(
         db.execute(select(CampaignSchedule).where(CampaignSchedule.tenant_id == tenant_id)).scalars().all()
     )

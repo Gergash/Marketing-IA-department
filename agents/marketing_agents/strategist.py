@@ -1,3 +1,5 @@
+"""Agente estratega: traduce el brief en hook, mensaje y hashtags (LLM o stub)."""
+
 import structlog
 
 from .llm import get_llm
@@ -25,7 +27,10 @@ Rules:
 
 
 class ContentStrategistAgent:
+    """Define tipo de post, hook, mensaje base y hashtags según el brief (LLM o stub)."""
+
     def run(self, brief: BriefInput) -> StrategyOutput:
+        """Devuelve `StrategyOutput` desde el LLM o `_stub` ante ausencia de LLM o error."""
         llm = get_llm()
         if llm is None:
             logger.warning("strategist.using_stub", reason="no_llm_configured")
@@ -46,6 +51,7 @@ class ContentStrategistAgent:
             return self._stub(brief)
 
     def _stub(self, brief: BriefInput) -> StrategyOutput:
+        """Estrategia fija de ejemplo para desarrollo sin API de modelo."""
         return StrategyOutput(
             tipo_post="educativo",
             hook=f"¿Sabias que {brief.tema.lower()} puede acelerar tus resultados?",

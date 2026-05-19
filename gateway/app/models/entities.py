@@ -1,3 +1,5 @@
+"""Entidades persistentes: briefs, ejecuciones, assets, publicaciones, campañas y tokens OAuth."""
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
@@ -7,6 +9,8 @@ from gateway.app.db.session import Base
 
 
 class Brief(Base):
+    """Brief de campaña: tema, audiencia, canal, objetivo y tono por tenant."""
+
     __tablename__ = "briefs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -21,6 +25,8 @@ class Brief(Base):
 
 
 class AgentRun(Base):
+    """Una ejecución del pipeline: estado, resultado JSON, idempotencia y aprobación humana."""
+
     __tablename__ = "agent_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -31,6 +37,8 @@ class AgentRun(Base):
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # feed | story — Instagram/Meta; otras redes suelen ignorar o mapear a feed
+    content_format: Mapped[str] = mapped_column(String(16), default="feed")
     # Human-in-the-loop: quién y cuándo aprobó (o rechazó) el run
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -43,6 +51,8 @@ class AgentRun(Base):
 
 
 class GeneratedAsset(Base):
+    """Imagen generada vinculada a un run (URL servida y prompt usado)."""
+
     __tablename__ = "generated_assets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -54,6 +64,8 @@ class GeneratedAsset(Base):
 
 
 class Publication(Base):
+    """Registro de publicación en red social tras un run exitoso."""
+
     __tablename__ = "publications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -67,6 +79,8 @@ class Publication(Base):
 
 
 class CampaignSchedule(Base):
+    """Programación recurrente (expresión cron) para futuras campañas por tenant."""
+
     __tablename__ = "campaign_schedules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -77,3 +91,19 @@ class CampaignSchedule(Base):
     cron_expr: Mapped[str] = mapped_column(String(64))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OAuthToken(Base):
+    """Token OAuth 2.0 por tenant y proveedor (meta, linkedin)."""
+
+    __tablename__ = "oauth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)  # 'meta' | 'linkedin'
+    access_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    account_id: Mapped[str] = mapped_column(String(256))  # IG Business Account ID o URN de LinkedIn
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

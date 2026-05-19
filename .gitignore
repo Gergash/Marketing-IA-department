@@ -14,7 +14,10 @@ gateway/.ruff_cache/
 workers/.ruff_cache/
 *.exe
 *.test
-microservices/**/server
+# Binarios Go compilados (sin extensión, Linux/Mac) — no el directorio cmd/server/
+microservices/**/server.exe
+microservices/social-publisher-go/server
+microservices/mcp-connect-go/server
 
 # Base de datos SQLite local
 *.db

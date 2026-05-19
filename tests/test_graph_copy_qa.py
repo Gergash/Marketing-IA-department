@@ -1,3 +1,5 @@
+"""Pruebas del subgrafo LangGraph copywriter ↔ QA."""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,10 +11,12 @@ from agents.marketing_agents.schemas import BriefInput, CopyOutput, StrategyOutp
 
 
 def test_copy_qa_graph_retries_then_approves(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tras un rechazo QA simulado, el grafo debe reinvocar al copywriter con feedback y aprobar en la 2.ª ronda."""
     guard = ContentQualityGuard()
     calls: dict[str, int] = {"n": 0}
 
     def fake_validate(text: str, brand_tone: str) -> QualityReview:
+        """Simula QA: primer intento rechaza, segundo aprueba."""
         calls["n"] += 1
         if calls["n"] == 1:
             return QualityReview(approved=False, reasons=["must revise"])
@@ -50,6 +54,7 @@ def test_copy_qa_graph_retries_then_approves(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_copy_qa_graph_exhausts_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Si QA siempre falla, tras agotar `max_attempts` el estado final sigue sin aprobar."""
     guard = ContentQualityGuard()
     monkeypatch.setattr(
         guard,

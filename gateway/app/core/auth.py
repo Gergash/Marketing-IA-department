@@ -1,3 +1,5 @@
+"""Dependencia de autenticación Bearer opcional según `API_KEY` en settings."""
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 

@@ -17,6 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """Crea tablas iniciales: briefs, agent_runs, generated_assets, publications, campaign_schedules."""
     op.create_table(
         "briefs",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -101,6 +102,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Elimina las tablas del esquema inicial en orden inverso."""
     op.drop_table("campaign_schedules")
     op.drop_table("publications")
     op.drop_table("generated_assets")

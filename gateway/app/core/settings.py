@@ -1,9 +1,13 @@
+"""Carga de configuración desde entorno y `.env` (pydantic-settings)."""
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Configuración cargada desde variables de entorno y archivo `.env` (pydantic-settings)."""
+
     # Core
     app_env: str = "dev"
     log_level: str = "INFO"
@@ -27,6 +31,8 @@ class Settings(BaseSettings):
     # Image generation — provider: stable_diffusion | mock | openai | canva
     image_provider: str = "stable_diffusion"
     stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
+    # Nombre exacto del checkpoint en Automatic1111 (como en el desplegable), p. ej. archivo .safetensors
+    stable_diffusion_checkpoint: str = ""
     canva_client_id: str = ""
     canva_client_secret: str = ""
     canva_template_id: str = ""
@@ -47,6 +53,19 @@ class Settings(BaseSettings):
     # Go microservice (social publisher sidecar)
     go_publisher_url: str = "http://localhost:8088"
 
+    # OAuth 2.0 — Meta (Facebook/Instagram Graph API)
+    meta_client_id: str = ""
+    meta_client_secret: str = ""
+    meta_redirect_uri: str = "http://localhost:8000/api/auth/callback/meta"
+
+    # OAuth 2.0 — LinkedIn
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    linkedin_redirect_uri: str = "http://localhost:8000/api/auth/callback/linkedin"
+
+    # URL pública base para imágenes — Meta exige HTTPS accesible públicamente (ej. ngrok en dev)
+    public_image_base_url: str = "http://localhost:8000"
+
     # Seguridad — Paso 4
     # Vacío = auth desactivada (dev local). En producción, pon un valor aleatorio largo.
     api_key: str = ""
@@ -58,4 +77,5 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    """Devuelve la instancia única de configuración (memoizada)."""
     return Settings()

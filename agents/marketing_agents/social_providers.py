@@ -1,3 +1,5 @@
+"""Integraciones de publicación en redes (mock, LinkedIn, Upload-Post, Meta/Instagram)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -12,23 +14,35 @@ def publish_post(
     copy_text: str,
     image_url: str,
     idempotency_key: str | None = None,
+    *,
+    content_format: str = "feed",
 ) -> dict:
-    """Route to the configured social provider. Returns publish result dict."""
+    """Enruta la publicación según `SOCIAL_PROVIDER` en settings (LinkedIn, Upload-Post, Meta/IG o mock)."""
     from gateway.app.core.settings import get_settings
     s = get_settings()
+    cf = (content_format or "feed").lower()
+    if cf not in ("feed", "story"):
+        cf = "feed"
 
     if s.social_provider == "linkedin" and s.linkedin_access_token:
-        return _linkedin(copy_text, image_url, s.linkedin_access_token, s.linkedin_person_urn)
+        if cf == "story":
+            logger.warning("linkedin.story_not_supported_publishing_as_feed")
+        return _linkedin(copy_text, image_url, s.linkedin_access_token, s.linkedin_person_urn, content_format=cf)
     if s.social_provider == "uploadpost" and s.uploadpost_api_key:
-        return _uploadpost(platform, copy_text, image_url, s.uploadpost_api_key)
+        if cf == "story":
+            logger.info(
+                "uploadpost.story_requested",
+                note="Si la API no soporta historias, puede publicarse como post normal.",
+            )
+        return _uploadpost(platform, copy_text, image_url, s.uploadpost_api_key, content_format=cf)
     if (
         s.social_provider == "meta"
         and s.meta_page_access_token
         and s.instagram_business_account_id
         and platform.lower() in ("instagram", "ig")
     ):
-        return _meta_instagram(copy_text, image_url, s)
-    return _mock(platform, copy_text, image_url, idempotency_key)
+        return _meta_instagram(copy_text, image_url, s, content_format=cf)
+    return _mock(platform, copy_text, image_url, idempotency_key, content_format=cf)
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +52,8 @@ def publish_post(
 # ---------------------------------------------------------------------------
 
 
-def _meta_instagram(copy_text: str, image_url: str, s) -> dict:
+def _meta_instagram(copy_text: str, image_url: str, s, *, content_format: str) -> dict:
+    """Crea contenedor de media y publica en Instagram vía Graph API (post con caption o historia STORIES)."""
     import httpx
 
     ig_id = s.instagram_business_account_id.strip()
@@ -47,14 +62,18 @@ def _meta_instagram(copy_text: str, image_url: str, s) -> dict:
     base = f"https://graph.facebook.com/{ver}"
 
     params = {"access_token": token}
+    is_story = content_format == "story"
+    media_params: dict = {**params, "image_url": image_url}
+    if is_story:
+        # Historia de foto: Graph API Content Publishing
+        media_params["media_type"] = "STORIES"
+    else:
+        media_params["caption"] = copy_text[:2200]
+
     with httpx.Client(timeout=60) as client:
         r_media = client.post(
             f"{base}/{ig_id}/media",
-            params={
-                **params,
-                "image_url": image_url,
-                "caption": copy_text[:2200],
-            },
+            params=media_params,
         )
         if not r_media.is_success:
             logger.warning("meta.instagram.media_container_failed", body=r_media.text)
@@ -81,11 +100,12 @@ def _meta_instagram(copy_text: str, image_url: str, s) -> dict:
             data = r_link.json()
             permalink = data.get("permalink") or permalink
 
-        logger.info("meta.instagram.published", media_id=media_id)
+        logger.info("meta.instagram.published", media_id=media_id, content_format=content_format)
         return {
             "status": "published",
             "publication_url": permalink,
             "platform_post_id": media_id,
+            "content_format": content_format,
         }
 
 
@@ -98,13 +118,17 @@ def _mock(
     copy_text: str,
     image_url: str,
     idempotency_key: str | None,
+    content_format: str,
 ) -> dict:
-    raw = f"{platform}:{copy_text}:{image_url}:{idempotency_key or ''}"
+    """Simula publicación con URL y id determinísticos (desarrollo sin APIs reales)."""
+    raw = f"{platform}:{copy_text}:{image_url}:{idempotency_key or ''}:{content_format}"
     post_id = hashlib.sha256(raw.encode()).hexdigest()[:16]
+    kind = "stories" if content_format == "story" else "posts"
     return {
         "status": f"mock_published@{datetime.now(timezone.utc).isoformat()}",
-        "publication_url": f"https://social.mock/{platform}/posts/{post_id}",
+        "publication_url": f"https://social.mock/{platform}/{kind}/{post_id}",
         "platform_post_id": post_id,
+        "content_format": content_format,
     }
 
 
@@ -117,7 +141,9 @@ def _linkedin(
     image_url: str,
     token: str,
     person_urn: str,
+    content_format: str,
 ) -> dict:
+    """Publica un UGC Post de solo texto en LinkedIn (la imagen no se adjunta en este flujo simplificado)."""
     import httpx
 
     if not person_urn:
@@ -154,10 +180,12 @@ def _linkedin(
             "status": "published",
             "publication_url": f"https://www.linkedin.com/feed/update/{post_id}/",
             "platform_post_id": str(post_id),
+            "content_format": content_format,
         }
 
 
 def _linkedin_fetch_urn(token: str) -> str:
+    """Obtiene el URN `urn:li:person:{id}` del miembro autenticado para usar como autor del post."""
     import httpx
     with httpx.Client(timeout=10) as client:
         r = client.get(
@@ -179,7 +207,10 @@ def _uploadpost(
     copy_text: str,
     image_url: str,
     api_key: str,
+    *,
+    content_format: str,
 ) -> dict:
+    """Publica vía API unificada upload-post.com (texto + media opcional por URL)."""
     import httpx
 
     # Platform slug mapping (Upload-Post uses lowercase platform names)
@@ -217,4 +248,5 @@ def _uploadpost(
             "status": "published",
             "publication_url": data.get("url", f"https://upload-post.com/posts/{post_id}"),
             "platform_post_id": post_id,
+            "content_format": content_format,
         }

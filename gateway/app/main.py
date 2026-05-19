@@ -1,3 +1,5 @@
+"""Punto de entrada FastAPI: CORS, rutas, métricas Prometheus, estáticos y ciclo de vida BD/scheduler."""
+
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -5,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from gateway.app.api.auth_social import router as auth_social_router
 from gateway.app.api.routes import router
 from gateway.app.core.logging import configure_logging
 from gateway.app.core.settings import get_settings
@@ -24,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(auth_social_router)
 Instrumentator().instrument(app).expose(app)
 
 _static_dir = Path(__file__).resolve().parents[3] / "static" / "images"
@@ -32,6 +36,7 @@ app.mount("/static", StaticFiles(directory=str(_static_dir.parent)), name="stati
 
 
 def _init_db() -> None:
+    """Inicializa o valida la BD: SQLite crea tablas y aplica parches; Postgres solo comprueba conexión (esquema vía Alembic)."""
     dialect = engine.dialect.name
     if dialect == "sqlite":
         # Dev rápido: create_all + parche de columnas (sin Alembic).
@@ -48,10 +53,12 @@ def _init_db() -> None:
 
 @app.on_event("startup")
 def on_startup() -> None:
+    """Al arrancar la app: BD y scheduler en segundo plano."""
     _init_db()
     start_scheduler()
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    """Al apagar: detiene el scheduler de campañas."""
     stop_scheduler()

@@ -1,3 +1,5 @@
-from .entities import AgentRun, Brief, CampaignSchedule, GeneratedAsset, Publication
+"""Modelos ORM SQLAlchemy reexportados para imports cortos."""
 
-__all__ = ["Brief", "AgentRun", "GeneratedAsset", "Publication", "CampaignSchedule"]
+from .entities import AgentRun, Brief, CampaignSchedule, GeneratedAsset, OAuthToken, Publication
+
+__all__ = ["Brief", "AgentRun", "GeneratedAsset", "Publication", "CampaignSchedule", "OAuthToken"]

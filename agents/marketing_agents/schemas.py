@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field
 
 
 class BriefInput(BaseModel):
+    """Entrada del pipeline de agentes: mismo significado que el brief persistido en API."""
+
     tema: str = Field(min_length=3)
     publico_objetivo: str
     red_social: str
@@ -11,6 +13,8 @@ class BriefInput(BaseModel):
 
 
 class StrategyOutput(BaseModel):
+    """Salida del estratega: tipo de post, hook, mensaje y hashtags sugeridos."""
+
     tipo_post: str
     hook: str
     mensaje_base: str
@@ -18,17 +22,24 @@ class StrategyOutput(BaseModel):
 
 
 class CopyOutput(BaseModel):
+    """Texto publicable, hashtags finales y llamada a la acción."""
+
     copy_final: str
     hashtags: list[str]
     cta: str
 
 
 class DesignOutput(BaseModel):
+    """URL de la imagen generada y el prompt visual usado."""
+
     image_url: str
     image_prompt: str
 
 
 class PublishOutput(BaseModel):
+    """Respuesta unificada del publicador (estado, enlaces e id externo)."""
+
     status: str
     publication_url: str
     platform_post_id: str
+    content_format: str = "feed"

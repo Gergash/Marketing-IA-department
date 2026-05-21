@@ -1,191 +1,326 @@
-Tengo todo lo que necesito. Aquí el diagnóstico completo:
+ Diagnóstico General — Marketing DEPA IA
+
+  Fecha: 19 mayo 2026 | Branch: main | Último commit: 9f9209c | Estado del árbol: limpio
 
   ---
-  Diagnóstico General — Marketing DEPA IA
-
-  Fecha: 19 mayo 2026 | Última feature comprometida: OAuth 2.0 nativo Meta + LinkedIn
-
-  ---
-  1. Arquitectura actual (lo que existe)
+  1. Arquitectura
 
   [Frontend React/Vite :5173]
            |
   [FastAPI Gateway :8000]  ←→  [Celery Worker]  ←→  [Redis :6379]
            |                           |
-  [Agentes Python (pipeline)]         |
-     strategist → graph_copy_qa → designer → publisher
+  [Agentes Python]             [tasks.py: retries 3x]
+     ContentStrategistAgent
+     ↓
+     LangGraph: CopywriterAgent ↔ ContentQualityGuard (hasta 3 reintentos)
+     ↓
+     DesignerAgent
+     ↓
+     PublisherAgent
            |
-  [social-publisher-go :8088]   [mcp-connect-go :8090 + stdio]
+  [social-publisher-go :8088]   [mcp-connect-go :8090/stdio]
            |
-  [Meta Graph API / LinkedIn API]
+  [Meta Graph API v21.0 / LinkedIn API / Upload-Post API / Mock]
            |
-  [SQLite (dev) / PostgreSQL :5433 (prod)]
+  [SQLite marketing.db (dev) / PostgreSQL :5433 (prod)]
+           |
+  [APScheduler — disparo autónomo de campañas por cron]
 
   ---
-  2. Lo que está funcional y completo
+  2. Entorno de desarrollo
 
-  Pipeline de Agentes
-
-  - Estratega → Copywriter/QA (LangGraph) → Diseñador → Publicador — flujo completo en pipeline.py
-  - Subgrafo LangGraph con reintentos (hasta 3) y feedback QA↔Copywriter funcionando correctamente
-  - Stub mode cuando no hay LLM configurado (bueno para dev sin API keys)
-
-  Proveedores de LLM (3 opciones)
-
-  - Ollama (local, llama3 por defecto)
-  - Anthropic (claude-haiku-4-5-20251001 por defecto, configurable a Sonnet/Opus)
-  - OpenAI (gpt-4o-mini)
-  - Todos generan JSON estructurado y tienen fallback al stub
-
-  Generación de imágenes (3 opciones)
-
-  - Stable Diffusion A1111 — POST a /sdapi/v1/txt2img, overlay de texto con Pillow (copy + CTA encima de la imagen)
-  - DALL·E 3 — vía OpenAI SDK, tamaño 1792×1024
-  - Placeholder Pillow — imagen local en modo dev sin GPU
-  - Canva: código presente pero marcado explícitamente como "no implementado" (retorna placeholder)
-
-  Publicación social (4 opciones)
-
-  - Mock — determinístico con SHA256, idempotente
-  - LinkedIn — Python solo envía texto; Go envía texto + imagen (upload + UGC Post)
-  - Meta/Instagram — Graph API v21.0, feed posts Y stories (STORIES media_type)
-  - Upload-Post — API unificada para Instagram/Facebook/Twitter/TikTok/LinkedIn
-
-  OAuth 2.0 nativo (feature más reciente)
-
-  - Flujo completo login/{provider} → redirect → callback/{provider} → token guardado en BD
-  - Meta: obtiene instagram_business_account_id automáticamente de la primera página del usuario
-  - LinkedIn: obtiene URN urn:li:person:{id} automáticamente
-  - Tokens persistidos en tabla oauth_tokens con upsert (actualiza si ya existe)
-  - Frontend: Integrations.jsx con botones de conexión y tabla de estado — visual y funcional
-  - CSRF state store presente (en memoria, solo dev)
-
-  Human-in-the-loop
-
-  - Flag requires_approval → estado pending_approval → endpoints /approve y /reject
-  - Notificación Slack Incoming Webhook cuando un run queda pendiente
-  - El approve_run primero intenta publicar vía Go (con OAuth), fallback a Python si Go no responde
-
-  Infraestructura
-
-  - docker-compose.yml — solo postgres + redis
-  - docker-compose.platform.yml — stack completo (postgres + redis + api + worker + go-publisher)
-  - Dockerfiles para API, worker y Go publisher
-  - Manifiestos Kubernetes base (k8s/base/) — api, worker, go-publisher, namespace, configmap, secret example
-  - Prometheus métricas expuestas vía prometheus-fastapi-instrumentator
-  - APScheduler corriendo en proceso
-
-  Base de datos
-
-  - SQLite (dev): auto-creado en startup + schema_patches.py para columnas nuevas
-  - PostgreSQL (prod): 4 migraciones Alembic completas
-  - 6 tablas: briefs, agent_runs, generated_assets, publications, campaign_schedules, oauth_tokens
-
-  Tests
-
-  - test_pipeline.py — test sin publicación + test con mock publish
-  - test_graph_copy_qa.py — test de reintentos LangGraph (aprueba en 2do intento + agota intentos)
+  ┌────────────┬────────────────────────────────────────────────────┐
+  │ Componente │                       Estado                       │
+  ├────────────┼────────────────────────────────────────────────────┤
+  │ Python     │ 3.10 — reconstruido y alineado con .python-version │
+  ├────────────┼────────────────────────────────────────────────────┤
+  │ .venv      │ Nuevo, limpio, con requirements.txt instalado      │
+  ├────────────┼────────────────────────────────────────────────────┤
+  │ pip        │ Actualizado antes de la instalación                │
+  ├────────────┼────────────────────────────────────────────────────┤
+  │ Árbol git  │ Limpio — 0 archivos sin commitear                  │
+  └────────────┴────────────────────────────────────────────────────┘
 
   ---
-  3. Problemas y deuda técnica detectados
+  3. Estado de cada componente
 
-  CRÍTICO — Python version mismatch
+  Pipeline de Agentes — COMPLETO
 
-  - .python-version declara 3.10 (correcto para Stable Diffusion)
-  - Pero el .venv instalado contiene rutas cpython-313 — el entorno virtual es Python 3.13
-  - Consecuencia: los paquetes del venv son 3.13, pero si se ejecuta con el Python 3.10 del proyecto, habrá incompatibilidades. Stable Diffusion A1111 puede fallar con 3.13.     
+  Flujo: Strategist → [LangGraph: Copywriter ↔ QA] → Designer → Publisher
 
-  MEDIO — Imagen URL no se sustituye en publicación Python directa
+  - ContentStrategistAgent (strategist.py): produce tipo_post, hook, mensaje_base, hashtags. Usa LLM configurado o stub determinístico.
+  - CopywriterAgent (copywriter.py): genera copy_final, hashtags, cta. Acepta qa_feedback para revisiones.
+  - ContentQualityGuard (quality.py): reglas de compliance — palabras bloqueadas (estafa, fake, garantizado 100%) + heurística de tono formal vs exclamaciones.
+  - Subgrafo LangGraph (graph_copy_qa.py): bucle Copywriter↔QA con hasta 3 intentos, trazabilidad de eventos (events: list[dict]) y arista condicional finish/revise.
+  - DesignerAgent (designer.py): construye prompt visual y llama a generate_image().
+  - PublisherAgent (publisher.py): capa fina sobre social_providers.publish_post().
 
-  - social_providers.py → _meta_instagram() envía http://localhost:8000/static/images/... a Meta
-  - Meta exige una URL HTTPS pública — la imagen nunca cargará en Instagram si se usa el publisher Python directamente (sin Go)
-  - La sustitución por PUBLIC_IMAGE_BASE_URL solo ocurre en _publish_via_go() en pipeline_service.py
+  Proveedores de LLM — COMPLETO (3 opciones)
 
-  MEDIO — LinkedIn Python (sin imagen)
+  ┌───────────┬───────────────────────────┬───────────────────────────────────┐
+  │ Proveedor │    Modelo por defecto     │              Config               │
+  ├───────────┼───────────────────────────┼───────────────────────────────────┤
+  │ Anthropic │ claude-haiku-4-5-20251001 │ ANTHROPIC_API_KEY                 │
+  ├───────────┼───────────────────────────┼───────────────────────────────────┤
+  │ OpenAI    │ gpt-4o-mini               │ OPENAI_API_KEY                    │
+  ├───────────┼───────────────────────────┼───────────────────────────────────┤
+  │ Ollama    │ llama3                    │ OLLAMA_BASE_URL (localhost:11434) │
+  ├───────────┼───────────────────────────┼───────────────────────────────────┤
+  │ Stub      │ —                         │ Activo si ninguno configurado     │
+  └───────────┴───────────────────────────┴───────────────────────────────────┘
 
-  - El publisher Python de LinkedIn (social_providers.py) solo envía texto (shareMediaCategory: "NONE")
-  - El Go publisher sí sube la imagen correctamente (4 pasos: download → initUpload → upload → createPost)
-  - Si Go no está corriendo y se usa el fallback Python, los posts de LinkedIn salen sin imagen
+  Todos fuerzan salida JSON y tienen fallback al stub.
 
-  BAJO — Scheduler de campañas es placeholder
+  Generación de Imágenes — COMPLETO (3 opciones reales + 1 placeholder)
 
-  - scheduler_service.py registra un job _heartbeat_job cada 5 minutos
-  - Solo hace SELECT de campañas habilitadas, no las ejecuta
-  - La tabla campaign_schedules con cron_expr existe pero no hay lógica de disparo real
+  ┌──────────────────────────┬───────────┬────────────────────────────────────────────────────────────────────────────────┐
+  │        Proveedor         │  Estado   │                                     Notas                                      │
+  ├──────────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────┤
+  │ Stable Diffusion (A1111) │ Funcional │ POST a /sdapi/v1/txt2img; overlay copy+CTA con Pillow; checkpoint configurable │
+  ├──────────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────┤
+  │ DALL·E 3                 │ Funcional │ OpenAI SDK, tamaño 1792×1024                                                   │
+  ├──────────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────┤
+  │ Placeholder Pillow       │ Funcional │ Genera PNG local con texto mock — dev sin GPU                                  │
+  ├──────────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────┤
+  │ Canva                    │ Stub      │ Código presente, retorna placeholder; OAuth pendiente                          │
+  └──────────────────────────┴───────────┴────────────────────────────────────────────────────────────────────────────────┘
 
-  BAJO — Alembic: conflicto de nombres de archivo
+  Las imágenes SD se guardan en static/images/ y se sirven como estáticos por FastAPI.
 
-  - 20260206_0003_agent_runs_content_format.py y 20260511_0003_add_oauth_tokens.py ambos tienen "0003" en el nombre de archivo
-  - El último tiene revision = "0004" y down_revision = "0003" (correcto internamente)
-  - El nombre de archivo es engañoso pero no rompe nada
+  Publicación Social — COMPLETO (4 opciones)
 
-  BAJO — CSRF state OAuth en memoria
+  ┌────────────────┬────────────────────┬─────────────────────────────────┬──────────────────────┐
+  │   Proveedor    │       Python       │           Go sidecar            │        Imagen        │
+  ├────────────────┼────────────────────┼─────────────────────────────────┼──────────────────────┤
+  │ Mock           │ ✓                  │ —                               │ —                    │
+  ├────────────────┼────────────────────┼─────────────────────────────────┼──────────────────────┤
+  │ LinkedIn       │ Solo texto         │ Texto + imagen (upload 4 pasos) │ Solo vía Go          │
+  ├────────────────┼────────────────────┼─────────────────────────────────┼──────────────────────┤
+  │ Meta/Instagram │ feed + stories ✓   │ feed + stories ✓                │ Requiere URL pública │
+  ├────────────────┼────────────────────┼─────────────────────────────────┼──────────────────────┤
+  │ Upload-Post    │ Texto + imagen URL │ —                               │ —                    │
+  └────────────────┴────────────────────┴─────────────────────────────────┴──────────────────────┘
 
-  - _pending_states: dict[str, str] = {} se pierde al reiniciar el API
-  - En dev está bien, pero en prod con múltiples workers o reinicios el callback fallará con "State inválido"
+  Fix aplicado hoy: _meta_instagram() en Python ahora sustituye http://localhost:8000 por PUBLIC_IMAGE_BASE_URL antes de enviar la URL a Meta — igual que ya hacía el Go
+  publisher. Ambas rutas de publicación son ahora consistentes.
 
-  BAJO — infra/Untitled archivo sin seguimiento
+  OAuth 2.0 Nativo — COMPLETO
 
-  - Contiene solo el texto docker-compose.platform.yml — parece un residuo accidental
+  - Meta (Instagram/Facebook): flujo completo login/meta → redirect → callback/meta → token + instagram_business_account_id guardados
+  - LinkedIn: flujo completo login/linkedin → redirect → callback/linkedin → token + urn:li:person:{id} guardados
+  - Tokens persistidos en oauth_tokens con upsert (actualiza si ya existe)
+  - CSRF state en memoria (_pending_states) — correcto para single-process dev
+  - Frontend Integrations.jsx: botones de conexión, tabla de estado, instrucciones de config .env
 
-  BAJO — MCP connect-go es un stub
+  Human-in-the-loop — COMPLETO
 
-  - publish_social_stub tool solo devuelve un string con platform + image + chars
-  - No tiene integración real con social-publisher-go
+  - requires_approval=True (default en frontend) → run queda en pending_approval
+  - Endpoints POST /runs/{id}/approve y POST /runs/{id}/reject
+  - Notificación Slack Incoming Webhook al quedar pendiente
+  - approve_run(): primero intenta publicar vía Go sidecar (con OAuth de BD), fallback a Python si Go no responde
 
-  BAJO — schema_patches.py no cubre oauth_tokens
+  Procesamiento Asíncrono — COMPLETO
 
-  - En SQLite dev, Base.metadata.create_all() crea oauth_tokens si la tabla no existe
-  - Pero si alguien tiene un marketing.db antiguo (pre-OAuth), create_all no agrega la tabla nueva
-  - Solución: Agregar CREATE TABLE IF NOT EXISTS oauth_tokens a schema_patches.py
+  - Celery + Redis como broker
+  - execute_pipeline_task: reintentos automáticos 3x con backoff exponencial
+  - healthcheck_task: ping para verificar worker vivo
+  - Endpoint GET /api/health/background: verifica Redis + workers activos
+  - Script scripts/celery-worker.ps1 para levantar worker en Windows
+
+  Scheduler de Campañas — AHORA FUNCIONAL (fix aplicado hoy)
+
+  Antes: solo leía la tabla campaign_schedules cada 5 minutos, sin disparar nada.
+
+  Ahora:
+  - start_scheduler() hace sincronización inicial al arrancar la API
+  - _sync_campaign_jobs() (cada 5 min): compara campañas activas en BD con jobs en APScheduler — agrega nuevas, actualiza expresiones cron modificadas, elimina las desactivadas  
+  - _fire_campaign(): crea un Brief con los datos de la campaña y ejecuta execute_pipeline() con requires_approval=True — el resultado queda en pending_approval para revisión    
+  humana antes de publicar
+  - Cron expression inválida: se loguea warning y se omite ese job sin romper el scheduler
+
+  Base de Datos — COMPLETO
+
+  Tablas:
+
+  ┌────────────────────┬───────────────────────────────────────────────────────────────┐
+  │       Tabla        │                           Propósito                           │
+  ├────────────────────┼───────────────────────────────────────────────────────────────┤
+  │ briefs             │ Briefs de campaña por tenant                                  │
+  ├────────────────────┼───────────────────────────────────────────────────────────────┤
+  │ agent_runs         │ Ejecuciones del pipeline (estado, resultado JSON, aprobación) │
+  ├────────────────────┼───────────────────────────────────────────────────────────────┤
+  │ generated_assets   │ Imágenes generadas vinculadas a runs                          │
+  ├────────────────────┼───────────────────────────────────────────────────────────────┤
+  │ publications       │ Registro de publicaciones en redes                            │
+  ├────────────────────┼───────────────────────────────────────────────────────────────┤
+  │ campaign_schedules │ Campañas programadas con expresión cron                       │
+  ├────────────────────┼───────────────────────────────────────────────────────────────┤
+  │ oauth_tokens       │ Tokens OAuth 2.0 por tenant y proveedor                       │
+  └────────────────────┴───────────────────────────────────────────────────────────────┘
+
+  Migración:
+  - SQLite (dev): Base.metadata.create_all() + schema_patches.py — ahora incluye CREATE TABLE IF NOT EXISTS oauth_tokens para entornos con BD antigua
+  - PostgreSQL (prod): 4 migraciones Alembic (0001 initial → 0002 approval fields → 0003 content_format → 0004 oauth_tokens)
+
+  Gateway API — COMPLETO
+
+  ┌───────────────────────────────────┬────────────────────────────────────────┐
+  │             Endpoint              │                Función                 │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/health                   │ Healthcheck del proceso API            │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/health/background        │ Verifica Redis + workers Celery        │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ POST /api/briefs                  │ Crea brief de campaña                  │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/briefs                   │ Lista briefs del tenant                │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ POST /api/runs/sync               │ Ejecuta pipeline en el mismo proceso   │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ POST /api/runs/async              │ Encola en Celery                       │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/runs/{id}                │ Estado y resultado de un run           │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/runs                     │ Lista todos los runs del tenant        │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ POST /api/runs/{id}/approve       │ Aprueba y publica                      │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ POST /api/runs/{id}/reject        │ Rechaza el run                         │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ POST /api/campaigns               │ Crea campaña programada                │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/campaigns                │ Lista campañas del tenant              │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/auth/login/{provider}    │ Inicia OAuth (meta/linkedin)           │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/auth/callback/{provider} │ Recibe code, guarda token              │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/auth/status              │ Proveedores conectados del tenant      │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /api/social/publish-status    │ Estado de integraciones (sin secretos) │
+  ├───────────────────────────────────┼────────────────────────────────────────┤
+  │ GET /metrics                      │ Prometheus metrics                     │
+  └───────────────────────────────────┴────────────────────────────────────────┘
+
+  Autenticación Bearer opcional (API_KEY vacío = dev sin auth). CORS configurado para los puertos del frontend.
+
+  Frontend — COMPLETO
+
+  - App.jsx: autenticación API key, formulario de brief, ejecución sync/async, historial de runs con botones Aprobar/Rechazar, visualización de imagen generada, selector
+  feed/story
+  - Integrations.jsx: botones OAuth Meta y LinkedIn, tabla de cuentas conectadas, instrucciones de config
+
+  Microservicios Go — FUNCIONALES
+
+  social-publisher-go (:8088):
+  - POST /publish — Meta Instagram (2 pasos: contenedor + publish) y LinkedIn (4 pasos: download imagen → initUpload → upload → createPost con imagen)
+  - Fallback mock si no hay access_token
+  - Compilado: server.exe presente
+
+  mcp-connect-go (:8090 + stdio):
+  - Herramienta MCP health_status: reporta hostname y timestamp
+  - Herramienta MCP publish_social_stub: stub de publicación (cola, no publica realmente)
+  - HTTP health en GET /api/health/mcp-go
+  - Compilado: server.exe presente
+
+  Infraestructura — COMPLETO
+
+  - docker-compose.yml: postgres + redis (dev rápido)
+  - docker-compose.platform.yml: stack completo (postgres + redis + api + worker + go-publisher) con healthchecks
+  - Dockerfiles para API, worker, go-publisher
+  - k8s/base/: manifiestos Kubernetes (namespace, api-deployment, worker-deployment, go-publisher-deployment, configmap, secret example)
+  - Prometheus métricas expuestas
+
+  Tests — PRESENTES (cobertura básica)
+
+  - test_pipeline.py: pipeline sin publicación + pipeline con mock publish
+  - test_graph_copy_qa.py: LangGraph con reintentos (aprueba en 2do intento) + agotamiento de intentos
 
   ---
-  4. Cambios sin commitear
+  4. Deudas técnicas resueltas hoy
 
-  ┌────────────────────────────────────────────┬────────────────────────┐
-  │                  Archivo                   │         Estado         │
-  ├────────────────────────────────────────────┼────────────────────────┤
-  │ agents/marketing_agents/image_providers.py │ Modificado (no staged) │
-  ├────────────────────────────────────────────┼────────────────────────┤
-  │ frontend/src/App.jsx                       │ Modificado (no staged) │
-  ├────────────────────────────────────────────┼────────────────────────┤
-  │ infra/Untitled                             │ Sin seguimiento        │
-  ├────────────────────────────────────────────┼────────────────────────┤
-  │ microservices/mcp-connect-go/cmd/          │ Sin seguimiento        │
-  └────────────────────────────────────────────┴────────────────────────┘
-
-  Los dos archivos modificados tienen contenido coherente con el codebase. Los cambios probablemente pertenecen al último commit de OAuth pero no fueron staged.
-
-  ---
-  5. Estado de las integraciones (configuración en .env.example)
-
-  ┌──────────────────────────┬───────────────────────────────────────────────────────────────┐
-  │       Integración        │                            Estado                             │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ LLM Anthropic/OpenAI     │ Requiere API key en .env                                      │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ Ollama (local)           │ Listo para usar si Ollama corre en localhost:11434            │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ Stable Diffusion         │ Requiere A1111 en localhost:7860                              │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ Meta/Instagram Graph API │ Requiere OAuth nativo (nuevo) o META_PAGE_ACCESS_TOKEN manual │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ LinkedIn                 │ Requiere OAuth nativo (nuevo) o LINKEDIN_ACCESS_TOKEN manual  │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ Upload-Post              │ Requiere UPLOADPOST_API_KEY                                   │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ Slack Human-in-loop      │ Requiere SLACK_WEBHOOK_URL                                    │
-  ├──────────────────────────┼───────────────────────────────────────────────────────────────┤
-  │ Imágenes públicas (Meta) │ Requiere ngrok o URL pública en PUBLIC_IMAGE_BASE_URL         │
-  └──────────────────────────┴───────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────┬───────────────────────────────────────────────────┐
+  │                   Problema                   │                 Solución aplicada                 │
+  ├──────────────────────────────────────────────┼───────────────────────────────────────────────────┤
+  │ Imagen localhost enviada a Meta desde Python │ _meta_instagram() ahora usa PUBLIC_IMAGE_BASE_URL │
+  ├──────────────────────────────────────────────┼───────────────────────────────────────────────────┤
+  │ BD SQLite antigua sin tabla oauth_tokens     │ schema_patches.py con CREATE TABLE IF NOT EXISTS  │
+  ├──────────────────────────────────────────────┼───────────────────────────────────────────────────┤
+  │ Scheduler era placeholder sin disparar       │ _sync_campaign_jobs() + _fire_campaign() reales   │
+  ├──────────────────────────────────────────────┼───────────────────────────────────────────────────┤
+  │ infra/Untitled residuo sin seguimiento       │ Eliminado y commiteado                            │
+  ├──────────────────────────────────────────────┼───────────────────────────────────────────────────┤
+  │ .venv en Python 3.13 vs requerimiento 3.10   │ Reconstruido manualmente en Python 3.10           │
+  └──────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 
   ---
-  6. Resumen ejecutivo
+  5. Deudas técnicas pendientes
 
-  El proyecto está en un estado sólido de MVP avanzado. El pipeline de agentes, el sistema de aprobación humana, el publisher Go con soporte real de imagen para LinkedIn, y el   
-  OAuth nativo son features de nivel producción bien construidas. Los 6 pasos del roadmap original están implementados.
+  ┌───────────┬─────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────┐    
+  │ Prioridad │                                          Problema                                           │                            Impacto                             │    
+  ├───────────┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤    
+  │ Media     │ LinkedIn Python (social_providers.py) no adjunta imagen — solo texto                        │ Posts de LinkedIn sin imagen si Go no está corriendo           │    
+  ├───────────┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤    
+  │ Media     │ CSRF state OAuth en memoria — se pierde al reiniciar el proceso                             │ Falla el callback si el API se reinicia entre login y callback │    
+  ├───────────┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤    
+  │ Baja      │ Campaña disparada por scheduler usa publico_objetivo hardcodeado                            │ Contenido genérico; CampaignSchedule no tiene ese campo        │    
+  ├───────────┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤    
+  │ Baja      │ Canva no implementado — retorna placeholder                                                 │ No es urgente si no se va a usar                               │    
+  ├───────────┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤    
+  │ Baja      │ Alembic: 20260511_0003_add_oauth_tokens.py tiene "0003" en el nombre pero revision = "0004" │ Confuso pero no rompe nada                                     │    
+  ├───────────┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤    
+  │ Baja      │ Tests no cubren: OAuth, scheduler, publicadores reales, aprobación                          │ Cobertura mínima para demo                                     │    
+  └───────────┴─────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────┘    
 
-  Las tres brechas más importantes a resolver antes de una demo real con APIs reales:
-  1. Venv/Python: alinear el entorno virtual a 3.10 (o confirmar que 3.13 es aceptable y actualizar .python-version)
-  2. URL pública de imágenes: agregar la sustitución PUBLIC_IMAGE_BASE_URL también en social_providers.py → _meta_instagram()
-  3. Scheduler funcional: conectar _heartbeat_job a la lógica real de disparo de campañas por cron_expr
+  ---
+  6. Estado de integraciones (requieren configuración en .env)
+
+  ┌──────────────────┬───────────────────────────────┬────────────────────────────────────────────────────────┐
+  │   Integración    │       ¿Lista para usar?       │                        Requiere                        │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ LLM Anthropic    │ Con API key                   │ ANTHROPIC_API_KEY                                      │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ LLM OpenAI       │ Con API key                   │ OPENAI_API_KEY                                         │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ Ollama (local)   │ Si Ollama corre en :11434     │ —                                                      │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ Stub (sin LLM)   │ Siempre disponible            │ —                                                      │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ Stable Diffusion │ Si A1111 corre en :7860       │ —                                                      │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ DALL·E 3         │ Con API key OpenAI            │ OPENAI_API_KEY                                         │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ Mock publicación │ Siempre disponible            │ —                                                      │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ Meta/Instagram   │ Necesita OAuth o token manual │ META_CLIENT_ID/SECRET o META_PAGE_ACCESS_TOKEN + ngrok │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ LinkedIn         │ Necesita OAuth o token manual │ LINKEDIN_CLIENT_ID/SECRET o LINKEDIN_ACCESS_TOKEN      │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ Upload-Post      │ Con API key                   │ UPLOADPOST_API_KEY                                     │
+  ├──────────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┤
+  │ Slack HITL       │ Con webhook                   │ SLACK_WEBHOOK_URL                                      │
+  └──────────────────┴───────────────────────────────┴────────────────────────────────────────────────────────┘
+
+  ---
+  7. Para levantar el stack completo en local (referencia rápida)
+
+  # 1. Infraestructura (postgres + redis)
+  docker compose -f infra/docker-compose.yml up -d
+
+  # 2. API
+  .venv\Scripts\Activate.ps1
+  uvicorn gateway.app.main:app --reload --port 8000
+
+  # 3. Worker Celery (terminal separada, venv activado)
+  python -m celery -A workers.celery_app.celery_app worker -l info
+
+  # 4. Go publisher (terminal separada)
+  .\microservices\social-publisher-go\server.exe
+
+  # 5. Frontend (terminal separada)
+  cd frontend && npm run dev
+
+  ---
+  Resumen ejecutivo: El proyecto está en estado de MVP completo y listo para demo con todas las deudas técnicas críticas resueltas. El pipeline de extremo a extremo (brief →     
+  estrategia → copy/QA → imagen → publicación con aprobación humana) funciona en modo sync y async. Las integraciones reales con Meta y LinkedIn están operativas vía OAuth       
+  nativo. El único requisito previo para una demo con APIs reales es configurar las API keys en .env y levantar ngrok para las imágenes de Meta.

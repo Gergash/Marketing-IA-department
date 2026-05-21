@@ -56,6 +56,11 @@ def _meta_instagram(copy_text: str, image_url: str, s, *, content_format: str) -
     """Crea contenedor de media y publica en Instagram vía Graph API (post con caption o historia STORIES)."""
     import httpx
 
+    # Meta exige URL HTTPS pública; sustituye localhost por PUBLIC_IMAGE_BASE_URL (ej. ngrok en dev)
+    public_base = s.public_image_base_url.rstrip("/")
+    if image_url.startswith("http://localhost:8000"):
+        image_url = image_url.replace("http://localhost:8000", public_base, 1)
+
     ig_id = s.instagram_business_account_id.strip()
     token = s.meta_page_access_token.strip()
     ver = s.graph_api_version.strip().lstrip("/") or "v21.0"

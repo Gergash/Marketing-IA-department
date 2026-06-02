@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime
+from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +22,8 @@ router = APIRouter(prefix="/api/auth")
 
 # CSRF state store en memoria (un solo proceso, dev)
 _pending_states: dict[str, str] = {}
+
+_INSTAGRAM_GRANULAR_SCOPES = frozenset({"instagram_basic", "instagram_content_publish"})
 
 
 @router.get("/login/{provider}")
@@ -68,7 +72,7 @@ def oauth_callback(
     code: str,
     state: str,
     db: Session = Depends(get_db),
-) -> dict:
+):
     """Recibe el authorization code, lo intercambia por token y lo persiste en oauth_tokens."""
     tenant_id = _pending_states.pop(state, None)
     if not tenant_id:
@@ -76,49 +80,56 @@ def oauth_callback(
 
     s = get_settings()
 
-    if provider == "meta":
-        token_data = _exchange_meta(code, s)
-        account_id = _fetch_meta_ig_account(token_data["access_token"], s)
-    elif provider == "linkedin":
-        token_data = _exchange_linkedin(code, s)
-        account_id = _fetch_linkedin_urn(token_data["access_token"])
-    else:
-        raise HTTPException(status_code=400, detail=f"Proveedor '{provider}' no soportado.")
+    try:
+        if provider == "meta":
+            token_data = _exchange_meta(code, s)
+            account_id = _fetch_meta_ig_account(token_data["access_token"], s)
+        elif provider == "linkedin":
+            token_data = _exchange_linkedin(code, s)
+            account_id = _fetch_linkedin_urn(token_data["access_token"])
+        else:
+            raise HTTPException(status_code=400, detail=f"Proveedor '{provider}' no soportado.")
 
-    # Upsert: actualiza si ya existe, inserta si no
-    existing = db.execute(
-        select(OAuthToken).where(
-            OAuthToken.tenant_id == tenant_id,
-            OAuthToken.provider == provider,
-        )
-    ).scalar_one_or_none()
+        existing = db.execute(
+            select(OAuthToken).where(
+                OAuthToken.tenant_id == tenant_id,
+                OAuthToken.provider == provider,
+            )
+        ).scalar_one_or_none()
 
-    now = datetime.utcnow()
-    if existing:
-        existing.access_token = token_data["access_token"]
-        existing.refresh_token = token_data.get("refresh_token")
-        existing.expires_at = token_data.get("expires_at")
-        existing.account_id = account_id
-        existing.updated_at = now
-    else:
-        db.add(OAuthToken(
-            tenant_id=tenant_id,
-            provider=provider,
-            access_token=token_data["access_token"],
-            refresh_token=token_data.get("refresh_token"),
-            expires_at=token_data.get("expires_at"),
-            account_id=account_id,
-            created_at=now,
-            updated_at=now,
-        ))
-    db.commit()
+        now = datetime.utcnow()
+        if existing:
+            existing.access_token = token_data["access_token"]
+            existing.refresh_token = token_data.get("refresh_token")
+            existing.expires_at = token_data.get("expires_at")
+            existing.account_id = account_id
+            existing.updated_at = now
+        else:
+            db.add(OAuthToken(
+                tenant_id=tenant_id,
+                provider=provider,
+                access_token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token"),
+                expires_at=token_data.get("expires_at"),
+                account_id=account_id,
+                created_at=now,
+                updated_at=now,
+            ))
+        db.commit()
+    except HTTPException as exc:
+        return _oauth_frontend_redirect(provider, oauth="error", message=str(exc.detail))
 
-    return {
-        "status": "connected",
-        "provider": provider,
-        "account_id": account_id,
-        "message": f"Cuenta {provider} vinculada correctamente. Ya puedes cerrar esta ventana.",
-    }
+    return _oauth_frontend_redirect(
+        provider,
+        oauth="success",
+        account_id=account_id,
+        fallback_payload={
+            "status": "connected",
+            "provider": provider,
+            "account_id": account_id,
+            "message": f"Cuenta {provider} vinculada correctamente. Ya puedes cerrar esta ventana.",
+        },
+    )
 
 
 @router.get("/status")
@@ -144,11 +155,46 @@ def oauth_status(
 # Helpers de intercambio de tokens
 # ---------------------------------------------------------------------------
 
+def _graph_base(s) -> str:
+    ver = (s.graph_api_version or "v21.0").strip().lstrip("/")
+    return f"https://graph.facebook.com/{ver}"
+
+
+def _meta_app_access_token(s) -> str:
+    app_id = (s.meta_client_id or s.meta_app_id).strip()
+    app_secret = (s.meta_client_secret or s.meta_app_secret).strip()
+    return f"{app_id}|{app_secret}"
+
+
+def _oauth_frontend_redirect(
+    provider: str,
+    *,
+    oauth: str,
+    account_id: str = "",
+    message: str = "",
+    fallback_payload: dict | None = None,
+):
+    """Redirige al frontend tras OAuth si OAUTH_SUCCESS_REDIRECT_URL está configurado."""
+    s = get_settings()
+    base = (s.oauth_success_redirect_url or "").strip()
+    if base:
+        params: dict[str, str] = {"oauth": oauth, "provider": provider}
+        if account_id:
+            params["account_id"] = account_id
+        if message:
+            params["message"] = message
+        sep = "&" if "?" in base else "?"
+        return RedirectResponse(url=f"{base}{sep}{urlencode(params)}", status_code=302)
+    if fallback_payload is not None:
+        return fallback_payload
+    raise HTTPException(status_code=400, detail=message or "OAuth falló")
+
+
 def _exchange_meta(code: str, s) -> dict:
     """Intercambia authorization code por access token de Meta."""
     with httpx.Client(timeout=15) as client:
         r = client.get(
-            f"https://graph.facebook.com/{s.graph_api_version}/oauth/access_token",
+            f"{_graph_base(s)}/oauth/access_token",
             params={
                 "client_id": s.meta_client_id,
                 "client_secret": s.meta_client_secret,
@@ -161,32 +207,100 @@ def _exchange_meta(code: str, s) -> dict:
     return {"access_token": data["access_token"], "refresh_token": None, "expires_at": None}
 
 
-def _fetch_meta_ig_account(token: str, s) -> str:
-    """Obtiene el Instagram Business Account ID de la primera página del usuario."""
-    with httpx.Client(timeout=15) as client:
-        r_pages = client.get(
-            f"https://graph.facebook.com/{s.graph_api_version}/me/accounts",
-            params={"access_token": token},
+def _ig_id_for_page(client: httpx.Client, base: str, page_id: str, token: str) -> str:
+    """Resuelve el Instagram Business Account ID vinculado a una Fan Page."""
+    r_ig = client.get(
+        f"{base}/{page_id}",
+        params={"fields": "instagram_business_account", "access_token": token},
+    )
+    r_ig.raise_for_status()
+    ig = r_ig.json().get("instagram_business_account") or {}
+    ig_id = str(ig.get("id") or "")
+    if not ig_id:
+        raise HTTPException(
+            status_code=400,
+            detail="La página de Facebook no tiene cuenta de Instagram Business vinculada.",
         )
+    return ig_id
+
+
+def _ig_id_from_granular_scopes(client: httpx.Client, base: str, token: str, s) -> str | None:
+    """Lee target_ids de Instagram en debug_token (permisos granulares de Meta)."""
+    r = client.get(
+        f"{base}/debug_token",
+        params={"input_token": token, "access_token": _meta_app_access_token(s)},
+    )
+    if not r.is_success:
+        return None
+    data: dict[str, Any] = r.json().get("data") or {}
+    if not data.get("is_valid"):
+        return None
+    for entry in data.get("granular_scopes") or []:
+        if entry.get("scope") not in _INSTAGRAM_GRANULAR_SCOPES:
+            continue
+        for target_id in entry.get("target_ids") or []:
+            if target_id:
+                return str(target_id)
+    return None
+
+
+def _ig_id_from_configured_page(client: httpx.Client, base: str, token: str, s) -> str | None:
+    """Usa META_FACEBOOK_PAGE_ID del .env cuando /me/accounts viene vacío."""
+    page_id = (s.meta_facebook_page_id or "").strip()
+    if not page_id:
+        return None
+    try:
+        return _ig_id_for_page(client, base, page_id, token)
+    except HTTPException:
+        return None
+
+
+def _ig_id_from_env_fallback(client: httpx.Client, base: str, token: str, s) -> str | None:
+    """Valida INSTAGRAM_BUSINESS_ACCOUNT_ID del .env contra el token OAuth."""
+    ig_id = (s.instagram_business_account_id or "").strip()
+    if not ig_id:
+        return None
+    r_check = client.get(
+        f"{base}/{ig_id}",
+        params={"fields": "id", "access_token": token},
+    )
+    if r_check.is_success and r_check.json().get("id"):
+        return ig_id
+    return None
+
+
+def _fetch_meta_ig_account(token: str, s) -> str:
+    """Obtiene el Instagram Business Account ID (páginas, granular scopes o .env)."""
+    base = _graph_base(s)
+    with httpx.Client(timeout=15) as client:
+        r_pages = client.get(f"{base}/me/accounts", params={"access_token": token})
         r_pages.raise_for_status()
         pages = r_pages.json().get("data", [])
-        if not pages:
-            raise HTTPException(status_code=400, detail="No hay páginas de Facebook asociadas a esta cuenta.")
+        if pages:
+            page = pages[0]
+            page_token = page.get("access_token", token)
+            return _ig_id_for_page(client, base, page["id"], page_token)
 
-        page = pages[0]
-        page_id = page["id"]
-        page_token = page.get("access_token", token)
+        ig_id = _ig_id_from_granular_scopes(client, base, token, s)
+        if ig_id:
+            return ig_id
 
-        r_ig = client.get(
-            f"https://graph.facebook.com/{s.graph_api_version}/{page_id}",
-            params={"fields": "instagram_business_account", "access_token": page_token},
-        )
-        r_ig.raise_for_status()
-        ig = r_ig.json().get("instagram_business_account", {})
-        ig_id = ig.get("id", "")
-        if not ig_id:
-            raise HTTPException(status_code=400, detail="La página de Facebook no tiene cuenta de Instagram Business vinculada.")
-    return ig_id
+        ig_id = _ig_id_from_configured_page(client, base, token, s)
+        if ig_id:
+            return ig_id
+
+        ig_id = _ig_id_from_env_fallback(client, base, token, s)
+        if ig_id:
+            return ig_id
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "No hay páginas de Facebook asociadas a esta cuenta. "
+            "Selecciona PowerUps Agencia en el popup de OAuth o configura "
+            "META_FACEBOOK_PAGE_ID / INSTAGRAM_BUSINESS_ACCOUNT_ID en .env."
+        ),
+    )
 
 
 def _exchange_linkedin(code: str, s) -> dict:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import structlog
+import time
 from datetime import datetime, timezone
 
 logger = structlog.get_logger(__name__)
@@ -87,6 +88,8 @@ def _meta_instagram(copy_text: str, image_url: str, s, *, content_format: str) -
         if not creation_id:
             raise ValueError("Meta IG: respuesta sin id de contenedor de media")
 
+        _wait_meta_container_ready(client, base, creation_id, params)
+
         r_pub = client.post(
             f"{base}/{ig_id}/media_publish",
             params={**params, "creation_id": creation_id},
@@ -112,6 +115,24 @@ def _meta_instagram(copy_text: str, image_url: str, s, *, content_format: str) -
             "platform_post_id": media_id,
             "content_format": content_format,
         }
+
+
+def _wait_meta_container_ready(client, base: str, creation_id: str, params: dict, *, max_wait_s: int = 60) -> None:
+    """Espera a que Meta termine de procesar la imagen (status_code=FINISHED) antes de publicar."""
+    deadline = time.monotonic() + max_wait_s
+    while time.monotonic() < deadline:
+        r = client.get(
+            f"{base}/{creation_id}",
+            params={**params, "fields": "status_code"},
+        )
+        if r.is_success:
+            status = (r.json().get("status_code") or "").upper()
+            if status == "FINISHED":
+                return
+            if status == "ERROR":
+                raise ValueError(f"Meta IG: contenedor en ERROR — {r.text[:300]}")
+        time.sleep(2)
+    raise ValueError("Meta IG: timeout esperando que la imagen esté lista (status_code=FINISHED)")
 
 
 # ---------------------------------------------------------------------------

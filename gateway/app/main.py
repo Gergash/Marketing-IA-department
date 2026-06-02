@@ -30,9 +30,10 @@ app.include_router(router)
 app.include_router(auth_social_router)
 Instrumentator().instrument(app).expose(app)
 
-_static_dir = Path(__file__).resolve().parents[3] / "static" / "images"
-_static_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(_static_dir.parent)), name="static")
+_static_root = Path(__file__).resolve().parents[2] / "static"
+_static_root.mkdir(parents=True, exist_ok=True)
+(_static_root / "images").mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_root)), name="static")
 
 
 def _init_db() -> None:

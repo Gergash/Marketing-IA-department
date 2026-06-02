@@ -24,6 +24,20 @@ function apiOrigin() {
 
 const API_BASE = `${apiOrigin()}/api`;
 
+/** Convierte URL absoluta del backend a ruta relativa servida por el proxy Vite. */
+function resolveImageUrl(url) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname.startsWith("/static/")) {
+      return parsed.pathname;
+    }
+  } catch {
+    if (url.startsWith("/static/")) return url;
+  }
+  return url;
+}
+
 async function api(path, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   const key = getApiKey();
@@ -54,6 +68,7 @@ export default function App() {
   const [socialStatus, setSocialStatus] = useState(null);
   const [contentFormat, setContentFormat] = useState("feed");
   const [loading, setLoading] = useState(false);
+  const [approvingRunId, setApprovingRunId] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
@@ -111,12 +126,18 @@ export default function App() {
   };
 
   const doApprove = async (runId) => {
+    if (approvingRunId != null) return;
+    setApprovingRunId(runId);
     setError(null);
     try {
       await api(`/runs/${runId}/approve`, "POST", { approved_by: "human" });
+      const updated = await api(`/runs/${runId}`);
+      setResult({ run_id: updated.run_id, status: updated.status, result: updated.result });
       await loadHistory();
     } catch (e) {
       setError(e.message);
+    } finally {
+      setApprovingRunId(null);
     }
   };
 
@@ -220,7 +241,7 @@ export default function App() {
               Imagen generada:
             </p>
             <img
-              src={result.result.design.image_url}
+              src={resolveImageUrl(result.result.design.image_url)}
               alt="Imagen generada"
               style={{ maxWidth: "100%", borderRadius: "6px", border: "1px solid #333" }}
             />
@@ -247,10 +268,14 @@ export default function App() {
               )}
               {item.status === "pending_approval" && (
                 <span style={{ marginLeft: "1rem" }}>
-                  <button onClick={() => doApprove(item.run_id)} style={{ marginRight: "0.3rem" }}>
-                    ✓ Aprobar
+                  <button
+                    disabled={approvingRunId != null}
+                    onClick={() => doApprove(item.run_id)}
+                    style={{ marginRight: "0.3rem" }}
+                  >
+                    {approvingRunId === item.run_id ? "Publicando…" : "✓ Aprobar"}
                   </button>
-                  <button onClick={() => doReject(item.run_id)}>✗ Rechazar</button>
+                  <button disabled={approvingRunId != null} onClick={() => doReject(item.run_id)}>✗ Rechazar</button>
                 </span>
               )}
             </li>

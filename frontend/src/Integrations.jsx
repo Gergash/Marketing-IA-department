@@ -35,6 +35,19 @@ export default function Integrations({ apiKey }) {
 
   useEffect(() => { load(); }, [apiKey]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get("oauth");
+    if (!oauth) return;
+    if (oauth === "success") {
+      setError(null);
+      load();
+    } else if (oauth === "error") {
+      setError(params.get("message") || "Error al conectar con Meta");
+    }
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [apiKey]);
+
   const connectedProviders = connected.map((c) => c.provider);
 
   const handleConnect = (provider) => {

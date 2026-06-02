@@ -120,6 +120,10 @@ func publishMeta(req publishRequest) (publishResponse, error) {
 		return publishResponse{}, fmt.Errorf("meta media_container: %w", err)
 	}
 
+	if err := waitForMediaContainer(graphBase, containerID, token); err != nil {
+		return publishResponse{}, fmt.Errorf("meta media_wait: %w", err)
+	}
+
 	// Paso 2: Publicar el contenedor
 	mediaID, err := graphAPIPost(
 		fmt.Sprintf("%s/%s/media_publish", graphBase, igID),
@@ -138,6 +142,35 @@ func publishMeta(req publishRequest) (publishResponse, error) {
 		PublicationURL: fmt.Sprintf("https://www.instagram.com/p/%s/", mediaID),
 		PlatformPostID: mediaID,
 	}, nil
+}
+
+func waitForMediaContainer(graphBase, containerID, token string) error {
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		statusURL := fmt.Sprintf("%s/%s?fields=status_code&access_token=%s", graphBase, containerID, url.QueryEscape(token))
+		resp, err := httpClient.Get(statusURL)
+		if err != nil {
+			return err
+		}
+		rb, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("graph API HTTP %d: %s", resp.StatusCode, string(rb))
+		}
+		var data struct {
+			StatusCode string `json:"status_code"`
+		}
+		if json.Unmarshal(rb, &data) == nil {
+			switch strings.ToUpper(data.StatusCode) {
+			case "FINISHED":
+				return nil
+			case "ERROR":
+				return fmt.Errorf("contenedor en ERROR: %s", string(rb))
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("timeout esperando status_code=FINISHED")
 }
 
 // graphAPIPost hace POST form-urlencoded al Graph API y devuelve el campo "id" de la respuesta JSON.

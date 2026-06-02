@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     # Token: Page long-lived con permisos instagram_basic, instagram_content_publish, pages_show_list
     meta_app_id: str = ""
     meta_app_secret: str = ""
+    meta_facebook_page_id: str = ""  # Fan Page ID (no confundir con meta_app_id)
     meta_page_access_token: str = ""
     instagram_business_account_id: str = ""
     graph_api_version: str = "v21.0"
@@ -57,6 +58,7 @@ class Settings(BaseSettings):
     meta_client_id: str = ""
     meta_client_secret: str = ""
     meta_redirect_uri: str = "http://localhost:8000/api/auth/callback/meta"
+    oauth_success_redirect_url: str = "http://localhost:5173/"
 
     # OAuth 2.0 — LinkedIn
     linkedin_client_id: str = ""

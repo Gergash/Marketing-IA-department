@@ -111,13 +111,8 @@ def _publish_via_go(
     idempotency_key: str | None,
     run: AgentRun,
     db: Session,
-) -> None:
-    """POST al sidecar Go `/publish` con token OAuth extraído de BD.
-
-    Pasa access_token + account_id para que Go llame a la API oficial sin intermediarios.
-    Si Go no está disponible o no hay token, el resultado queda sin publish_result
-    y el caller puede aplicar fallback.
-    """
+) -> str:
+    """POST al sidecar Go `/publish`. Retorna: success | failed | unavailable."""
     settings = get_settings()
     platform = brief.red_social.lower()
     oauth_provider = _OAUTH_PROVIDER_MAP.get(platform)
@@ -135,6 +130,9 @@ def _publish_via_go(
         if token_row:
             access_token = token_row.access_token
             account_id = token_row.account_id
+
+    if not access_token:
+        return "unavailable"
 
     # Sustituye localhost por la URL pública (Meta exige HTTPS accesible externamente)
     image_url = result["design"]["image_url"]
@@ -157,11 +155,14 @@ def _publish_via_go(
         if published.is_success:
             result["publish_result"] = published.json()
             logger.info("go_publisher.ok", platform=brief.red_social)
-        else:
-            logger.warning("go_publisher.non_2xx", status=published.status_code, body=published.text[:200])
+            return "success"
+        logger.warning("go_publisher.non_2xx", status=published.status_code, body=published.text[:200])
+        run.error_message = f"go_publisher_http_{published.status_code}"
+        return "failed"
     except Exception as exc:  # noqa: BLE001
         run.error_message = f"go_publisher_error: {exc}"
         logger.warning("go_publisher.error", error=str(exc))
+        return "unavailable"
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +277,12 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
     run = db.get(AgentRun, run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")
+    if run.status == "completed":
+        if run.result_json:
+            return json.loads(run.result_json)
+        raise ValueError(f"Run {run_id} ya está completado")
+    if run.status == "publishing":
+        raise ValueError(f"Run {run_id} ya se está publicando; espera unos segundos")
     if run.status != "pending_approval":
         raise ValueError(f"Run {run_id} no está en estado pending_approval (actual: {run.status})")
     if not run.result_json:
@@ -290,31 +297,48 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
     if not result.get("quality", {}).get("approved", False):
         raise ValueError("QA rechazó el contenido; no se puede publicar")
 
-    # 1er intento: sidecar Go con token OAuth de BD
-    _publish_via_go(result, brief, run.idempotency_key, run, db)
-
-    # Fallback: publicador Python si Go no respondió o no hay token
-    if not result.get("publish_result"):
-        logger.warning("approve_run.go_fallback", run_id=run_id)
-        copy = CopyOutput(**result["copy"])
-        design = DesignOutput(**result["design"])
-        pipeline = MarketingPipeline()
-        publish_out = pipeline.publisher.run(
-            brief.red_social,
-            copy,
-            design,
-            idempotency_key=run.idempotency_key,
-            content_format=_normalize_content_format(getattr(run, "content_format", None)),
-        )
-        result["publish_result"] = publish_out.model_dump()
-
-    run.approved_at = datetime.utcnow()
-    run.approved_by = approved_by
-    _persist_result(db, run, result, brief.red_social)
+    # Bloqueo optimista: evita doble clic / requests concurrentes que dupliquen posts.
+    run.status = "publishing"
     db.commit()
-    db.refresh(run)
-    logger.info("pipeline.approved_and_published", run_id=run_id, approved_by=approved_by)
-    return result
+
+    try:
+        go_outcome = _publish_via_go(result, brief, run.idempotency_key, run, db)
+
+        # Solo fallback Python si Go no respondió (caído). Si Go falló en Meta, NO reintentar
+        # en Python — eso creaba contenedores duplicados y posts repetidos en Instagram.
+        if go_outcome == "unavailable" and not result.get("publish_result"):
+            logger.warning("approve_run.go_fallback", run_id=run_id)
+            copy = CopyOutput(**result["copy"])
+            design = DesignOutput(**result["design"])
+            pipeline = MarketingPipeline()
+            publish_out = pipeline.publisher.run(
+                brief.red_social,
+                copy,
+                design,
+                idempotency_key=run.idempotency_key,
+                content_format=_normalize_content_format(getattr(run, "content_format", None)),
+            )
+            result["publish_result"] = publish_out.model_dump()
+        elif go_outcome == "failed" and not result.get("publish_result"):
+            raise ValueError(
+                "Meta rechazó la publicación (imagen aún procesándose o error Graph API). "
+                "Espera 30 segundos y pulsa Aprobar una sola vez — no uses fallback dual."
+            )
+
+        if not result.get("publish_result"):
+            raise ValueError("No se pudo publicar en la red social")
+
+        run.approved_at = datetime.utcnow()
+        run.approved_by = approved_by
+        _persist_result(db, run, result, brief.red_social)
+        db.commit()
+        db.refresh(run)
+        logger.info("pipeline.approved_and_published", run_id=run_id, approved_by=approved_by)
+        return result
+    except Exception:
+        run.status = "pending_approval"
+        db.commit()
+        raise
 
 
 def reject_run(db: Session, run_id: int, *, reason: str = "", approved_by: str = "human") -> None:

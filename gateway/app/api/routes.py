@@ -208,6 +208,11 @@ def approve_run_endpoint(
         result = approve_run(db, run_id, approved_by=payload.approved_by)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Error al publicar: {exc}",
+        ) from exc
     return RunResponse(run_id=run_id, status="completed", result=result)
 
 

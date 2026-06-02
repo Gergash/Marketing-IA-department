@@ -324,3 +324,132 @@
   Resumen ejecutivo: El proyecto está en estado de MVP completo y listo para demo con todas las deudas técnicas críticas resueltas. El pipeline de extremo a extremo (brief →     
   estrategia → copy/QA → imagen → publicación con aprobación humana) funciona en modo sync y async. Las integraciones reales con Meta y LinkedIn están operativas vía OAuth       
   nativo. El único requisito previo para una demo con APIs reales es configurar las API keys en .env y levantar ngrok para las imágenes de Meta.
+
+
+estos son los tipos app disponibles: Crear y administrar anuncios con la API de marketing
+
+Crea, administra y optimiza campañas publicitarias en las tecnologías de Meta. Puedes ampliar, detener o actualizar las campañas, o realizar otras tareas mediante programación.
+
+Información sobre la API de marketing
+
+Medir datos de rendimiento de los anuncios con la API de marketing
+
+Maximiza el ROI con los datos de rendimiento de los anuncios para optimizar el presupuesto publicitario y el contenido, crear públicos personalizados, conectar a los clientes con catálogos de productos y mejorar el alcance.
+
+Información sobre la API de marketing
+
+Captar y administrar clientes potenciales de anuncios con la API de marketing
+
+Ofrece a los clientes potenciales una forma rápida y segura de registrarse para obtener información sobre tu negocio o tus productos.
+
+Información sobre los clientes potenciales de anuncios
+
+Crear y administrar anuncios sobre apps con el administrador de anuncios de Meta
+
+Promociona tu app para celulares y aumenta las instalaciones. Crea y administra campañas que animen a los usuarios a descargar e instalar tu app. No incluye acceso a la API de marketing.
+
+Información sobre los anuncios de instalación de apps
+
+Acceder a la API de Threads
+
+Usa la API de Threads y elige autenticar usuarios, recuperar información de usuarios, publicar hilos, responder hilos, administrar la configuración de respuesta o recopilar estadísticas para un perfil de Threads que poseas o administres en nombre de otros.
+
+Información sobre la API de Threads
+
+Inicia un juego instantáneo en Facebook y Messenger
+
+Lanza un juego instantáneo que los jugadores puedan encontrar y jugar directamente en su feed o en conversaciones o mensajes, tanto en computadoras como en dispositivos móviles.
+
+Información sobre cómo lanzar un juego instantáneo en Facebook y Messenger
+
+Autenticar y solicitar datos a usuarios con el inicio de sesión con Facebook
+
+Nuestro caso de uso más común. Una forma segura y rápida de que los usuarios inicien sesión en tu app o juego y que la app les solicite permisos para acceder a sus datos para personalizar su experiencia.
+
+Información sobre el inicio de sesión con Facebook
+
+Anúnciate en tu app con Meta Audience Network
+
+Únete a Meta Audience Network para monetizar tu app y aumentar tus ingresos con anuncios de los anunciantes de Meta. Obtén estadísticas con la API de informes.
+
+Información sobre Audience Network
+
+Administrar productos con la API de catálogos
+
+Administra los catálogos y los productos que quieres promocionar en las tecnologías de Meta.
+
+Información sobre la API de catálogos
+
+Permite a los usuarios transferir sus datos a otras apps
+
+Ofrece a los usuarios la posibilidad de transferir su información de las apps de Meta a otros servicios.
+
+Información sobre las apps de portabilidad de datos
+
+Interactuar con los clientes en Messenger from Meta
+
+Responde a los mensajes enviados a la página de Facebook de tu negocio. Puedes configurar respuestas automáticas o dejar que responda un representante de tu equipo.
+
+Información sobre la plataforma de Messenger
+
+Comparte o crea recaudaciones de fondos en Facebook e Instagram
+
+Recauda dinero y llega a más personas con la API de recaudación de fondos de Meta. Crea o comparte campañas de recaudación de fondos existentes en Facebook e Instagram.
+
+Información sobre la API de recaudación de fondos
+
+Administrar mensajes y contenido en Instagram
+
+Realiza publicaciones, comparte historias, responde comentarios, contesta mensajes directos y mucho más con la API de Instagram.
+
+Información sobre la API de Instagram
+
+Accede a la API de video en vivo
+
+Usa la API de video en vivo para transmitir videos en vivo en Facebook.
+
+Información sobre la API de video en vivo
+
+Insertar contenido de Facebook, Instagram y Threads en otros sitios web
+
+Usa la API de oEmbed para insertar el contenido de Facebook, Instagram y Threads, como fotos y videos, en otros sitios web.
+
+Información sobre el caso de uso de oEmbed
+
+Administrar todos los aspectos de tu página
+
+Publica contenido y videos, modera publicaciones y comentarios de seguidores en tu página y obtén estadísticas de interacción.
+
+Información sobre la API de páginas
+
+Unirte a ThreatExchange
+
+Únete a ThreatExchange para compartir con otros miembros indicios sobre amenazas online, como terrorismo, malware, material sobre abuso sexual infantil y otro contenido dañino, y ayudar a mantener la seguridad de las personas en internet.
+
+Información sobre ThreatExchange
+
+Conectarte con clientes a través de WhatsApp
+
+(Inicio del texto visible)
+
+Inicia una conversación con WhatsApp, envía notificaciones...
+
+Crear una app sin un caso de uso
+
+Selecciona esta opción si quieres obtener un identificador de la app sin agregar permisos, funciones ni productos.
+
+¿Buscas otra cosa?
+
+Si necesitas un caso de uso que no está en la lista, selecciona un tipo de app y agrega los permisos y productos que necesites.
+
+Otro
+
+(This option is going away soon)
+
+Tu app se creará en la experiencia anterior. Luego deberás elegir entre todos los permisos, funciones y productos disponibles.
+
+Hay que crear una nueva fan page de powerups para poder conectar esta cuenta de empresa de facebook con el instagram de powerupsagencia
+
+ya se creo la nueva fanpage de powerups conectada al instagram para generar el token maestro, el token ya esta en el archivo .env
+
+ruta de activacion de stable difusion: C:\Users\57317\AppData\Local\Programs\Stable-difusion-IA\stable-diffusion-webui-forge

@@ -17,6 +17,7 @@ from gateway.app.schemas.contracts import (
     ApproveRequest,
     BriefCreate,
     BriefResponse,
+    CampaignFireResponse,
     CampaignScheduleCreate,
     CampaignScheduleResponse,
     JobStatusResponse,
@@ -31,6 +32,7 @@ from gateway.app.services.pipeline_service import (
     execute_pipeline,
     reject_run,
 )
+from gateway.app.services.scheduler_service import fire_campaign_by_id, sync_campaign_jobs
 from workers.celery_app import celery_app
 from workers.tasks import execute_pipeline_task
 
@@ -208,6 +210,11 @@ def approve_run_endpoint(
         result = approve_run(db, run_id, approved_by=payload.approved_by)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Error al publicar: {exc}",
+        ) from exc
     return RunResponse(run_id=run_id, status="completed", result=result)
 
 
@@ -280,11 +287,12 @@ def create_campaign(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> CampaignSchedule:
-    """Crea una entrada de campaña programada (cron); el disparo automático es extensible vía scheduler."""
+    """Crea campaña programada (cron). El scheduler la registra al instante (sin esperar el heartbeat de 5 min)."""
     item = CampaignSchedule(tenant_id=tenant_id, **payload.model_dump())
     db.add(item)
     db.commit()
     db.refresh(item)
+    sync_campaign_jobs()
     return item
 
 
@@ -296,4 +304,32 @@ def list_campaigns(
     """Lista campañas programadas del tenant."""
     return list(
         db.execute(select(CampaignSchedule).where(CampaignSchedule.tenant_id == tenant_id)).scalars().all()
+    )
+
+
+@router.post("/campaigns/{campaign_id}/fire", response_model=CampaignFireResponse)
+def fire_campaign(
+    campaign_id: int,
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> CampaignFireResponse:
+    """Dispara una campaña de inmediato (prueba de fuego). Genera contenido en pending_approval sin publicar."""
+    campaign = db.get(CampaignSchedule, campaign_id)
+    if not campaign or campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada")
+    if not campaign.enabled:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Campaña desactivada")
+
+    run_id = fire_campaign_by_id(campaign_id)
+    if run_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo ejecutar la campaña; revisa logs del gateway",
+        )
+
+    run = db.get(AgentRun, run_id)
+    return CampaignFireResponse(
+        campaign_id=campaign_id,
+        run_id=run_id,
+        status=run.status if run else "unknown",
     )

@@ -339,3 +339,5 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
   - `GET /api/runs/{run_id}` — consultar estado
   - `GET /api/runs` — historial de ejecuciones
   - `POST /api/campaigns` — crear campaña programada (cron)
+  - `POST /api/campaigns/{id}/fire` — disparar campaña de inmediato (prueba de fuego)
+- **Prueba de Fuego del Scheduler:** [`infra/prueba-de-fuego-scheduler.md`](infra/prueba-de-fuego-scheduler.md)

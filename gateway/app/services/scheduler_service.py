@@ -18,8 +18,8 @@ def _fire_campaign(
     tema: str,
     red_social: str,
     objetivo: str,
-) -> None:
-    """Crea un brief y ejecuta el pipeline completo para una campaña programada."""
+) -> int | None:
+    """Crea un brief y ejecuta el pipeline para una campaña programada (human-in-the-loop)."""
     # Importación diferida para evitar circularidad en startup
     from gateway.app.services.pipeline_service import create_run, execute_pipeline
 
@@ -27,7 +27,7 @@ def _fire_campaign(
         campaign = db.get(CampaignSchedule, campaign_id)
         if not campaign or not campaign.enabled:
             logger.info("scheduler.campaign_skipped", campaign_id=campaign_id, reason="disabled_or_deleted")
-            return
+            return None
 
         brief = Brief(
             tenant_id=tenant_id,
@@ -52,13 +52,35 @@ def _fire_campaign(
             execute_pipeline(
                 db,
                 run.id,
-                publish=True,
+                publish=False,
                 requires_approval=True,
                 idempotency_key=idem_key,
             )
             logger.info("scheduler.campaign_fired", campaign_id=campaign_id, run_id=run.id)
+            return run.id
         except Exception as exc:  # noqa: BLE001
             logger.error("scheduler.campaign_error", campaign_id=campaign_id, error=str(exc))
+            return None
+
+
+def fire_campaign_by_id(campaign_id: int) -> int | None:
+    """Dispara una campaña por ID (prueba de fuego manual). Retorna run_id o None si se omitió."""
+    with SessionLocal() as db:
+        campaign = db.get(CampaignSchedule, campaign_id)
+        if not campaign or not campaign.enabled:
+            return None
+        return _fire_campaign(
+            campaign_id=campaign.id,
+            tenant_id=campaign.tenant_id,
+            tema=campaign.tema,
+            red_social=campaign.red_social,
+            objetivo=campaign.objetivo,
+        )
+
+
+def sync_campaign_jobs() -> None:
+    """Expone la sincronización BD → APScheduler para uso desde API o scripts."""
+    _sync_campaign_jobs()
 
 
 def _sync_campaign_jobs() -> None:

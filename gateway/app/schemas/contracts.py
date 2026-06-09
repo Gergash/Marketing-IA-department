@@ -104,3 +104,12 @@ class CampaignScheduleResponse(CampaignScheduleCreate):
 
     class Config:
         from_attributes = True
+
+
+class CampaignFireResponse(BaseModel):
+    """Resultado de disparar una campaña manualmente (prueba de fuego del scheduler)."""
+
+    campaign_id: int
+    run_id: int
+    status: str
+    message: str = "Pipeline ejecutado; revisa pending_approval en dashboard o GET /api/runs"

@@ -321,6 +321,30 @@
   cd frontend && npm run dev
 
   ---
+  8. Prueba de Fuego del Scheduler (APScheduler end-to-end)
+
+  Documentación completa: infra/prueba-de-fuego-scheduler.md
+
+  Resumen:
+  - El scheduler arranca con uvicorn (no es proceso separado)
+  - Campaña en campaign_schedules con cron (ej. * * * * * = cada minuto UTC)
+  - Disparo: automático por cron O manual POST /api/campaigns/{id}/fire
+  - Resultado: agent_runs.status = pending_approval, run_mode = scheduled, sin publicación
+
+  Comandos rápidos (IMAGE_PROVIDER=mock en .env):
+
+  # Terminal 1
+  uvicorn gateway.app.main:app --reload --port 8000
+
+  # Terminal 2 — seed + disparo inmediato
+  python scripts/seed_fire_test_campaign.py --fire-now
+
+  # Verificar
+  curl -s http://localhost:8000/api/runs
+
+  Tests: pytest tests/test_scheduler.py -v
+
+  ---
   Resumen ejecutivo: El proyecto está en estado de MVP completo y listo para demo con todas las deudas técnicas críticas resueltas. El pipeline de extremo a extremo (brief →     
   estrategia → copy/QA → imagen → publicación con aprobación humana) funciona en modo sync y async. Las integraciones reales con Meta y LinkedIn están operativas vía OAuth       
   nativo. El único requisito previo para una demo con APIs reales es configurar las API keys en .env y levantar ngrok para las imágenes de Meta.

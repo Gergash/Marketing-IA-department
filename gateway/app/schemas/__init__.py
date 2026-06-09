@@ -1,6 +1,7 @@
 from .contracts import (
     BriefCreate,
     BriefResponse,
+    CampaignFireResponse,
     CampaignScheduleCreate,
     CampaignScheduleResponse,
     JobStatusResponse,
@@ -18,4 +19,5 @@ __all__ = [
     "SocialPublishStatusResponse",
     "CampaignScheduleCreate",
     "CampaignScheduleResponse",
+    "CampaignFireResponse",
 ]

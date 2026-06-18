@@ -1,4 +1,4 @@
-"""Generación de imágenes: Stable Diffusion (A1111), DALL·E, Canva placeholder y dummy."""
+"""Generación de imágenes: Stable Diffusion (A1111), fal.ai, DALL·E, Canva placeholder y dummy."""
 
 from __future__ import annotations
 
@@ -34,6 +34,14 @@ def generate_image(
             prompt,
             s.stable_diffusion_url,
             checkpoint=(s.stable_diffusion_checkpoint or "").strip() or None,
+            overlay_text=overlay_text,
+            overlay_cta=overlay_cta,
+        )
+    if s.image_provider == "fal" and s.fal_api_key:
+        return _fal(
+            prompt,
+            s.fal_api_key,
+            s.fal_model,
             overlay_text=overlay_text,
             overlay_cta=overlay_cta,
         )
@@ -137,6 +145,62 @@ def _add_text_overlay(img_bytes: bytes, copy_text: str, cta: str | None) -> byte
     buf = io.BytesIO()
     composite.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def _fal(
+    prompt: str,
+    api_key: str,
+    model: str = "fal-ai/flux-pro/v1.1",
+    *,
+    overlay_text: str | None = None,
+    overlay_cta: str | None = None,
+) -> str:
+    """Genera imagen con fal.ai (Flux pro u otros modelos) y la guarda en static/images/."""
+    import os
+    import httpx
+
+    os.environ.setdefault("FAL_KEY", api_key)
+
+    try:
+        import fal_client  # pip install fal-client
+    except ImportError:
+        logger.error("image.fal_missing_sdk", hint="pip install fal-client")
+        return _placeholder(prompt)
+
+    try:
+        result = fal_client.run(
+            model,
+            arguments={
+                "prompt": prompt[:2000],
+                "image_size": "landscape_16_9",  # 1024×576 — ideal para redes sociales
+                "num_inference_steps": 28,
+                "num_images": 1,
+                "enable_safety_checker": False,
+            },
+        )
+        image_url: str = result["images"][0]["url"]
+        logger.info("image.fal_generated", model=model, url=image_url[:80])
+    except Exception as exc:
+        logger.error("image.fal_api_error", error=str(exc))
+        return _placeholder(prompt)
+
+    try:
+        img_resp = httpx.get(image_url, timeout=60, follow_redirects=True)
+        img_resp.raise_for_status()
+        raw = img_resp.content
+
+        if overlay_text:
+            raw = _add_text_overlay(raw, overlay_text, overlay_cta)
+
+        _STATIC_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"fal_{uuid.uuid4().hex}.png"
+        (_STATIC_DIR / filename).write_bytes(raw)
+        url = f"http://localhost:8000/static/images/{filename}"
+        logger.info("image.fal_saved", url=url)
+        return url
+    except Exception as exc:
+        logger.error("image.fal_download_error", error=str(exc))
+        return _placeholder(prompt)
 
 
 def _dalle(prompt: str, api_key: str) -> str:

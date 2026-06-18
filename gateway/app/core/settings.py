@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
 
-    # Image generation — provider: stable_diffusion | mock | openai | canva
+    # Image generation — provider: stable_diffusion | comfyui | fal | openai | canva | mock
     image_provider: str = "stable_diffusion"
     stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
     # Nombre exacto del checkpoint en Automatic1111 (como en el desplegable), p. ej. archivo .safetensors
@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     canva_client_id: str = ""
     canva_client_secret: str = ""
     canva_template_id: str = ""
+    # fal.ai (Flux pro vía API) — IMAGE_PROVIDER=fal
+    fal_api_key: str = ""
+    # Modelo fal a usar; opciones: fal-ai/flux-pro/v1.1 | fal-ai/flux/schnell | fal-ai/recraft-v3
+    fal_model: str = "fal-ai/flux-pro/v1.1"
 
     # Social publishing — provider: mock | linkedin | uploadpost | meta
     social_provider: str = "mock"

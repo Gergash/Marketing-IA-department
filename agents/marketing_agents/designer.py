@@ -5,7 +5,7 @@ from .schemas import BriefInput, CopyOutput, DesignOutput
 
 
 class DesignerAgent:
-    """Construye el prompt visual y obtiene la URL de imagen (SD, DALL·E, etc.)."""
+    """Construye el prompt visual y obtiene la URL de imagen (fal.ai, SD, DALL·E, etc.)."""
 
     def run(self, brief: BriefInput, copy: CopyOutput) -> DesignOutput:
         """Genera imagen con texto superpuesto (copy + CTA) cuando el proveedor lo soporta."""

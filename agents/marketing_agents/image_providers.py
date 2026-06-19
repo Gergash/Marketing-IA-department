@@ -24,12 +24,14 @@ def generate_image(
     *,
     overlay_text: str | None = None,
     overlay_cta: str | None = None,
+    image_provider: str | None = None,
 ) -> str:
     """Return an image URL for the given prompt, with optional text overlay."""
     from gateway.app.core.settings import get_settings
     s = get_settings()
+    provider = (image_provider or s.image_provider).strip().lower()
 
-    if s.image_provider == "stable_diffusion":
+    if provider == "stable_diffusion":
         return _stable_diffusion(
             prompt,
             s.stable_diffusion_url,
@@ -37,7 +39,7 @@ def generate_image(
             overlay_text=overlay_text,
             overlay_cta=overlay_cta,
         )
-    if s.image_provider == "fal" and s.fal_api_key:
+    if provider == "fal" and s.fal_api_key:
         return _fal(
             prompt,
             s.fal_api_key,
@@ -45,9 +47,12 @@ def generate_image(
             overlay_text=overlay_text,
             overlay_cta=overlay_cta,
         )
-    if s.image_provider == "openai" and s.openai_api_key:
+    if provider == "fal" and not s.fal_api_key:
+        logger.error("image.fal_missing_key")
+        return _placeholder(prompt)
+    if provider == "openai" and s.openai_api_key:
         return _dalle(prompt, s.openai_api_key)
-    if s.image_provider == "canva":
+    if provider == "canva":
         return _canva(prompt, s)
     return _placeholder(prompt)
 

@@ -1,213 +1,123 @@
-## Estado actual del proyecto (real vs `estado-actual.txt`)
+## Estado actual del proyecto — Marketing DEPA IA
+Actualizado: 2026-06-18
 
-`estado-actual.txt` está **desactualizado** (fecha 19 mayo, commit `9f9209c`, árbol “limpio”). En disco el MVP está **más avanzado** de lo que ese archivo describe.
+---
 
-### Lo que funciona hoy (código actual)
+### Lo que funciona hoy
 
 | Capa | Estado |
 |------|--------|
 | **Pipeline** | Strategist → LangGraph Copy/QA → Designer → Publisher |
-| **LLM** | Ollama / Anthropic / OpenAI + stub |
-| **Imágenes** | **fal.ai (Flux Pro)**, Stable Diffusion (A1111), DALL·E, mock |
-| **Social** | Meta/IG, LinkedIn, Upload-Post, mock + Go sidecar `:8088` |
-| **Human-in-the-loop** | `pending_approval` → approve/reject |
+| **LLM** | Ollama (llama3.1) / Anthropic / OpenAI + stub mockeado |
+| **Imágenes** | **fal.ai (Flux Pro v1.1)** — proveedor principal. Fallback: SD (A1111), DALL·E, mock |
+| **Social** | Meta/Instagram Business, LinkedIn, Upload-Post, mock + Go sidecar `:8088` |
+| **Human-in-the-loop** | `pending_approval` → approve/reject desde el dashboard |
 | **Async** | Celery + Redis |
-| **Scheduler** | APScheduler en Uvicorn, `POST /api/campaigns/{id}/fire`, seed script |
-| **OAuth Meta** | Con fallback granular scopes |
+| **Scheduler** | APScheduler en Uvicorn — ✅ prueba de fuego completada (`POST /api/campaigns/{id}/fire`) |
+| **OAuth Meta** | Flujo completo con fallback granular de scopes |
 | **Anti-duplicados IG** | Estado `publishing`, sin doble fallback Go+Python |
 
-### Cambio reciente importante: **fal.ai** (no ComfyUI en código)
+---
 
-Tu `.env` ya tiene:
+### Motor de imágenes: fal.ai (Flux Pro)
 
-```env
-IMAGE_PROVIDER=fal
-FAL_API_KEY=...
-FAL_MODEL=fal-ai/flux-pro/v1.1
-```
+Proveedor activo: `IMAGE_PROVIDER=fal`
 
-El flujo en `image_providers.py`:
-1. `fal_client.run("fal-ai/flux-pro/v1.1", ...)`
-2. Descarga PNG → overlay copy/CTA → `static/images/fal_*.png`
+Flujo en `image_providers.py`:
+1. `fal_client.run("fal-ai/flux-pro/v1.1", { prompt, image_size: "landscape_16_9", steps: 28 })`
+2. Descarga PNG desde URL temporal de fal
+3. Overlay copy/CTA con Pillow → `static/images/fal_<uuid>.png`
+4. Retorna URL local para el publisher Go
 
-**ComfyUI ya no está implementado** en `image_providers.py` (solo queda mencionado en un comentario de `settings.py`). Para fal **no necesitas** ComfyUI ni GPU local.
-
-### Meta (notas al final de `estado-actual.txt`)
-
-Para publicar en Instagram, el caso de uso correcto en Meta Developers es:
-
-**“Administrar mensajes y contenido en Instagram”** (+ permisos de Página).
-
-No necesitas “API de marketing” (anuncios). Ya tienes nueva Fan Page + token en `.env`.
+ComfyUI fue evaluado y descartado: GPU local (GTX 1650 Ti / 4 GB VRAM) insuficiente para modelos modernos.
+fal.ai resuelve esto sin infraestructura local.
 
 ---
 
-## Qué falta por enviar al repositorio
+### Scheduler — Prueba de fuego completada
 
-**No commitear nunca:** `.env` (tiene `FAL_API_KEY`, tokens Meta, secrets).
-
-Archivos/cambios que **sí deberían ir al repo** (según el código actual):
-
-| Área | Archivos |
-|------|----------|
-| **fal.ai** | `agents/marketing_agents/image_providers.py`, `gateway/app/core/settings.py`, `agents/marketing_agents/designer.py` |
-| **Scheduler fire test** | `gateway/app/services/scheduler_service.py`, `gateway/app/api/routes.py`, `gateway/app/schemas/contracts.py`, `scripts/seed_fire_test_campaign.py`, `tests/test_scheduler.py`, `infra/prueba-de-fuego-scheduler.md` |
-| **Sesiones anteriores** (si no están en remoto) | `gateway/app/services/pipeline_service.py`, `gateway/app/api/auth_social.py`, `gateway/app/main.py`, `frontend/src/App.jsx`, `agents/.../social_providers.py`, Go `main.go`, etc. |
-
-**Pendiente de documentar/empaquetar antes del commit:**
-
-| Gap | Detalle |
-|-----|---------|
-| `requirements.txt` | Falta **`fal-client`** (sin eso falla con placeholder) |
-| `.env.example` | Sin bloque `FAL_API_KEY` / `FAL_MODEL` / `IMAGE_PROVIDER=fal` |
-| `README.md` | Sin sección fal.ai |
-| `estado-actual.txt` | Desactualizado (no menciona fal, scheduler fire test completo) |
-
-Para ver exactamente qué falta commitear, en la raíz del proyecto:
-
-```bash
-cd "Marketing DEPA IA"
-git status -sb
-git diff --stat
-```
+- `POST /api/campaigns/{id}/fire` dispara una campaña de inmediato (bypass del cron)
+- Seed script disponible: `scripts/seed_fire_test_campaign.py`
+- Tests en: `tests/test_scheduler.py`
+- Runbook: `infra/prueba-de-fuego-scheduler.md`
+- Runs en estado `pending_approval` se acumulan correctamente para revisión humana
 
 ---
 
-## Comandos para levantar el MVP + probar **fal.ai**
+### Cómo levantar el stack completo
 
-### 0. Una vez (dependencias)
+Documentación detallada con comandos exactos (Windows): **`infra/arranque-stack.md`**
 
+**Prerequisitos (una vez):**
 ```bash
-cd "Marketing DEPA IA"
-source .venv/Scripts/activate   # Git Bash
-pip install -r requirements.txt
-pip install fal-client          # obligatorio para fal.ai
+pip install -r requirements.txt   # incluye fal-client
 python -m alembic upgrade head
 cd frontend && npm install && cd ..
 ```
 
-### 0b. `.env` mínimo para fal (ya lo tienes)
+**Servicios (terminales separadas — desde la raíz `Marketing DEPA IA`, venv activado):**
+
+```bash
+# T1 — Infra (PowerShell o Git Bash)
+docker compose -f infra/docker-compose.yml up -d
+
+# T2 — Ollama (servicio en background; verificar)
+curl http://localhost:11434/api/tags
+
+# T3 — API
+python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
+
+# T4 — Celery
+python -m celery -A workers.celery_app.celery_app worker -l info
+
+# T5 — Frontend
+cd frontend && npm run dev
+
+# T6 — Go publisher (solo al aprobar/publicar en IG)
+cd microservices/social-publisher-go && go run ./cmd/server
+
+# T7 — ngrok (solo al publicar en Meta/Instagram)
+cd tests/ngrok-v3-stable-windows-amd64 && ./ngrok.exe http 8000
+# Actualiza PUBLIC_IMAGE_BASE_URL con la URL https y reinicia Uvicorn
+```
+
+Dashboard: http://localhost:5173 · API docs: http://127.0.0.1:8000/docs
+
+---
+
+### Variables de entorno mínimas para fal.ai
 
 ```env
 IMAGE_PROVIDER=fal
-FAL_API_KEY=tu_clave_de_fal.ai
+FAL_API_KEY=tu_clave_fal.ai
 FAL_MODEL=fal-ai/flux-pro/v1.1
 
 LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.1
 
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
+REDIS_URL=redis://localhost:6379/0
+
 SOCIAL_PROVIDER=meta
-PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # solo al publicar en IG
+PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # obligatorio al publicar en IG
 ```
 
 ---
 
-### Terminales (orden)
+### Prometheus (métricas) — desactivado en dev
 
-**T1 — Infra**
-```bash
-cd "Marketing DEPA IA"
-docker compose -f infra/docker-compose.yml up -d
-```
+`prometheus-fastapi-instrumentator` está comentado en `gateway/app/main.py` por incompatibilidad con FastAPI >= 0.115.
 
-**T2 — Ollama**
-```bash
-ollama serve
-# ollama pull llama3.1
-```
-
-**T3 — API**
-```bash
-cd "Marketing DEPA IA"
-source .venv/Scripts/activate
-python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-**T4 — Celery** (runs async desde el dashboard)
-```bash
-cd "Marketing DEPA IA"
-source .venv/Scripts/activate
-python -m celery -A workers.celery_app.celery_app worker -l info
-```
-
-**T5 — Frontend**
-```bash
-cd "Marketing DEPA IA/frontend"
-npm run dev
-```
-
-**T6 — Go publisher** (solo al **aprobar** y publicar en IG)
-```bash
-cd "Marketing DEPA IA/microservices/social-publisher-go"
-go run ./cmd/server
-```
-
-**T7 — ngrok** (solo al publicar en Meta)
-```bash
-ngrok http 8000
-```
-Actualiza `PUBLIC_IMAGE_BASE_URL` con la URL https y reinicia Uvicorn.
+**Reactivar obligatoriamente antes de producción:** descomentar las dos líneas marcadas con `[PROMETHEUS]` en `main.py`. Expone `GET /metrics` para conectar con Grafana.
 
 ---
 
-## Probar fal.ai (generación)
+### Qué NO commitear nunca
 
-1. Abre http://localhost:5173  
-2. Brief: tema, `instagram`, objetivo, etc.  
-3. **Enviar async** (requiere Celery)  
-4. Espera ~15–60 s (Flux Pro en la nube)  
-5. En **Resultado**: imagen en `/static/images/fal_....png`  
-6. Estado: `pending_approval`
-
-**Logs esperados:** `image.fal_generated`, `image.fal_saved`
-
-**Si ves placeholder mock:** falta `pip install fal-client` o `FAL_API_KEY` vacía/incorrecta.
-
-### Prueba rápida por API
-
-```bash
-curl -s http://127.0.0.1:8000/api/health
-
-curl -s -X POST http://127.0.0.1:8000/api/briefs \
-  -H "Content-Type: application/json" \
-  -d '{"tema":"Prueba fal Flux","publico_objetivo":"emprendedores","red_social":"instagram","objetivo":"branding"}'
-
-curl -s -X POST http://127.0.0.1:8000/api/runs/async \
-  -H "Content-Type: application/json" \
-  -d '{"brief_id":1,"publish":false,"requires_approval":true}'
-
-curl -s http://127.0.0.1:8000/api/runs
-```
-
-### Publicar en Instagram (opcional)
-
-1. ngrok activo + `PUBLIC_IMAGE_BASE_URL` actualizado  
-2. Un solo clic en **Aprobar**  
-3. Verificar post en `@powerups_ia`
+- `.env` — contiene FAL_API_KEY, tokens Meta, secrets OAuth
 
 ---
 
-## Mínimo para probar solo fal (sin publicar)
+### Ruta de Stable Diffusion (referencia futura)
 
-| Servicio | ¿Necesario? |
-|----------|-------------|
-| Docker (Postgres + Redis) | Sí |
-| Ollama | Sí |
-| **fal.ai + `fal-client`** | **Sí** |
-| Uvicorn + Celery + Frontend | Sí |
-| ComfyUI / Stable Diffusion | **No** |
-| Go + ngrok | Solo al publicar |
-
----
-
-## Mensaje de commit sugerido (< 150 chars)
-
-```
-feat: fal.ai Flux Pro, prueba de fuego scheduler y fixes Meta pending_approval
-```
-
-Si quieres, en **Agent mode** puedo actualizar `requirements.txt`, `.env.example`, README y `estado-actual.txt` para dejar el repo listo para commit.
-
-ruta de activacion de stable difusion: C:\Users\57317\AppData\Local\Programs\Stable-difusion-IA\stable-diffusion-webui-forge
+`C:\Users\57317\AppData\Local\Programs\Stable-difusion-IA\stable-diffusion-webui-forge`

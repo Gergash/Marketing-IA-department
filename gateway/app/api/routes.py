@@ -20,6 +20,7 @@ from gateway.app.schemas.contracts import (
     CampaignFireResponse,
     CampaignScheduleCreate,
     CampaignScheduleResponse,
+    ImageProvidersResponse,
     JobStatusResponse,
     RejectRequest,
     RunRequest,
@@ -53,6 +54,26 @@ def social_publish_status(
         meta_instagram_ready=bool(
             s.meta_page_access_token.strip() and s.instagram_business_account_id.strip()
         ),
+    )
+
+
+@router.get("/image/providers", response_model=ImageProvidersResponse)
+def image_providers(
+    tenant_id: str = Depends(require_auth),
+) -> ImageProvidersResponse:
+    """Lista generadores de imagen disponibles según `.env` (sin secretos)."""
+    _ = tenant_id
+    s = get_settings()
+    providers: list[dict[str, str]] = []
+    if s.stable_diffusion_url.strip():
+        providers.append(
+            {"id": "stable_diffusion", "label": "Stable Diffusion (local A1111/Forge)"}
+        )
+    if s.fal_api_key.strip():
+        providers.append({"id": "fal", "label": "fal.ai (Flux Pro)"})
+    return ImageProvidersResponse(
+        default_provider=s.image_provider,
+        providers=providers,
     )
 
 
@@ -138,6 +159,7 @@ def run_pipeline_sync(
             publish=payload.publish,
             requires_approval=payload.requires_approval,
             idempotency_key=payload.idempotency_key,
+            image_provider=payload.image_provider,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
@@ -171,6 +193,7 @@ def run_pipeline_async(
                 payload.publish,
                 payload.requires_approval,
                 payload.idempotency_key,
+                payload.image_provider,
             ],
         )
     except (

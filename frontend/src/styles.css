@@ -50,3 +50,57 @@ pre {
   background: #f8fafc;
   padding: 0.75rem;
 }
+
+.field-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.image-provider-block {
+  margin-bottom: 1rem;
+}
+
+.segmented-control {
+  display: inline-flex;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+
+.segment {
+  border: 0;
+  background: transparent;
+  color: #374151;
+  padding: 0.55rem 1rem;
+  border-radius: 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segment:not(:last-child) {
+  border-right: 1px solid #d1d5db;
+}
+
+.segment-active {
+  background: #111827;
+  color: #fff;
+}
+
+.segment:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+select {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+}

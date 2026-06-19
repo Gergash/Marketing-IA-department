@@ -67,6 +67,8 @@ export default function App() {
   });
   const [socialStatus, setSocialStatus] = useState(null);
   const [contentFormat, setContentFormat] = useState("feed");
+  const [imageProvider, setImageProvider] = useState("fal");
+  const [imageProviders, setImageProviders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
   const [error, setError] = useState(null);
@@ -91,9 +93,28 @@ export default function App() {
     }
   };
 
+  const loadImageProviders = async () => {
+    try {
+      const data = await api("/image/providers");
+      const list = Array.isArray(data.providers) ? data.providers : [];
+      setImageProviders(list);
+      if (list.length > 0) {
+        const defaultId = data.default_provider;
+        const hasDefault = list.some((p) => p.id === defaultId);
+        setImageProvider(hasDefault ? defaultId : list[0].id);
+      }
+    } catch {
+      setImageProviders([
+        { id: "stable_diffusion", label: "Stable Diffusion" },
+        { id: "fal", label: "fal.ai (Flux)" },
+      ]);
+    }
+  };
+
   useEffect(() => {
     loadHistory();
     loadSocialStatus();
+    loadImageProviders();
   }, [apiKey]);
 
   const applyKey = () => {
@@ -114,6 +135,7 @@ export default function App() {
         requires_approval: true,         // human-in-the-loop activo por defecto
         idempotency_key: `${brief.id}-${Date.now()}`,
         content_format: contentFormat,
+        image_provider: imageProvider,
       };
       const run = await api(asyncMode ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -209,6 +231,33 @@ export default function App() {
       {/* Formulario */}
       <section className="card">
         <h2>Nuevo Brief</h2>
+        <div className="image-provider-block">
+          <span className="field-label">Generador de imagen</span>
+          <div className="segmented-control" role="group" aria-label="Generador de imagen">
+            {(imageProviders.length > 0
+              ? imageProviders
+              : [
+                  { id: "stable_diffusion", label: "Stable Diffusion" },
+                  { id: "fal", label: "fal.ai (Flux)" },
+                ]
+            ).map((provider) => (
+              <button
+                key={provider.id}
+                type="button"
+                className={`segment ${imageProvider === provider.id ? "segment-active" : ""}`}
+                disabled={loading}
+                onClick={() => setImageProvider(provider.id)}
+              >
+                {provider.label}
+              </button>
+            ))}
+          </div>
+          <p className="hint">
+            {imageProvider === "fal"
+              ? "Flux Pro vía API en la nube (requiere FAL_API_KEY en el servidor)."
+              : "Generación local con Automatic1111/Forge en :7860."}
+          </p>
+        </div>
         {Object.keys(form).map((key) => (
           <label key={key}>
             {key}
@@ -238,7 +287,11 @@ export default function App() {
         {result?.result?.design?.image_url && (
           <div style={{ marginBottom: "1rem" }}>
             <p style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.4rem" }}>
-              Imagen generada:
+              Imagen generada
+              {result.result.design.image_provider && (
+                <> — <code>{result.result.design.image_provider}</code></>
+              )}
+              :
             </p>
             <img
               src={resolveImageUrl(result.result.design.image_url)}

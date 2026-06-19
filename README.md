@@ -167,24 +167,38 @@ Con `DATABASE_URL` apuntando a Postgres, la API **no ejecuta** `create_all` — 
 
 > **Importante:** después de modificar modelos en `gateway/app/models/entities.py`, genera siempre una nueva migración con `--autogenerate` y revisa el archivo generado antes de hacer `upgrade head`.
 
-### Stack completo (Postgres + Redis + Worker + Frontend)
+### Stack completo (Postgres + Redis + Worker + Frontend + Go + ngrok)
+
+Guía paso a paso con rutas Windows: [`infra/arranque-stack.md`](infra/arranque-stack.md)
 
 ```bash
-# 1. Infraestructura
+# 1. Infraestructura (desde la raíz del repo)
 docker compose -f infra/docker-compose.yml up -d
 
-# 2. Migraciones
+# 2. Migraciones (primera vez o tras cambios de esquema)
 python -m alembic upgrade head
 
-# 3. API
+# 3. Verificar Ollama
+curl http://localhost:11434/api/tags
+
+# 4. API
 python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 
-# 4. Worker Celery (otro terminal)
+# 5. Worker Celery (otro terminal, misma raíz, venv activado)
 python -m celery -A workers.celery_app.celery_app worker -l info
 
-# 5. Frontend (otro terminal)
+# 6. Frontend (otro terminal)
 cd frontend && npm run dev
+
+# 7. Go publisher — solo al aprobar/publicar en Instagram (otro terminal)
+cd microservices/social-publisher-go && go run ./cmd/server
+
+# 8. ngrok — solo al publicar en Meta (túnel al API :8000)
+cd tests/ngrok-v3-stable-windows-amd64 && ./ngrok.exe http 8000
+# Copiar URL https → PUBLIC_IMAGE_BASE_URL en .env → reiniciar Uvicorn
 ```
+
+Dashboard: http://localhost:5173
 
 ---
 
@@ -211,6 +225,25 @@ OPENAI_API_KEY=sk-...
 Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto estático (stub).
 
 ### 3B — Imagen (diseño de posts)
+
+**fal.ai — Flux Pro** (proveedor principal recomendado, sin GPU local):
+
+Genera imágenes de calidad profesional vía API. Requiere cuenta en fal.ai (registro gratuito, $1 de crédito inicial ≈ 20 imágenes).
+
+```env
+IMAGE_PROVIDER=fal
+FAL_API_KEY=tu_key_de_fal.ai
+FAL_MODEL=fal-ai/flux-pro/v1.1   # o fal-ai/flux/schnell para mayor velocidad
+```
+
+Instalación del SDK (una vez):
+
+```bash
+pip install fal-client
+# ya incluido en requirements.txt
+```
+
+El pipeline descarga la imagen generada, aplica overlay de copy/CTA con Pillow y la guarda en `static/images/fal_<uuid>.png`. Logs esperados: `image.fal_generated` → `image.fal_saved`.
 
 **DALL-E 3** (requiere `OPENAI_API_KEY`):
 
@@ -264,6 +297,30 @@ Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa si
 
 ---
 
+
+## Prometheus — Métricas en producción
+
+Prometheus está **desactivado en desarrollo** por una incompatibilidad entre `prometheus-fastapi-instrumentator` y FastAPI >= 0.115 (`_IncludedRouter` sin atributo `.path`).
+
+**En producción es obligatorio reactivarlo** para tener observabilidad del sistema (requests/s, latencia, errores, alertas). Para activarlo:
+
+1. En `gateway/app/main.py`, descomentar las dos líneas marcadas con `[PROMETHEUS]`:
+
+```python
+from prometheus_fastapi_instrumentator import Instrumentator  # [PROMETHEUS]
+# ...
+Instrumentator().instrument(app).expose(app)  # [PROMETHEUS]
+```
+
+2. Verificar compatibilidad de versiones al momento del deploy:
+
+```bash
+pip install --upgrade prometheus-fastapi-instrumentator
+```
+
+3. Las métricas quedan expuestas en `GET /metrics` y se conectan a Grafana u otro dashboard de observabilidad.
+
+---
 
 ## Paso 6 — Escalado e infraestructura Go (Post-MVP)
 
@@ -341,3 +398,4 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
   - `POST /api/campaigns` — crear campaña programada (cron)
   - `POST /api/campaigns/{id}/fire` — disparar campaña de inmediato (prueba de fuego)
 - **Prueba de Fuego del Scheduler:** [`infra/prueba-de-fuego-scheduler.md`](infra/prueba-de-fuego-scheduler.md)
+- **Arranque del stack completo (7 terminales):** [`infra/arranque-stack.md`](infra/arranque-stack.md)

@@ -29,6 +29,7 @@ class MarketingPipeline:
         publish: bool,
         idempotency_key: str | None = None,
         content_format: str = "feed",
+        image_provider: str | None = None,
     ) -> dict:
         """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable."""
         strategy = self.strategist.run(brief)
@@ -42,7 +43,7 @@ class MarketingPipeline:
         quality = gout["quality"]
         copy_qa_trace = list(gout.get("events", []))
 
-        design = self.designer.run(brief, copy)
+        design = self.designer.run(brief, copy, image_provider=image_provider)
 
         publish_result = None
         if publish and quality.approved:

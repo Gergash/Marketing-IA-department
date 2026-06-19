@@ -34,6 +34,7 @@ class DesignOutput(BaseModel):
 
     image_url: str
     image_prompt: str
+    image_provider: str = ""
 
 
 class PublishOutput(BaseModel):

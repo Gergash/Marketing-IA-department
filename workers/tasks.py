@@ -25,6 +25,7 @@ def execute_pipeline_task(
     publish: bool,
     requires_approval: bool,
     idempotency_key: str | None,
+    image_provider: str | None = None,
 ) -> dict:
     """Tarea asíncrona: abre sesión BD y ejecuta `execute_pipeline` con los mismos flags que en la API."""
     with SessionLocal() as db:
@@ -35,6 +36,7 @@ def execute_pipeline_task(
             publish=publish,
             requires_approval=requires_approval,
             idempotency_key=idempotency_key,
+            image_provider=image_provider,
         )
         logger.info("execute_pipeline_task.done", run_id=run_id)
         return result

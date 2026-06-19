@@ -222,10 +222,13 @@ export default function App() {
         <label>
           Formato de publicación
           <select value={contentFormat} onChange={(e) => setContentFormat(e.target.value)}>
-            <option value="feed">Post en feed (reel/post clásico)</option>
-            <option value="story">Historia (Instagram con SOCIAL_PROVIDER=meta)</option>
+            <option value="feed">Post en feed (Instagram 1080×1080)</option>
+            <option value="story">Historia (Instagram 1080×1920)</option>
           </select>
         </label>
+        <p className="hint">
+          Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
+        </p>
       </section>
 
       {/* Formulario */}
@@ -290,6 +293,12 @@ export default function App() {
               Imagen generada
               {result.result.design.image_provider && (
                 <> — <code>{result.result.design.image_provider}</code></>
+              )}
+              {result.result.design.image_width > 0 && (
+                <> · {result.result.design.image_width}×{result.result.design.image_height}px</>
+              )}
+              {result.result.design.content_format && (
+                <> · {result.result.design.content_format}</>
               )}
               :
             </p>

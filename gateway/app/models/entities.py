@@ -15,11 +15,11 @@ class Brief(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    tema: Mapped[str] = mapped_column(String(255))
-    publico_objetivo: Mapped[str] = mapped_column(String(255))
+    tema: Mapped[str] = mapped_column(Text)
+    publico_objetivo: Mapped[str] = mapped_column(Text)
     red_social: Mapped[str] = mapped_column(String(80))
-    objetivo: Mapped[str] = mapped_column(String(80))
-    tono_marca: Mapped[str] = mapped_column(String(120), default="profesional y cercano")
+    objetivo: Mapped[str] = mapped_column(Text)
+    tono_marca: Mapped[str] = mapped_column(Text, default="profesional y cercano")
     idioma: Mapped[str] = mapped_column(String(16), default="es")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -85,9 +85,9 @@ class CampaignSchedule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    tema: Mapped[str] = mapped_column(String(255))
+    tema: Mapped[str] = mapped_column(Text)
     red_social: Mapped[str] = mapped_column(String(80))
-    objetivo: Mapped[str] = mapped_column(String(80))
+    objetivo: Mapped[str] = mapped_column(Text)
     cron_expr: Mapped[str] = mapped_column(String(64))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

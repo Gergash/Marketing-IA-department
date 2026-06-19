@@ -43,7 +43,12 @@ class MarketingPipeline:
         quality = gout["quality"]
         copy_qa_trace = list(gout.get("events", []))
 
-        design = self.designer.run(brief, copy, image_provider=image_provider)
+        design = self.designer.run(
+            brief,
+            copy,
+            image_provider=image_provider,
+            content_format=content_format,
+        )
 
         publish_result = None
         if publish and quality.approved:

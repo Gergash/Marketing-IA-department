@@ -51,7 +51,11 @@ def build_copy_qa_graph(
 
     def qa_node(state: CopyQAState) -> dict:
         """Nodo LangGraph: valida el copy actual y añade evento de aprobación o motivos de rechazo."""
-        q = guard.validate(state["copy"].copy_final, state["brief"].tono_marca)
+        q = guard.validate(
+            state["copy"].copy_final,
+            state["brief"].tono_marca,
+            overlay_headline=state["copy"].headline_for_image,
+        )
         evt = {
             "node": "qa",
             "approved": q.approved,

@@ -27,6 +27,9 @@ class CopyOutput(BaseModel):
     copy_final: str
     hashtags: list[str]
     cta: str
+    # Texto corto para overlay en imagen (oraciones completas, ortografía correcta)
+    headline_for_image: str = ""
+    subline_for_image: str = ""
 
 
 class DesignOutput(BaseModel):
@@ -35,6 +38,9 @@ class DesignOutput(BaseModel):
     image_url: str
     image_prompt: str
     image_provider: str = ""
+    image_width: int = 0
+    image_height: int = 0
+    content_format: str = "feed"
 
 
 class PublishOutput(BaseModel):

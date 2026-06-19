@@ -1,6 +1,14 @@
 """Pruebas del pipeline completo (sin publicación y con mock de publicación)."""
 
+import pytest
+
 from agents.marketing_agents import BriefInput, MarketingPipeline
+
+
+@pytest.fixture(autouse=True)
+def _mock_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IMAGE_PROVIDER", "mock")
+    monkeypatch.setenv("SOCIAL_PROVIDER", "mock")
 
 
 def test_pipeline_without_publish() -> None:

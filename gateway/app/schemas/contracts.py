@@ -37,6 +37,15 @@ class RunRequest(BaseModel):
     idempotency_key: str | None = None
     # Instagram/Meta: story = historia; linkedin/uploadpost suelen publicar como post de feed
     content_format: Literal["feed", "story"] = "feed"
+    # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
+    image_provider: Literal["stable_diffusion", "fal"] | None = None
+
+
+class ImageProvidersResponse(BaseModel):
+    """Proveedores de imagen disponibles según configuración del servidor."""
+
+    default_provider: str
+    providers: list[dict[str, str]]
 
 
 class RunResponse(BaseModel):

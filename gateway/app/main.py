@@ -5,7 +5,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from prometheus_fastapi_instrumentator import Instrumentator
+# Prometheus desactivado en dev por incompatibilidad con FastAPI >= 0.115.
+# Reactivar en producción: descomentar las dos líneas marcadas con [PROMETHEUS].
+# from prometheus_fastapi_instrumentator import Instrumentator  # [PROMETHEUS]
 
 from gateway.app.api.auth_social import router as auth_social_router
 from gateway.app.api.routes import router
@@ -28,7 +30,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(auth_social_router)
-Instrumentator().instrument(app).expose(app)
+# Instrumentator().instrument(app).expose(app)  # [PROMETHEUS]
 
 _static_root = Path(__file__).resolve().parents[2] / "static"
 _static_root.mkdir(parents=True, exist_ok=True)

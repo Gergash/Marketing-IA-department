@@ -206,6 +206,7 @@ def execute_pipeline(
     publish: bool,
     requires_approval: bool,
     idempotency_key: str | None,
+    image_provider: str | None = None,
 ) -> dict:
     """Orquesta el pipeline completo: deduplicación, agentes, aprobación humana opcional, persistencia y publicación."""
     run = db.get(AgentRun, run_id)
@@ -246,6 +247,7 @@ def execute_pipeline(
             publish=False,
             idempotency_key=idempotency_key,
             content_format=content_format,
+            image_provider=image_provider,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
@@ -261,6 +263,7 @@ def execute_pipeline(
         publish=publish,
         idempotency_key=idempotency_key,
         content_format=content_format,
+        image_provider=image_provider,
     )
 
     if publish and result.get("quality", {}).get("approved", False):

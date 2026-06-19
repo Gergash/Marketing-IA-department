@@ -14,17 +14,21 @@ Given a content strategy, write compelling post copy ready to publish.
 Return ONLY valid JSON with exactly these fields:
 {
   "copy_final": "<complete post text integrating hook and message; platform-appropriate length>",
+  "headline_for_image": "<1-2 SHORT complete sentences for image overlay, max 100 chars, perfect spelling>",
+  "subline_for_image": "<optional supporting line for overlay, max 80 chars, complete sentence or empty string>",
   "hashtags":   ["<all hashtags to append including # prefix>"],
-  "cta":        "<one clear call-to-action sentence>"
+  "cta":        "<short call-to-action for button, max 45 chars>"
 }
 
 Rules:
 - Write in the same language as the strategy (infer from hook/hashtags).
-- LinkedIn: up to 1300 chars, paragraph breaks.
-- Instagram / Facebook: up to 2200 chars, line breaks + emojis OK.
-- X/Twitter: 280 chars max.
-- TikTok: short, energetic, 150 chars.
-- Always close the copy with the CTA embedded naturally, not as a separate paragraph.\
+- headline_for_image and subline_for_image MUST use correct spelling and grammar; never cut words mid-syllable.
+- headline_for_image is what appears ON the image — keep it punchy, not the full post.
+- LinkedIn: up to 1300 chars for copy_final, paragraph breaks.
+- Instagram / Facebook: up to 2200 chars for copy_final, line breaks + emojis OK.
+- X/Twitter: copy_final 280 chars max.
+- TikTok: short, energetic, copy_final 150 chars.
+- Always close copy_final with the CTA embedded naturally, not as a separate paragraph.\
 """
 
 
@@ -56,10 +60,22 @@ class CopywriterAgent:
             )
         try:
             data = llm.complete_json(_SYSTEM, prompt)
-            return CopyOutput(**data)
+            out = CopyOutput(**data)
+            return self._ensure_overlay_fields(out, strategy)
         except Exception as exc:
             logger.error("copywriter.llm_error", error=str(exc))
             return self._stub(strategy, qa_feedback=qa_feedback)
+
+    def _ensure_overlay_fields(self, out: CopyOutput, strategy: StrategyOutput) -> CopyOutput:
+        """Rellena headline/subline de overlay si el LLM no los devolvió."""
+        from .overlay_text import truncate_at_sentence
+
+        if not out.headline_for_image.strip():
+            out.headline_for_image = truncate_at_sentence(strategy.hook, 100)
+        if not out.subline_for_image.strip() and strategy.mensaje_base:
+            out.subline_for_image = truncate_at_sentence(strategy.mensaje_base, 80)
+        out.cta = truncate_at_sentence(out.cta, 45)
+        return out
 
     def _stub(self, strategy: StrategyOutput, *, qa_feedback: list[str] | None = None) -> CopyOutput:
         """Salida determinista de desarrollo; aplica transformaciones simples si hay feedback de QA."""
@@ -76,8 +92,11 @@ class CopywriterAgent:
                 for w in ("estafa", "fake", "garantizado 100%"):
                     copy_text = copy_text.replace(w, "[redacted]")
             copy_text += "\n\n(Nota: borrador ajustado según retroalimentación de QA.)"
-        return CopyOutput(
+        out = CopyOutput(
             copy_final=copy_text,
+            headline_for_image=strategy.hook[:100],
+            subline_for_image=strategy.mensaje_base[:80] if strategy.mensaje_base else "",
             hashtags=strategy.hashtags + ["#Growth", "#SocialMedia"],
-            cta="Escribe 'MVP' y te compartimos una demo del flujo.",
+            cta="Escribe 'MVP' y te compartimos una demo.",
         )
+        return self._ensure_overlay_fields(out, strategy)

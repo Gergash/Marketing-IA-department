@@ -15,6 +15,7 @@ apscheduler
 alembic
 anthropic
 openai
+fal-client
 pytest
 langgraph>=0.2.0
 pillow

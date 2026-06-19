@@ -15,7 +15,7 @@ def test_copy_qa_graph_retries_then_approves(monkeypatch: pytest.MonkeyPatch) ->
     guard = ContentQualityGuard()
     calls: dict[str, int] = {"n": 0}
 
-    def fake_validate(text: str, brand_tone: str) -> QualityReview:
+    def fake_validate(text: str, brand_tone: str, **kwargs) -> QualityReview:
         """Simula QA: primer intento rechaza, segundo aprueba."""
         calls["n"] += 1
         if calls["n"] == 1:
@@ -59,7 +59,7 @@ def test_copy_qa_graph_exhausts_attempts(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(
         guard,
         "validate",
-        lambda text, tone: QualityReview(approved=False, reasons=["always bad"]),
+        lambda text, tone, **kwargs: QualityReview(approved=False, reasons=["always bad"]),
     )
 
     cw = MagicMock(spec=CopywriterAgent)

@@ -222,7 +222,7 @@ export default function App() {
         <label>
           Formato de publicación
           <select value={contentFormat} onChange={(e) => setContentFormat(e.target.value)}>
-            <option value="feed">Post en feed (Instagram 1080×1080)</option>
+            <option value="feed">Post en feed (Instagram 1080×1350, 4:5)</option>
             <option value="story">Historia (Instagram 1080×1920)</option>
           </select>
         </label>
@@ -299,6 +299,9 @@ export default function App() {
               )}
               {result.result.design.content_format && (
                 <> · {result.result.design.content_format}</>
+              )}
+              {result.result.design.layout_label && (
+                <> · layout: {result.result.design.layout_label}</>
               )}
               :
             </p>

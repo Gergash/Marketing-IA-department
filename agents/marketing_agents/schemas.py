@@ -41,6 +41,9 @@ class DesignOutput(BaseModel):
     image_width: int = 0
     image_height: int = 0
     content_format: str = "feed"
+    layout_archetype: str = ""
+    layout_label: str = ""
+    color_palette: str = ""
 
 
 class PublishOutput(BaseModel):

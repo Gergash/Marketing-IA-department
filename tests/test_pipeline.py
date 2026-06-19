@@ -27,6 +27,9 @@ def test_pipeline_without_publish() -> None:
     assert "copy_qa_trace" in result
     assert isinstance(result["copy_qa_trace"], list)
     assert result["publish_result"] is None
+    assert result["design"].get("layout_archetype")
+    assert result["design"].get("image_width") == 1080
+    assert result["design"].get("image_height") == 1350
 
 
 def test_pipeline_with_publish() -> None:

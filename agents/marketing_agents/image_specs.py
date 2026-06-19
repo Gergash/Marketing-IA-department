@@ -18,17 +18,15 @@ class ImageSpec:
         return self.width / self.height if self.height else 1.0
 
 
-# Instagram: feed cuadrado 1:1 (1080×1080); story/reels 9:16 (1080×1920)
-# LinkedIn: feed recomendado 1200×627; documentado también 1080×1080
-# Facebook: feed 1080×1080 o enlace 1200×630
+# Instagram: feed portrait 4:5 (1080×1350); story/reels 9:16 (1080×1920)
 _SPECS: dict[tuple[str, str], ImageSpec] = {
-    ("instagram", "feed"): ImageSpec(1080, 1080, "instagram feed 1:1"),
+    ("instagram", "feed"): ImageSpec(1080, 1350, "instagram feed 4:5"),
     ("instagram", "story"): ImageSpec(1080, 1920, "instagram story 9:16"),
-    ("ig", "feed"): ImageSpec(1080, 1080, "instagram feed 1:1"),
+    ("ig", "feed"): ImageSpec(1080, 1350, "instagram feed 4:5"),
     ("ig", "story"): ImageSpec(1080, 1920, "instagram story 9:16"),
-    ("facebook", "feed"): ImageSpec(1080, 1080, "facebook feed 1:1"),
+    ("facebook", "feed"): ImageSpec(1080, 1350, "facebook feed 4:5"),
     ("facebook", "story"): ImageSpec(1080, 1920, "facebook story 9:16"),
-    ("fb", "feed"): ImageSpec(1080, 1080, "facebook feed 1:1"),
+    ("fb", "feed"): ImageSpec(1080, 1350, "facebook feed 4:5"),
     ("linkedin", "feed"): ImageSpec(1200, 627, "linkedin feed 1.91:1"),
     ("linkedin", "story"): ImageSpec(1080, 1920, "linkedin story 9:16"),
     ("x", "feed"): ImageSpec(1200, 675, "x feed 16:9"),
@@ -37,7 +35,7 @@ _SPECS: dict[tuple[str, str], ImageSpec] = {
     ("tiktok", "story"): ImageSpec(1080, 1920, "tiktok vertical 9:16"),
 }
 
-_DEFAULT = ImageSpec(1080, 1080, "default square 1:1")
+_DEFAULT = ImageSpec(1080, 1350, "default portrait 4:5")
 
 
 def resolve_image_spec(red_social: str, content_format: str = "feed") -> ImageSpec:
@@ -51,8 +49,12 @@ def resolve_image_spec(red_social: str, content_format: str = "feed") -> ImageSp
 
 def fal_image_size_arg(spec: ImageSpec) -> dict[str, int] | str:
     """Argumento `image_size` para fal.ai Flux (objeto width/height, múltiplos de 8)."""
-    w = max(512, min(1440, spec.width))
-    h = max(512, min(1440, spec.height))
-    w = (w // 8) * 8
-    h = (h // 8) * 8
+    w, h = spec.width, spec.height
+    max_dim = 1440
+    if w > max_dim or h > max_dim:
+        scale = min(max_dim / w, max_dim / h)
+        w = int(w * scale)
+        h = int(h * scale)
+    w = max(512, (w // 8) * 8)
+    h = max(512, (h // 8) * 8)
     return {"width": w, "height": h}

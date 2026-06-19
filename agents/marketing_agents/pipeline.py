@@ -46,6 +46,7 @@ class MarketingPipeline:
         design = self.designer.run(
             brief,
             copy,
+            strategy,
             image_provider=image_provider,
             content_format=content_format,
         )

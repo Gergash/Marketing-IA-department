@@ -10,8 +10,9 @@ from pathlib import Path
 
 import structlog
 
+from .design_layouts import apply_design_layout
 from .image_specs import fal_image_size_arg, resolve_image_spec
-from .overlay_text import build_overlay_lines, pick_font_pair, wrap_for_width
+from .layout_archetypes import _ARCHETYPE_MAP
 
 logger = structlog.get_logger(__name__)
 
@@ -29,6 +30,7 @@ def generate_image(
     image_provider: str | None = None,
     red_social: str = "instagram",
     content_format: str = "feed",
+    layout_archetype: str = "typographic_poster",
 ) -> tuple[str, int, int]:
     """Return (image URL, width, height) for the given prompt."""
     from gateway.app.core.settings import get_settings
@@ -47,6 +49,7 @@ def generate_image(
             overlay_subline=overlay_subline,
             overlay_cta=overlay_cta,
             red_social=red_social,
+            layout_archetype=layout_archetype,
         )
         return url, spec.width, spec.height
     if provider == "fal" and s.fal_api_key:
@@ -59,6 +62,7 @@ def generate_image(
             overlay_subline=overlay_subline,
             overlay_cta=overlay_cta,
             red_social=red_social,
+            layout_archetype=layout_archetype,
         )
         return url, spec.width, spec.height
     if provider == "fal" and not s.fal_api_key:
@@ -85,6 +89,7 @@ def _stable_diffusion(
     overlay_subline: str | None = None,
     overlay_cta: str | None = None,
     red_social: str = "instagram",
+    layout_archetype: str = "typographic_poster",
 ) -> str:
     """POST a txt2img de A1111/Forge, decodifica PNG, superpone texto y guarda en `/static/images/`."""
     import httpx
@@ -117,11 +122,12 @@ def _stable_diffusion(
         raw = base64.b64decode(images[0])
 
         if overlay_text:
-            raw = _add_text_overlay(
+            raw = _apply_layout_overlay(
                 raw,
                 overlay_text,
                 overlay_subline,
                 overlay_cta,
+                layout_archetype=layout_archetype,
                 font_seed=red_social,
             )
 
@@ -136,63 +142,25 @@ def _stable_diffusion(
         return _placeholder(prompt, spec=spec)
 
 
-def _add_text_overlay(
-    img_bytes: bytes,
+def _apply_layout_overlay(
+    raw: bytes,
     headline: str,
     subline: str | None,
     cta: str | None,
     *,
-    font_seed: str = "instagram",
+    layout_archetype: str,
+    font_seed: str,
 ) -> bytes:
-    """Dibuja franja inferior con headline/subline y CTA; tipografía escalada por tamaño de imagen."""
-    from PIL import Image, ImageDraw, ImageFont
-
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-
-    w, h = img.size
-    bar_h = max(h // 3, int(h * 0.28))
-    base_font = max(14, min(28, w // 42))
-    (title_path, title_size), (body_path, body_size) = pick_font_pair(font_seed, base_font)
-
-    try:
-        font_title = ImageFont.truetype(title_path, size=title_size)
-        font_body = ImageFont.truetype(body_path, size=body_size)
-        font_cta = ImageFont.truetype(body_path, size=max(13, body_size - 1))
-    except Exception:
-        font_title = ImageFont.load_default()
-        font_body = font_title
-        font_cta = font_title
-
-    draw.rectangle([(0, h - bar_h), (w, h)], fill=(10, 10, 20, 190))
-
-    y = h - bar_h + int(bar_h * 0.08)
-    headline_line, subline_line = build_overlay_lines(headline=headline, subline=subline)
-    wrapped_headline = wrap_for_width(headline_line, w - 40, font_size=title_size)
-    draw.text((20, y), wrapped_headline, font=font_title, fill=(255, 255, 255, 250))
-    y += title_size * (wrapped_headline.count("\n") + 1) + 8
-
-    if subline_line:
-        wrapped_sub = wrap_for_width(subline_line, w - 40, font_size=body_size)
-        draw.text((20, y), wrapped_sub, font=font_body, fill=(230, 230, 240, 235))
-
-    if cta:
-        cta_label = f"  {cta[:45]}  "
-        cta_y = h - max(32, int(bar_h * 0.18))
-        bbox = draw.textbbox((0, 0), cta_label, font=font_cta)
-        cta_w = bbox[2] - bbox[0] + 4
-        draw.rounded_rectangle(
-            [(16, cta_y - 4), (16 + cta_w, cta_y + 22)],
-            radius=8,
-            fill=(255, 130, 0, 230),
-        )
-        draw.text((18, cta_y), cta_label, font=font_cta, fill=(255, 255, 255, 255))
-
-    composite = Image.alpha_composite(img, overlay).convert("RGB")
-    buf = io.BytesIO()
-    composite.save(buf, format="PNG")
-    return buf.getvalue()
+    """Aplica composición editorial según arquetipo (poster, minimal, infográfico, hero)."""
+    archetype = _ARCHETYPE_MAP.get(layout_archetype, _ARCHETYPE_MAP["typographic_poster"])
+    return apply_design_layout(
+        raw,
+        archetype,
+        headline,
+        subline,
+        cta,
+        font_seed=font_seed,
+    )
 
 
 def _fal(
@@ -205,6 +173,7 @@ def _fal(
     overlay_subline: str | None = None,
     overlay_cta: str | None = None,
     red_social: str = "instagram",
+    layout_archetype: str = "typographic_poster",
 ) -> str:
     """Genera imagen con fal.ai (Flux pro u otros modelos) y la guarda en static/images/."""
     import os
@@ -221,7 +190,7 @@ def _fal(
 
     visual_prompt = (
         f"{prompt[:1800]}. No text, no letters, no watermark. "
-        f"Aspect ratio {spec.label}. Clean composition with negative space at bottom for overlay."
+        f"Aspect ratio {spec.label}. Clean composition with negative space for typography overlay."
     )
     try:
         result = fal_client.run(
@@ -251,11 +220,12 @@ def _fal(
         raw = img_resp.content
 
         if overlay_text:
-            raw = _add_text_overlay(
+            raw = _apply_layout_overlay(
                 raw,
                 overlay_text,
                 overlay_subline,
                 overlay_cta,
+                layout_archetype=layout_archetype,
                 font_seed=red_social,
             )
 

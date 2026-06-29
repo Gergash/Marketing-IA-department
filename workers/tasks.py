@@ -26,6 +26,7 @@ def execute_pipeline_task(
     requires_approval: bool,
     idempotency_key: str | None,
     image_provider: str | None = None,
+    archetype_override: str | None = None,
 ) -> dict:
     """Tarea asíncrona: abre sesión BD y ejecuta `execute_pipeline` con los mismos flags que en la API."""
     with SessionLocal() as db:
@@ -37,6 +38,7 @@ def execute_pipeline_task(
             requires_approval=requires_approval,
             idempotency_key=idempotency_key,
             image_provider=image_provider,
+            archetype_override=archetype_override,
         )
         logger.info("execute_pipeline_task.done", run_id=run_id)
         return result

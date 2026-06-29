@@ -93,6 +93,11 @@ _ARCHETYPE_MAP: dict[str, LayoutArchetype] = {
 }
 
 
+def get_archetype(archetype_id: str) -> LayoutArchetype | None:
+    """Devuelve el arquetipo por ID, o None si no existe."""
+    return _ARCHETYPE_MAP.get(archetype_id)
+
+
 def pick_archetype(brief: BriefInput, strategy: StrategyOutput) -> LayoutArchetype:
     """Elige arquetipo según tipo de post, objetivo y plataforma."""
     tipo = (strategy.tipo_post or "").lower()

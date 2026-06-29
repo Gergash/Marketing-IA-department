@@ -2,12 +2,10 @@
 
 from pathlib import Path
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-# Prometheus desactivado en dev por incompatibilidad con FastAPI >= 0.115.
-# Reactivar en producción: descomentar las dos líneas marcadas con [PROMETHEUS].
-# from prometheus_fastapi_instrumentator import Instrumentator  # [PROMETHEUS]
 
 from gateway.app.api.auth_social import router as auth_social_router
 from gateway.app.api.routes import router
@@ -18,6 +16,7 @@ from gateway.app.services.scheduler_service import start_scheduler, stop_schedul
 
 settings = get_settings()
 configure_logging(settings.log_level)
+_log = structlog.get_logger(__name__)
 
 app = FastAPI(title="Marketing DEPA IA Gateway", version="0.1.0")
 _cors_list = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
@@ -30,7 +29,14 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(auth_social_router)
-# Instrumentator().instrument(app).expose(app)  # [PROMETHEUS]
+
+if settings.prometheus_enabled:
+    try:
+        from prometheus_fastapi_instrumentator import Instrumentator
+        Instrumentator().instrument(app).expose(app)
+        _log.info("prometheus.enabled")
+    except Exception as _prom_exc:  # noqa: BLE001
+        _log.warning("prometheus.init_failed", error=str(_prom_exc))
 
 _static_root = Path(__file__).resolve().parents[2] / "static"
 _static_root.mkdir(parents=True, exist_ok=True)

@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # Slack Incoming Webhook para notificaciones human-in-the-loop
     slack_webhook_url: str = ""
 
+    # Métricas Prometheus — False en dev (incompatibilidad con FastAPI >=0.115 en algunas versiones)
+    # Activar en producción con PROMETHEUS_ENABLED=true
+    prometheus_enabled: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

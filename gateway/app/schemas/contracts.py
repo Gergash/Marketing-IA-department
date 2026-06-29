@@ -28,6 +28,13 @@ class BriefResponse(BriefCreate):
         from_attributes = True
 
 
+class ArchetypeInfo(BaseModel):
+    """Arquetipo de layout editorial disponible para override manual."""
+
+    id: str
+    label: str
+
+
 class RunRequest(BaseModel):
     """Solicitud de ejecución del pipeline: brief, flags de publicación/aprobación y formato feed/story."""
 
@@ -39,6 +46,10 @@ class RunRequest(BaseModel):
     content_format: Literal["feed", "story"] = "feed"
     # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
     image_provider: Literal["stable_diffusion", "fal"] | None = None
+    # Override manual del arquetipo visual (si None, el agente lo elige automáticamente)
+    archetype_override: Literal[
+        "typographic_poster", "minimal_conceptual", "editorial_infographic", "cinematic_hero"
+    ] | None = None
 
 
 class ImageProvidersResponse(BaseModel):

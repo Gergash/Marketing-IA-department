@@ -2,7 +2,7 @@
 
 from .image_providers import generate_image
 from .image_specs import resolve_image_spec
-from .layout_archetypes import build_flux_prompt, pick_archetype
+from .layout_archetypes import build_flux_prompt, get_archetype, pick_archetype
 from .schemas import BriefInput, CopyOutput, DesignOutput, StrategyOutput
 
 
@@ -17,12 +17,17 @@ class DesignerAgent:
         *,
         image_provider: str | None = None,
         content_format: str = "feed",
+        archetype_override: str | None = None,
     ) -> DesignOutput:
         """Selecciona layout, genera imagen dimensionada y aplica composición tipográfica."""
         from gateway.app.core.settings import get_settings
 
         spec = resolve_image_spec(brief.red_social, content_format)
-        archetype = pick_archetype(brief, strategy)
+        archetype = (
+            get_archetype(archetype_override) or pick_archetype(brief, strategy)
+            if archetype_override
+            else pick_archetype(brief, strategy)
+        )
         prompt = build_flux_prompt(archetype, brief=brief, strategy=strategy, spec=spec)
 
         used_provider = (image_provider or get_settings().image_provider).strip().lower()

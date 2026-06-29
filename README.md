@@ -23,7 +23,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 | Migraciones | Alembic |
 | Cola de tareas | Celery |
 | Frontend | React + Vite |
-| Contenido visual | Canva API / Stable Diffusion |
+| Contenido visual | fal.ai (Flux Pro) + Pillow overlay |
 | Video | Shotstack |
 | Contenedores | Docker |
 
@@ -52,7 +52,7 @@ alembic/        Migraciones de base de datos
 
 ## Requisito de Python
 
-El proyecto está pensado para **Python 3.10** (misma línea que muchos entornos **Stable Diffusion / Automatic1111**). Hay un archivo `.python-version` para **pyenv**. Las imágenes Docker usan `python:3.10-slim`.
+El proyecto está pensado para **Python 3.10**. Hay un archivo `.python-version` para **pyenv**. Las imágenes Docker usan `python:3.10-slim`.
 
 ```bash
 python -m venv .venv
@@ -62,7 +62,12 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-## Stable Diffusion (Realistic Vision u otro checkpoint)
+## Proveedores de imagen alternativos (legacy)
+
+> **Proveedor principal: `IMAGE_PROVIDER=fal`** — ver sección 3B.
+> **ComfyUI: descartado** (GPU local insuficiente para Flux; usar fal.ai en su lugar).
+
+**Stable Diffusion local (Automatic1111 / Forge)** — alternativa sin GPU cloud:
 
 Con `IMAGE_PROVIDER=stable_diffusion` en `.env`:
 
@@ -300,25 +305,21 @@ Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa si
 
 ## Prometheus — Métricas en producción
 
-Prometheus está **desactivado en desarrollo** por una incompatibilidad entre `prometheus-fastapi-instrumentator` y FastAPI >= 0.115 (`_IncludedRouter` sin atributo `.path`).
+Prometheus se activa con la variable de entorno `PROMETHEUS_ENABLED=true`. En desarrollo viene desactivado (`false`) por incompatibilidades históricas entre `prometheus-fastapi-instrumentator` y algunas versiones de FastAPI >= 0.115.
 
-**En producción es obligatorio reactivarlo** para tener observabilidad del sistema (requests/s, latencia, errores, alertas). Para activarlo:
+**Para activar en producción:**
 
-1. En `gateway/app/main.py`, descomentar las dos líneas marcadas con `[PROMETHEUS]`:
-
-```python
-from prometheus_fastapi_instrumentator import Instrumentator  # [PROMETHEUS]
-# ...
-Instrumentator().instrument(app).expose(app)  # [PROMETHEUS]
+```env
+PROMETHEUS_ENABLED=true
 ```
 
-2. Verificar compatibilidad de versiones al momento del deploy:
+La inicialización está protegida con `try/except`: si la librería no está instalada o hay un conflicto de versiones, la API arranca igual (con un warning en logs). Para instalar:
 
 ```bash
 pip install --upgrade prometheus-fastapi-instrumentator
 ```
 
-3. Las métricas quedan expuestas en `GET /metrics` y se conectan a Grafana u otro dashboard de observabilidad.
+Las métricas quedan expuestas en `GET /metrics` y se conectan a Grafana u otro dashboard de observabilidad.
 
 ---
 
@@ -391,10 +392,11 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
 - **Métricas Prometheus:** http://127.0.0.1:8000/metrics
 - **Endpoints principales:**
   - `POST /api/briefs` — crear brief de campaña
-  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente
-  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker)
+  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente (acepta `archetype_override` para forzar un layout)
+  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker; acepta `archetype_override`)
   - `GET /api/runs/{run_id}` — consultar estado
   - `GET /api/runs` — historial de ejecuciones
+  - `GET /api/image/archetypes` — lista los 4 arquetipos disponibles para override manual
   - `POST /api/campaigns` — crear campaña programada (cron)
   - `POST /api/campaigns/{id}/fire` — disparar campaña de inmediato (prueba de fuego)
 - **Prueba de Fuego del Scheduler:** [`infra/prueba-de-fuego-scheduler.md`](infra/prueba-de-fuego-scheduler.md)

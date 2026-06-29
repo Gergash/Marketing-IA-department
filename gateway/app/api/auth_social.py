@@ -51,7 +51,8 @@ def oauth_login(
     elif provider == "linkedin":
         if not s.linkedin_client_id:
             raise HTTPException(status_code=400, detail="LINKEDIN_CLIENT_ID no configurado en .env")
-        scopes = "w_member_social r_liteprofile"
+        # Community Management API + OpenID (r_liteprofile está deprecado)
+        scopes = "openid profile w_member_social"
         auth_url = (
             f"https://www.linkedin.com/oauth/v2/authorization"
             f"?response_type=code"
@@ -327,11 +328,19 @@ def _exchange_linkedin(code: str, s) -> dict:
 
 
 def _fetch_linkedin_urn(token: str) -> str:
-    """Obtiene el URN `urn:li:person:{id}` del miembro autenticado."""
+    """Obtiene el URN `urn:li:person:{id}` vía OpenID userinfo (fallback /v2/me)."""
     with httpx.Client(timeout=10) as client:
         r = client.get(
+            "https://api.linkedin.com/v2/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.is_success:
+            sub = r.json().get("sub")
+            if sub:
+                return f"urn:li:person:{sub}"
+        r_me = client.get(
             "https://api.linkedin.com/v2/me",
             headers={"Authorization": f"Bearer {token}"},
         )
-        r.raise_for_status()
-        return f"urn:li:person:{r.json()['id']}"
+        r_me.raise_for_status()
+        return f"urn:li:person:{r_me.json()['id']}"

@@ -41,11 +41,10 @@ class Settings(BaseSettings):
     # Modelo fal a usar; opciones: fal-ai/flux-pro/v1.1 | fal-ai/flux/schnell | fal-ai/recraft-v3
     fal_model: str = "fal-ai/flux-pro/v1.1"
 
-    # Social publishing — provider: mock | linkedin | uploadpost | meta
+    # Social publishing — provider: mock | linkedin | meta
     social_provider: str = "mock"
     linkedin_access_token: str = ""
     linkedin_person_urn: str = ""  # optional: auto-fetched from /v2/me if blank
-    uploadpost_api_key: str = ""
     # Meta (Instagram Business / Graph API) — SOCIAL_PROVIDER=meta
     # Token: Page long-lived con permisos instagram_basic, instagram_content_publish, pages_show_list
     meta_app_id: str = ""

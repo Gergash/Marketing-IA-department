@@ -273,7 +273,7 @@ func linkedInInitImageUpload(token, ownerURN string) (assetURN, uploadURL string
 		bytes.NewReader(b))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("LinkedIn-Version", "202304")
+	req.Header.Set("LinkedIn-Version", "202401")
 	req.Header.Set("X-Restli-Protocol-Version", "2.0.0")
 
 	resp, err := httpClient.Do(req)

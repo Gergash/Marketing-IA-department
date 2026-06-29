@@ -15,6 +15,8 @@ class PublisherAgent:
         idempotency_key: str | None = None,
         *,
         content_format: str = "feed",
+        linkedin_token: str | None = None,
+        linkedin_urn: str | None = None,
     ) -> PublishOutput:
         """Delega en `social_providers.publish_post` y empaqueta la respuesta como `PublishOutput`."""
         result = publish_post(
@@ -23,5 +25,7 @@ class PublisherAgent:
             image_url=design.image_url,
             idempotency_key=idempotency_key,
             content_format=content_format,
+            linkedin_token=linkedin_token,
+            linkedin_urn=linkedin_urn,
         )
         return PublishOutput(**result)

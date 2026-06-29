@@ -28,6 +28,13 @@ class BriefResponse(BriefCreate):
         from_attributes = True
 
 
+class ArchetypeInfo(BaseModel):
+    """Arquetipo de layout editorial disponible para override manual."""
+
+    id: str
+    label: str
+
+
 class RunRequest(BaseModel):
     """Solicitud de ejecución del pipeline: brief, flags de publicación/aprobación y formato feed/story."""
 
@@ -35,10 +42,14 @@ class RunRequest(BaseModel):
     publish: bool = True
     requires_approval: bool = True
     idempotency_key: str | None = None
-    # Instagram/Meta: story = historia; linkedin/uploadpost suelen publicar como post de feed
+    # Instagram/Meta: story = historia; linkedin suele publicar como post de feed
     content_format: Literal["feed", "story"] = "feed"
     # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
     image_provider: Literal["stable_diffusion", "fal"] | None = None
+    # Override manual del arquetipo visual (si None, el agente lo elige automáticamente)
+    archetype_override: Literal[
+        "typographic_poster", "minimal_conceptual", "editorial_infographic", "cinematic_hero"
+    ] | None = None
 
 
 class ImageProvidersResponse(BaseModel):
@@ -73,11 +84,14 @@ class SocialPublishStatusResponse(BaseModel):
 
     social_provider: str
     linkedin_ready: bool
-    uploadpost_ready: bool
+    linkedin_oauth_connected: bool = False
+    meta_oauth_connected: bool = False
     meta_instagram_ready: bool
+    go_publisher_url: str = "http://localhost:8088"
     hint: str = (
         "Configura SOCIAL_PROVIDER y las credenciales en .env. "
-        "Instagram feed/historia requieren cuenta profesional + Graph API (meta)."
+        "LinkedIn nativo: conecta con OAuth en el dashboard y usa SOCIAL_PROVIDER=meta o brief red_social=linkedin. "
+        "Instagram/Facebook: meta + Go sidecar en :8088."
     )
 
 

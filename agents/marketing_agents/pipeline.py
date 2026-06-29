@@ -30,6 +30,7 @@ class MarketingPipeline:
         idempotency_key: str | None = None,
         content_format: str = "feed",
         image_provider: str | None = None,
+        archetype_override: str | None = None,
     ) -> dict:
         """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable."""
         strategy = self.strategist.run(brief)
@@ -49,6 +50,7 @@ class MarketingPipeline:
             strategy,
             image_provider=image_provider,
             content_format=content_format,
+            archetype_override=archetype_override,
         )
 
         publish_result = None

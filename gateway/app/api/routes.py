@@ -15,6 +15,7 @@ from gateway.app.db.session import get_db
 from gateway.app.models import AgentRun, Brief, CampaignSchedule
 from gateway.app.schemas.contracts import (
     ApproveRequest,
+    ArchetypeInfo,
     BriefCreate,
     BriefResponse,
     CampaignFireResponse,
@@ -43,18 +44,41 @@ router = APIRouter(prefix="/api")
 @router.get("/social/publish-status", response_model=SocialPublishStatusResponse)
 def social_publish_status(
     tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
 ) -> SocialPublishStatusResponse:
     """Indica qué integraciones de publicación están configuradas (sin exponer secretos)."""
-    _ = tenant_id
     s = get_settings()
+    from sqlalchemy import select
+
+    from gateway.app.models import OAuthToken
+
+    oauth_rows = db.execute(
+        select(OAuthToken.provider).where(OAuthToken.tenant_id == tenant_id)
+    ).scalars().all()
+    oauth_set = set(oauth_rows)
+    linkedin_oauth = "linkedin" in oauth_set
+    meta_oauth = "meta" in oauth_set
     return SocialPublishStatusResponse(
         social_provider=s.social_provider,
-        linkedin_ready=bool(s.linkedin_access_token.strip()),
-        uploadpost_ready=bool(s.uploadpost_api_key.strip()),
+        linkedin_ready=bool(s.linkedin_access_token.strip()) or linkedin_oauth,
+        linkedin_oauth_connected=linkedin_oauth,
+        meta_oauth_connected=meta_oauth,
         meta_instagram_ready=bool(
             s.meta_page_access_token.strip() and s.instagram_business_account_id.strip()
-        ),
+        )
+        or meta_oauth,
+        go_publisher_url=s.go_publisher_url,
     )
+
+
+@router.get("/image/archetypes", response_model=list[ArchetypeInfo])
+def list_archetypes(
+    tenant_id: str = Depends(require_auth),
+) -> list[ArchetypeInfo]:
+    """Lista los arquetipos de layout editorial disponibles para override manual en un run."""
+    _ = tenant_id
+    from agents.marketing_agents.layout_archetypes import _ARCHETYPE_MAP
+    return [ArchetypeInfo(id=a.id, label=a.label) for a in _ARCHETYPE_MAP.values()]
 
 
 @router.get("/image/providers", response_model=ImageProvidersResponse)
@@ -160,6 +184,7 @@ def run_pipeline_sync(
             requires_approval=payload.requires_approval,
             idempotency_key=payload.idempotency_key,
             image_provider=payload.image_provider,
+            archetype_override=payload.archetype_override,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
@@ -195,6 +220,9 @@ def run_pipeline_async(
                 payload.idempotency_key,
                 payload.image_provider,
             ],
+            kwargs={
+                "archetype_override": payload.archetype_override,
+            },
         )
     except (
         redis.exceptions.ConnectionError,

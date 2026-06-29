@@ -69,6 +69,8 @@ export default function App() {
   const [contentFormat, setContentFormat] = useState("feed");
   const [imageProvider, setImageProvider] = useState("fal");
   const [imageProviders, setImageProviders] = useState([]);
+  const [archetypeOverride, setArchetypeOverride] = useState("");
+  const [archetypes, setArchetypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
   const [error, setError] = useState(null);
@@ -111,10 +113,25 @@ export default function App() {
     }
   };
 
+  const loadArchetypes = async () => {
+    try {
+      const data = await api("/image/archetypes");
+      setArchetypes(Array.isArray(data) ? data : []);
+    } catch {
+      setArchetypes([
+        { id: "typographic_poster", label: "Poster tipográfico" },
+        { id: "minimal_conceptual", label: "Conceptual minimal" },
+        { id: "editorial_infographic", label: "Infográfico editorial" },
+        { id: "cinematic_hero", label: "Hero cinematográfico" },
+      ]);
+    }
+  };
+
   useEffect(() => {
     loadHistory();
     loadSocialStatus();
     loadImageProviders();
+    loadArchetypes();
   }, [apiKey]);
 
   const applyKey = () => {
@@ -132,10 +149,11 @@ export default function App() {
       const runReq = {
         brief_id: brief.id,
         publish: true,
-        requires_approval: true,         // human-in-the-loop activo por defecto
+        requires_approval: true,
         idempotency_key: `${brief.id}-${Date.now()}`,
         content_format: contentFormat,
         image_provider: imageProvider,
+        ...(archetypeOverride ? { archetype_override: archetypeOverride } : {}),
       };
       const run = await api(asyncMode ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -211,8 +229,11 @@ export default function App() {
         {socialStatus ? (
           <ul style={{ fontSize: "0.9rem" }}>
             <li><strong>Proveedor activo:</strong> <code>{socialStatus.social_provider}</code></li>
-            <li>LinkedIn listo: {socialStatus.linkedin_ready ? "sí" : "no"}</li>
-            <li>Upload-Post listo: {socialStatus.uploadpost_ready ? "sí" : "no"}</li>
+            <li>LinkedIn listo: {socialStatus.linkedin_ready ? "sí" : "no"}
+              {socialStatus.linkedin_oauth_connected ? " (OAuth)" : ""}
+            </li>
+            <li>Meta OAuth conectado: {socialStatus.meta_oauth_connected ? "sí" : "no"}</li>
+            <li>Go publisher: <code>{socialStatus.go_publisher_url || "http://localhost:8088"}</code></li>
             <li>Meta / Instagram (credenciales): {socialStatus.meta_instagram_ready ? "sí" : "no"}</li>
           </ul>
         ) : (
@@ -261,6 +282,25 @@ export default function App() {
               : "Generación local con Automatic1111/Forge en :7860."}
           </p>
         </div>
+        <div className="archetype-block">
+          <label>
+            Arquetipo visual
+            <select
+              value={archetypeOverride}
+              disabled={loading}
+              onChange={(e) => setArchetypeOverride(e.target.value)}
+            >
+              <option value="">Automático (el agente elige)</option>
+              {archetypes.map((a) => (
+                <option key={a.id} value={a.id}>{a.label}</option>
+              ))}
+            </select>
+          </label>
+          <p className="hint">
+            Fuerza un arquetipo o deja que el agente lo seleccione según el objetivo del brief.
+          </p>
+        </div>
+
         {Object.keys(form).map((key) => (
           <label key={key}>
             {key}

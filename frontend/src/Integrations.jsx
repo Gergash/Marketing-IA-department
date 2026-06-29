@@ -7,12 +7,20 @@ const API_BASE = (() => {
   return "http://localhost:8000/api";
 })();
 
-async function fetchStatus(apiKey) {
+async function apiFetch(path, apiKey, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-  const res = await fetch(`${API_BASE}/auth/status`, { headers });
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+async function fetchStatus(apiKey) {
+  return apiFetch("/auth/status", apiKey);
 }
 
 export default function Integrations({ apiKey }) {
@@ -38,20 +46,20 @@ export default function Integrations({ apiKey }) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const oauth = params.get("oauth");
-    if (!oauth) return;
     if (oauth === "success") {
       setError(null);
       load();
     } else if (oauth === "error") {
       setError(params.get("message") || "Error al conectar con Meta");
     }
-    window.history.replaceState({}, "", window.location.pathname);
+    if (oauth) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, [apiKey]);
 
   const connectedProviders = connected.map((c) => c.provider);
 
   const handleConnect = (provider) => {
-    // Abre el flujo OAuth en la misma pestaña; al callback regresa al usuario con JSON de confirmación.
     window.location.href = `${API_BASE}/auth/login/${provider}`;
   };
 
@@ -59,8 +67,8 @@ export default function Integrations({ apiKey }) {
     <section className="card">
       <h2>Integraciones de redes sociales</h2>
       <p style={{ fontSize: "0.85rem", color: "#888" }}>
-        Conecta tus cuentas para que el agente publique directamente usando OAuth 2.0 nativo.
-        {" "}La URL de callback debe coincidir con la configurada en el panel de desarrollador de cada red.
+        Conecta tus cuentas para publicación nativa. Meta/Instagram: OAuth + Go sidecar (:8088).
+        LinkedIn: OAuth + publisher Python nativo con imagen.
       </p>
 
       {error && <p style={{ color: "red", fontSize: "0.85rem" }}>{error}</p>}
@@ -124,12 +132,12 @@ export default function Integrations({ apiKey }) {
 
       <details style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "#888" }}>
         <summary>Configuración necesaria (.env)</summary>
-        <pre style={{ marginTop: "0.5rem", background: "#1a1a2e", padding: "0.75rem", borderRadius: "4px" }}>{`# Meta
+        <pre style={{ marginTop: "0.5rem", background: "#1a1a2e", padding: "0.75rem", borderRadius: "4px" }}>{`# Meta OAuth
 META_CLIENT_ID=...
 META_CLIENT_SECRET=...
 META_REDIRECT_URI=http://localhost:8000/api/auth/callback/meta
 
-# LinkedIn
+# LinkedIn OAuth
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
 LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/callback/linkedin

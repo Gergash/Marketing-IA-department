@@ -1,4 +1,4 @@
-"""Integraciones de publicación en redes (mock, LinkedIn, Upload-Post, Meta/Instagram)."""
+"""Integraciones de publicación en redes (mock, LinkedIn, Meta/Instagram)."""
 
 from __future__ import annotations
 
@@ -17,25 +17,18 @@ def publish_post(
     idempotency_key: str | None = None,
     *,
     content_format: str = "feed",
+    linkedin_token: str | None = None,
+    linkedin_urn: str | None = None,
 ) -> dict:
-    """Enruta la publicación según `SOCIAL_PROVIDER` en settings (LinkedIn, Upload-Post, Meta/IG o mock)."""
+    """Enruta la publicación según plataforma y tokens disponibles (LinkedIn, Meta/IG o mock)."""
     from gateway.app.core.settings import get_settings
     s = get_settings()
     cf = (content_format or "feed").lower()
     if cf not in ("feed", "story"):
         cf = "feed"
 
-    if s.social_provider == "linkedin" and s.linkedin_access_token:
-        if cf == "story":
-            logger.warning("linkedin.story_not_supported_publishing_as_feed")
-        return _linkedin(copy_text, image_url, s.linkedin_access_token, s.linkedin_person_urn, content_format=cf)
-    if s.social_provider == "uploadpost" and s.uploadpost_api_key:
-        if cf == "story":
-            logger.info(
-                "uploadpost.story_requested",
-                note="Si la API no soporta historias, puede publicarse como post normal.",
-            )
-        return _uploadpost(platform, copy_text, image_url, s.uploadpost_api_key, content_format=cf)
+    if platform.lower() in ("linkedin",) and linkedin_token:
+        return _linkedin(copy_text, image_url, linkedin_token, linkedin_urn or "", content_format=cf)
     if (
         s.social_provider == "meta"
         and s.meta_page_access_token
@@ -159,7 +152,7 @@ def _mock(
 
 
 # ---------------------------------------------------------------------------
-# LinkedIn UGC Posts API
+# LinkedIn UGC Posts API — publicación con imagen vía registerUpload
 # ---------------------------------------------------------------------------
 
 def _linkedin(
@@ -169,39 +162,88 @@ def _linkedin(
     person_urn: str,
     content_format: str,
 ) -> dict:
-    """Publica un UGC Post de solo texto en LinkedIn (la imagen no se adjunta en este flujo simplificado)."""
+    """Publica en LinkedIn con imagen vía UGC Posts API (registerUpload → PUT → ugcPosts)."""
     import httpx
 
     if not person_urn:
         person_urn = _linkedin_fetch_urn(token)
 
-    body = {
-        "author": person_urn,
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": copy_text},
-                "shareMediaCategory": "NONE",
-            }
-        },
-        "visibility": {
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-        },
+    headers_auth = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
     }
 
-    with httpx.Client(timeout=15) as client:
-        r = client.post(
-            "https://api.linkedin.com/v2/ugcPosts",
-            json=body,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "X-Restli-Protocol-Version": "2.0.0",
-            },
+    with httpx.Client(timeout=60) as client:
+        # 1. Descargar imagen (localhost es accesible desde el mismo proceso)
+        img_resp = client.get(image_url)
+        img_resp.raise_for_status()
+        image_bytes = img_resp.content
+        content_type = img_resp.headers.get("content-type", "image/jpeg")
+
+        # 2. Registrar upload en LinkedIn
+        register_body = {
+            "registerUploadRequest": {
+                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                "owner": person_urn,
+                "serviceRelationships": [
+                    {
+                        "relationshipType": "OWNER",
+                        "identifier": "urn:li:userGeneratedContent",
+                    }
+                ],
+            }
+        }
+        r_register = client.post(
+            "https://api.linkedin.com/v2/assets?action=registerUpload",
+            json=register_body,
+            headers=headers_auth,
         )
-        r.raise_for_status()
-        post_id = r.headers.get("x-restli-id", r.json().get("id", "unknown"))
-        logger.info("linkedin.published", post_id=post_id)
+        r_register.raise_for_status()
+        value = r_register.json().get("value", {})
+        upload_mechanism = value.get("uploadMechanism", {}).get(
+            "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest", {}
+        )
+        upload_url = upload_mechanism.get("uploadUrl", "")
+        asset_urn = value.get("asset", "")
+        if not upload_url or not asset_urn:
+            raise ValueError("LinkedIn: registerUpload no devolvió uploadUrl o asset")
+
+        # 3. Subir imagen binaria
+        upload_headers = {k: v for k, v in upload_mechanism.get("headers", {}).items()}
+        upload_headers["Authorization"] = f"Bearer {token}"
+        upload_headers["Content-Type"] = content_type
+        r_upload = client.put(upload_url, content=image_bytes, headers=upload_headers)
+        r_upload.raise_for_status()
+
+        # 4. Crear el UGC post con imagen
+        post_body = {
+            "author": person_urn,
+            "lifecycleState": "PUBLISHED",
+            "specificContent": {
+                "com.linkedin.ugc.ShareContent": {
+                    "shareCommentary": {"text": copy_text[:3000]},
+                    "shareMediaCategory": "IMAGE",
+                    "media": [
+                        {
+                            "status": "READY",
+                            "description": {"text": "Imagen generada por Marketing DEPA IA"},
+                            "media": asset_urn,
+                            "title": {"text": ""},
+                        }
+                    ],
+                }
+            },
+            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+        }
+        r_post = client.post(
+            "https://api.linkedin.com/v2/ugcPosts",
+            json=post_body,
+            headers=headers_auth,
+        )
+        r_post.raise_for_status()
+        post_id = r_post.headers.get("x-restli-id", r_post.json().get("id", "unknown"))
+        logger.info("linkedin.published_with_image", post_id=post_id, asset=asset_urn)
         return {
             "status": "published",
             "publication_url": f"https://www.linkedin.com/feed/update/{post_id}/",
@@ -220,59 +262,3 @@ def _linkedin_fetch_urn(token: str) -> str:
         )
         r.raise_for_status()
         return f"urn:li:person:{r.json()['id']}"
-
-
-# ---------------------------------------------------------------------------
-# Upload-Post unified social API — https://upload-post.com
-# Supports LinkedIn, Instagram, Facebook, X, TikTok, YouTube via one endpoint.
-# Docs: https://upload-post.com/docs/api
-# ---------------------------------------------------------------------------
-
-def _uploadpost(
-    platform: str,
-    copy_text: str,
-    image_url: str,
-    api_key: str,
-    *,
-    content_format: str,
-) -> dict:
-    """Publica vía API unificada upload-post.com (texto + media opcional por URL)."""
-    import httpx
-
-    # Platform slug mapping (Upload-Post uses lowercase platform names)
-    platform_map = {
-        "linkedin": "linkedin",
-        "instagram": "instagram",
-        "facebook": "facebook",
-        "twitter": "twitter",
-        "x": "twitter",
-        "tiktok": "tiktok",
-    }
-    platform_slug = platform_map.get(platform.lower(), platform.lower())
-
-    payload: dict = {
-        "platforms": [platform_slug],
-        "text": copy_text,
-    }
-    if image_url and not image_url.startswith("https://dummyimage.com"):
-        payload["media"] = [{"url": image_url, "type": "image"}]
-
-    with httpx.Client(timeout=30) as client:
-        r = client.post(
-            "https://api.upload-post.com/v1/posts",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-        )
-        r.raise_for_status()
-        data = r.json()
-        post_id = str(data.get("id", "unknown"))
-        logger.info("uploadpost.published", post_id=post_id, platform=platform_slug)
-        return {
-            "status": "published",
-            "publication_url": data.get("url", f"https://upload-post.com/posts/{post_id}"),
-            "platform_post_id": post_id,
-            "content_format": content_format,
-        }

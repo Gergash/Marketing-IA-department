@@ -1,67 +1,172 @@
 ## Estado actual del proyecto — Marketing DEPA IA
-Actualizado: 2026-06-18
+
+Actualizado: 2026-05-19  
+Último commit en `main`: `feat(design): integrate editorial layout archetypes and 4:5 feed specs`
 
 ---
 
-### Lo que funciona hoy
+### Qué es el proyecto
 
-| Capa | Estado |
-|------|--------|
-| **Pipeline** | Strategist → LangGraph Copy/QA → Designer → Publisher |
-| **LLM** | Ollama (llama3.1) / Anthropic / OpenAI + stub mockeado |
-| **Imágenes** | **fal.ai (Flux Pro v1.1)** — proveedor principal. Fallback: SD (A1111), DALL·E, mock |
-| **Social** | Meta/Instagram Business, LinkedIn, Upload-Post, mock + Go sidecar `:8088` |
-| **Human-in-the-loop** | `pending_approval` → approve/reject desde el dashboard |
-| **Async** | Celery + Redis |
-| **Scheduler** | APScheduler en Uvicorn — ✅ prueba de fuego completada (`POST /api/campaigns/{id}/fire`) |
-| **OAuth Meta** | Flujo completo con fallback granular de scopes |
-| **Anti-duplicados IG** | Estado `publishing`, sin doble fallback Go+Python |
+MVP de automatización de marketing con agentes de IA:
+
+```
+brief → estrategia → copy con QA → diseño visual editorial → aprobación humana → publicación en redes
+```
+
+Flujo principal de publicación: **Meta / Instagram Business** vía sidecar Go.
 
 ---
 
-### Motor de imágenes: fal.ai (Flux Pro)
+### Arquitectura operativa
 
-Proveedor activo: `IMAGE_PROVIDER=fal`
+```
+Frontend (React/Vite :5173)
+        ↓
+Gateway FastAPI (:8000)  ←→  PostgreSQL + Redis (Docker)
+        ↓
+Celery worker (async) + APScheduler (campañas)
+        ↓
+Pipeline Python (agents/marketing_agents/)
+        ↓
+Go sidecar social-publisher (:8088) → Meta Graph API
+```
 
-Flujo en `image_providers.py`:
-1. `fal_client.run("fal-ai/flux-pro/v1.1", { prompt, image_size: "landscape_16_9", steps: 28 })`
-2. Descarga PNG desde URL temporal de fal
-3. Overlay copy/CTA con Pillow → `static/images/fal_<uuid>.png`
-4. Retorna URL local para el publisher Go
-
-ComfyUI fue evaluado y descartado: GPU local (GTX 1650 Ti / 4 GB VRAM) insuficiente para modelos modernos.
-fal.ai resuelve esto sin infraestructura local.
+| Capa | Tecnología | Estado |
+|------|------------|--------|
+| API | FastAPI + Alembic | ✅ Operativo |
+| Agentes | LangGraph (Copy/QA) + pipeline lineal | ✅ Operativo |
+| LLM | Ollama / Anthropic / OpenAI + stub mock | ✅ Configurable vía `.env` |
+| Imágenes | **fal.ai (Flux Pro)**, SD (A1111), DALL·E, mock | ✅ fal como principal en dev |
+| Social | Meta/IG, LinkedIn, Upload-Post, mock + Go | ✅ Meta con OAuth |
+| Async | Celery + Redis | ✅ Operativo |
+| Scheduler | APScheduler + `POST /api/campaigns/{id}/fire` | ✅ Prueba de fuego completada |
+| Human-in-the-loop | `pending_approval` → approve/reject | ✅ Activo |
+| Infra | Docker Compose (Postgres/Redis), k8s base | ✅ Dev listo; k8s esqueleto |
+| Métricas | Prometheus | ⚠️ Desactivado en dev (`PROMETHEUS_ENABLED=false`) |
 
 ---
 
-### Scheduler — Prueba de fuego completada
+### Pipeline de agentes
 
-- `POST /api/campaigns/{id}/fire` dispara una campaña de inmediato (bypass del cron)
-- Seed script disponible: `scripts/seed_fire_test_campaign.py`
-- Tests en: `tests/test_scheduler.py`
-- Runbook: `infra/prueba-de-fuego-scheduler.md`
-- Runs en estado `pending_approval` se acumulan correctamente para revisión humana
+```
+Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher (opcional)
+```
+
+**Módulos en** `agents/marketing_agents/`:
+
+| Archivo | Rol |
+|---------|-----|
+| `strategist.py` | Tipo de post, hook, mensaje base, hashtags |
+| `copywriter.py` | Copy + `headline_for_image` / `subline_for_image` |
+| `graph_copy_qa.py` + `quality.py` | Bucle QA con trazabilidad (`copy_qa_trace`) |
+| `designer.py` | Arquetipo editorial + prompt Flux + composición |
+| `layout_archetypes.py` | Selección y prompts por arquetipo |
+| `design_layouts.py` | Overlays PIL (poster, minimal, infográfico, hero) |
+| `image_providers.py` | fal / SD / DALL·E / mock + overlay post-generación |
+| `image_specs.py` | Dimensiones por red social y formato |
+| `overlay_text.py` | Tipografía, wrap y truncado en oración |
+| `publisher.py` | Publicación vía proveedor social |
 
 ---
 
-### Cómo levantar el stack completo
+### Motor visual — fal.ai + diseño editorial (Fase B)
 
-Documentación detallada con comandos exactos (Windows): **`infra/arranque-stack.md`**
+**Proveedor recomendado:** `IMAGE_PROVIDER=fal` con `FAL_API_KEY` y `FAL_MODEL=fal-ai/flux-pro/v1.1`
+
+Flujo en diseño:
+
+1. `pick_archetype(brief, strategy)` elige layout (o `archetype_override` vía API)
+2. `build_flux_prompt()` genera prompt visual sin texto embebido
+3. fal.ai genera fondo con dimensiones por plataforma/formato
+4. `apply_design_layout()` aplica composición editorial con Pillow
+
+**4 arquetipos:**
+
+| ID | Label | Cuándo se elige |
+|----|-------|-----------------|
+| `typographic_poster` | Poster tipográfico | promocional / ventas |
+| `minimal_conceptual` | Conceptual minimal | informativo |
+| `editorial_infographic` | Infográfico editorial | educativo / branding |
+| `cinematic_hero` | Hero cinematográfico | storytelling / entretenimiento |
+
+**Dimensiones** (`image_specs.py`):
+
+- Instagram / Facebook feed: **1080×1350 (4:5)**
+- Story / reels: **1080×1920 (9:16)**
+- LinkedIn feed: 1200×627
+- X/Twitter feed: 1200×675
+- fal escala proporcionalmente si alguna dimensión > 1440px (stories → ~810×1440)
+
+**Frontend:** selector feed/story, switch fal ↔ Stable Diffusion, muestra proveedor, dimensiones y `layout_label`.
+
+ComfyUI descartado (GPU 4 GB insuficiente). Stable Diffusion local conservado como alternativa.
+
+---
+
+### API principal
+
+Rutas en `gateway/app/api/routes.py`:
+
+- `GET /health`, `/health/background`
+- `GET /image/providers` — proveedores de imagen disponibles
+- `GET /image/archetypes` — lista de arquetipos para override manual
+- `GET /social/publish-status`
+- `POST/GET /briefs`
+- `POST /runs/sync`, `/runs/async` — aceptan `image_provider`, `content_format`, `archetype_override`
+- `GET /runs`, `/runs/{id}`
+- `POST /runs/{id}/approve`, `/reject`
+- `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
+- OAuth Meta / LinkedIn (módulo auth)
+
+**Persistencia:** briefs, runs (`status`, `content_format`, aprobación), assets generados, campañas programadas, tokens OAuth.
+
+---
+
+### Publicación Instagram (estable)
+
+- OAuth Meta con fallback granular de scopes
+- Estado `publishing` para evitar doble publicación
+- Go publisher en `:8088` (sin fallback Python duplicado si Go ya intentó Meta)
+- `PUBLIC_IMAGE_BASE_URL` con ngrok obligatorio para que Meta acceda a las imágenes
+- Anti-duplicados por error 9007 (container no `FINISHED`)
+
+---
+
+### Tests (24 passing)
+
+| Archivo | Qué cubre |
+|---------|-----------|
+| `test_pipeline.py` | Pipeline sync/async con mock |
+| `test_graph_copy_qa.py` | Reintentos Copy/QA |
+| `test_scheduler.py` | Campañas → `pending_approval` |
+| `test_layout_archetypes.py` | Specs 4:5, fal scaling, arquetipos, prompts |
+| `test_design_layouts.py` | Composición PIL: 4 layouts, fallback, dimensiones |
+
+```bash
+python -m pytest tests/ -q
+```
+
+---
+
+### Cómo levantar el stack (7 terminales)
+
+Documentación detallada: **`infra/arranque-stack.md`**
 
 **Prerequisitos (una vez):**
+
 ```bash
-pip install -r requirements.txt   # incluye fal-client
+pip install -r requirements.txt
 python -m alembic upgrade head
 cd frontend && npm install && cd ..
 ```
 
-**Servicios (terminales separadas — desde la raíz `Marketing DEPA IA`, venv activado):**
+**Servicios (terminales separadas — raíz del repo, venv activado):**
 
 ```bash
-# T1 — Infra (PowerShell o Git Bash)
+# T1 — Infra
 docker compose -f infra/docker-compose.yml up -d
 
-# T2 — Ollama (servicio en background; verificar)
+# T2 — Ollama
 curl http://localhost:11434/api/tags
 
 # T3 — API
@@ -78,14 +183,14 @@ cd microservices/social-publisher-go && go run ./cmd/server
 
 # T7 — ngrok (solo al publicar en Meta/Instagram)
 cd tests/ngrok-v3-stable-windows-amd64 && ./ngrok.exe http 8000
-# Actualiza PUBLIC_IMAGE_BASE_URL con la URL https y reinicia Uvicorn
+# Actualizar PUBLIC_IMAGE_BASE_URL con la URL https y reiniciar Uvicorn
 ```
 
 Dashboard: http://localhost:5173 · API docs: http://127.0.0.1:8000/docs
 
 ---
 
-### Variables de entorno mínimas para fal.ai
+### Variables de entorno mínimas
 
 ```env
 IMAGE_PROVIDER=fal
@@ -100,24 +205,35 @@ REDIS_URL=redis://localhost:6379/0
 
 SOCIAL_PROVIDER=meta
 PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # obligatorio al publicar en IG
+
+PROMETHEUS_ENABLED=false   # true en producción
 ```
 
----
-
-### Prometheus (métricas) — desactivado en dev
-
-`prometheus-fastapi-instrumentator` está comentado en `gateway/app/main.py` por incompatibilidad con FastAPI >= 0.115.
-
-**Reactivar obligatoriamente antes de producción:** descomentar las dos líneas marcadas con `[PROMETHEUS]` en `main.py`. Expone `GET /metrics` para conectar con Grafana.
+**No commitear `.env`**
 
 ---
 
-### Qué NO commitear nunca
+### Roadmap vs realidad
 
-- `.env` — contiene FAL_API_KEY, tokens Meta, secrets OAuth
+| Paso | Estado |
+|------|--------|
+| 1 Happy path local | ✅ |
+| 2 PostgreSQL + Alembic | ✅ |
+| 3 APIs reales (LLM, imagen, social) | ✅ |
+| 4 Auth + human-in-the-loop | ✅ |
+| 5 LangGraph Copy/QA | ✅ |
+| 6 Go / infra / K8s | 🟡 Parcial — sidecars Go existen; K8s es base |
 
 ---
 
-### Ruta de Stable Diffusion (referencia futura)
+### Pendientes conocidos
 
-`C:\Users\57317\AppData\Local\Programs\Stable-difusion-IA\stable-diffusion-webui-forge`
+1. **Canva OAuth** — placeholder, no implementado.
+2. **Frontend: selector de arquetipo** — la API ya soporta `archetype_override`; falta dropdown en el dashboard React.
+3. **Prometheus** — activable con `PROMETHEUS_ENABLED=true`; desactivado en dev por compatibilidad FastAPI ≥ 0.115.
+
+---
+
+### Resumen
+
+MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux en proporciones correctas por red social, aplica layouts tipo agencia, pasa por aprobación humana y publica en Instagram vía Go + Meta OAuth.

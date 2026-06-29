@@ -104,6 +104,67 @@ _OAUTH_PROVIDER_MAP = {
     "linkedin": "linkedin",
 }
 
+_NATIVE_PYTHON_PLATFORMS: frozenset[str] = frozenset({"linkedin"})
+
+
+def _publish_via_linkedin(
+    db: Session,
+    result: dict,
+    brief: Brief,
+    run: AgentRun,
+    idempotency_key: str | None,
+) -> str:
+    """Publicación nativa LinkedIn con imagen: lee token OAuth de DB y llama al provider Python."""
+    from agents.marketing_agents.social_providers import publish_post
+
+    token_row = db.execute(
+        select(OAuthToken).where(
+            OAuthToken.tenant_id == run.tenant_id,
+            OAuthToken.provider == "linkedin",
+        )
+    ).scalar_one_or_none()
+
+    if not token_row:
+        raise ValueError(
+            "No hay cuenta de LinkedIn conectada para este tenant. "
+            "Conéctala desde el dashboard en Integraciones → Conectar LinkedIn."
+        )
+
+    copy_text = result["copy"]["copy_final"]
+    image_url = result["design"]["image_url"]
+
+    # Normalizar URL: si apunta a localhost, usar PUBLIC_IMAGE_BASE_URL
+    public_base = get_settings().public_image_base_url.rstrip("/")
+    if image_url.startswith("http://localhost:8000") and public_base != "http://localhost:8000":
+        image_url = image_url.replace("http://localhost:8000", public_base, 1)
+
+    pub = publish_post(
+        brief.red_social,
+        copy_text,
+        image_url,
+        idempotency_key,
+        content_format=_normalize_content_format(getattr(run, "content_format", None)),
+        linkedin_token=token_row.access_token,
+        linkedin_urn=token_row.account_id,
+    )
+    result["publish_result"] = pub
+    logger.info("linkedin.publish.ok", post_id=pub.get("platform_post_id"))
+    return "success"
+
+
+def _publish_run(
+    db: Session,
+    result: dict,
+    brief: Brief,
+    run: AgentRun,
+    idempotency_key: str | None,
+) -> str:
+    """Enruta publicación: LinkedIn nativo (Python) o Go sidecar (Meta/IG)."""
+    platform = brief.red_social.lower()
+    if platform in _NATIVE_PYTHON_PLATFORMS:
+        return _publish_via_linkedin(db, result, brief, run, idempotency_key)
+    return _publish_via_go(result, brief, idempotency_key, run, db)
+
 
 def _publish_via_go(
     result: dict,
@@ -132,6 +193,12 @@ def _publish_via_go(
             account_id = token_row.account_id
 
     if not access_token:
+        logger.warning(
+            "go_publisher.no_oauth_token",
+            platform=platform,
+            oauth_provider=oauth_provider,
+            tenant_id=run.tenant_id,
+        )
         return "unavailable"
 
     # Sustituye localhost por la URL pública (Meta exige HTTPS accesible externamente)
@@ -207,6 +274,7 @@ def execute_pipeline(
     requires_approval: bool,
     idempotency_key: str | None,
     image_provider: str | None = None,
+    archetype_override: str | None = None,
 ) -> dict:
     """Orquesta el pipeline completo: deduplicación, agentes, aprobación humana opcional, persistencia y publicación."""
     run = db.get(AgentRun, run_id)
@@ -248,6 +316,7 @@ def execute_pipeline(
             idempotency_key=idempotency_key,
             content_format=content_format,
             image_provider=image_provider,
+            archetype_override=archetype_override,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
@@ -257,17 +326,18 @@ def execute_pipeline(
         logger.info("pipeline.pending_approval", run_id=run.id)
         return result
 
-    # Sin aprobación requerida: ejecutar y publicar directamente.
+    # Sin aprobación requerida: generar contenido; publicación vía _publish_run.
     result = pipeline.run(
         brief_in,
-        publish=publish,
+        publish=False,
         idempotency_key=idempotency_key,
         content_format=content_format,
         image_provider=image_provider,
+        archetype_override=archetype_override,
     )
 
     if publish and result.get("quality", {}).get("approved", False):
-        _publish_via_go(result, brief, idempotency_key, run, db)
+        _publish_run(db, result, brief, run, idempotency_key)
 
     _persist_result(db, run, result, brief.red_social)
     db.commit()
@@ -305,27 +375,17 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
     db.commit()
 
     try:
-        go_outcome = _publish_via_go(result, brief, run.idempotency_key, run, db)
+        go_outcome = _publish_run(db, result, brief, run, run.idempotency_key)
 
-        # Solo fallback Python si Go no respondió (caído). Si Go falló en Meta, NO reintentar
-        # en Python — eso creaba contenedores duplicados y posts repetidos en Instagram.
         if go_outcome == "unavailable" and not result.get("publish_result"):
-            logger.warning("approve_run.go_fallback", run_id=run_id)
-            copy = CopyOutput(**result["copy"])
-            design = DesignOutput(**result["design"])
-            pipeline = MarketingPipeline()
-            publish_out = pipeline.publisher.run(
-                brief.red_social,
-                copy,
-                design,
-                idempotency_key=run.idempotency_key,
-                content_format=_normalize_content_format(getattr(run, "content_format", None)),
-            )
-            result["publish_result"] = publish_out.model_dump()
-        elif go_outcome == "failed" and not result.get("publish_result"):
             raise ValueError(
-                "Meta rechazó la publicación (imagen aún procesándose o error Graph API). "
-                "Espera 30 segundos y pulsa Aprobar una sola vez — no uses fallback dual."
+                "No se pudo publicar. Para LinkedIn: verifica que la cuenta esté conectada en Integraciones. "
+                "Para Meta/IG: verifica que el sidecar Go (:8088) esté activo."
+            )
+        if go_outcome == "failed" and not result.get("publish_result"):
+            raise ValueError(
+                "La API nativa rechazó la publicación. "
+                "Espera unos segundos y pulsa Aprobar una sola vez."
             )
 
         if not result.get("publish_result"):

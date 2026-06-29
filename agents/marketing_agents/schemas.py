@@ -53,3 +53,7 @@ class PublishOutput(BaseModel):
     publication_url: str
     platform_post_id: str
     content_format: str = "feed"
+    provider: str = ""
+    platforms: list[str] = Field(default_factory=list)
+    platform_results: list[dict] = Field(default_factory=list)
+    request_id: str = ""

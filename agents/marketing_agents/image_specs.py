@@ -22,10 +22,13 @@ class ImageSpec:
 _SPECS: dict[tuple[str, str], ImageSpec] = {
     ("instagram", "feed"): ImageSpec(1080, 1350, "instagram feed 4:5"),
     ("instagram", "story"): ImageSpec(1080, 1920, "instagram story 9:16"),
+    ("instagram", "reel"): ImageSpec(1080, 1920, "instagram reel 9:16"),
     ("ig", "feed"): ImageSpec(1080, 1350, "instagram feed 4:5"),
     ("ig", "story"): ImageSpec(1080, 1920, "instagram story 9:16"),
+    ("ig", "reel"): ImageSpec(1080, 1920, "instagram reel 9:16"),
     ("facebook", "feed"): ImageSpec(1080, 1350, "facebook feed 4:5"),
     ("facebook", "story"): ImageSpec(1080, 1920, "facebook story 9:16"),
+    ("facebook", "reel"): ImageSpec(1080, 1920, "facebook reel 9:16"),
     ("fb", "feed"): ImageSpec(1080, 1350, "facebook feed 4:5"),
     ("linkedin", "feed"): ImageSpec(1200, 627, "linkedin feed 1.91:1"),
     ("linkedin", "story"): ImageSpec(1080, 1920, "linkedin story 9:16"),
@@ -36,15 +39,17 @@ _SPECS: dict[tuple[str, str], ImageSpec] = {
 }
 
 _DEFAULT = ImageSpec(1080, 1350, "default portrait 4:5")
+_DEFAULT_REEL = ImageSpec(1080, 1920, "default reel 9:16")
 
 
 def resolve_image_spec(red_social: str, content_format: str = "feed") -> ImageSpec:
-    """Resuelve width×height según plataforma y tipo feed/story."""
+    """Resuelve width×height según plataforma y tipo feed/story/reel."""
     platform = (red_social or "instagram").strip().lower()
     fmt = (content_format or "feed").strip().lower()
-    if fmt not in ("feed", "story"):
+    if fmt not in ("feed", "story", "reel"):
         fmt = "feed"
-    return _SPECS.get((platform, fmt), _DEFAULT)
+    default = _DEFAULT_REEL if fmt == "reel" else _DEFAULT
+    return _SPECS.get((platform, fmt), default)
 
 
 def fal_image_size_arg(spec: ImageSpec) -> dict[str, int] | str:

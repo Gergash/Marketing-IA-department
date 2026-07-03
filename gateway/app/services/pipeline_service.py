@@ -237,9 +237,9 @@ def _publish_via_go(
 # ---------------------------------------------------------------------------
 
 def _normalize_content_format(value: str | None) -> str:
-    """Normaliza el formato de publicación a `feed` o `story` (valores desconocidos → feed)."""
+    """Normaliza el formato de publicación a `feed`/`story`/`reel` (valores desconocidos → feed)."""
     v = (value or "feed").lower()
-    return v if v in ("feed", "story") else "feed"
+    return v if v in ("feed", "story", "reel") else "feed"
 
 
 def create_run(

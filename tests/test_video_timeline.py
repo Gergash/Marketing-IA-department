@@ -1,6 +1,7 @@
 """Pruebas del contrato Timeline (video_timeline.py): validación Pydantic v2 y mapeo a Shotstack."""
 
 import pytest
+import structlog
 from pydantic import ValidationError
 
 from agents.marketing_agents.video_timeline import (
@@ -106,6 +107,22 @@ def test_duration_clamp_trims_when_voiceover_exceeds_30s() -> None:
     clips = edit["timeline"]["tracks"][0]["clips"]
     total_length = sum(c["length"] for c in clips)
     assert total_length <= 30.0
+
+
+def test_duration_clamp_over_30s_emits_trimmed_warning_log() -> None:
+    """El recorte a 30s hard cap DEBE emitir un warning estructurado `video.duration_trimmed`."""
+    long_scenes = [_scene(duration_s=12.0) for _ in range(3)]  # 36s total
+    timeline = Timeline(
+        scenes=long_scenes,
+        voiceover=VoiceoverTrack(audio_url="http://localhost:8000/static/audio/vo1.mp3", duration_s=36.0),
+    )
+    with structlog.testing.capture_logs() as logs:
+        to_shotstack_edit(timeline)
+
+    trimmed_events = [log for log in logs if log.get("event") == "video.duration_trimmed"]
+    assert len(trimmed_events) == 1
+    assert trimmed_events[0]["log_level"] == "warning"
+    assert trimmed_events[0]["voiceover_duration_s"] == pytest.approx(36.0)
 
 
 def test_duration_clamp_holds_minimums_when_voiceover_under_15s() -> None:

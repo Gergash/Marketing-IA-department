@@ -5,7 +5,10 @@ Este módulo no hace I/O; es el único lugar donde se filtra la forma del JSON d
 
 from __future__ import annotations
 
+import structlog
 from pydantic import BaseModel, Field, field_validator
+
+logger = structlog.get_logger(__name__)
 
 # Banda objetivo de duración total del reel (spec: 15-30s)
 _MIN_TOTAL_DURATION_S = 15.0
@@ -74,6 +77,11 @@ def _clamped_scene_durations(timeline: Timeline) -> list[float]:
         return base
 
     if voice_duration > _MAX_TOTAL_DURATION_S:
+        logger.warning(
+            "video.duration_trimmed",
+            voiceover_duration_s=voice_duration,
+            hard_cap_s=_MAX_TOTAL_DURATION_S,
+        )
         scale = _MAX_TOTAL_DURATION_S / base_total
         return [d * scale for d in base]
 

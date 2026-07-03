@@ -31,6 +31,9 @@ class MarketingPipeline:
         content_format: str = "feed",
         image_provider: str | None = None,
         archetype_override: str | None = None,
+        user_asset_url: str | None = None,
+        alter_image_with_ai: bool = False,
+        visual_instructions: str | None = None,
     ) -> dict:
         """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable."""
         strategy = self.strategist.run(brief)
@@ -51,6 +54,9 @@ class MarketingPipeline:
             image_provider=image_provider,
             content_format=content_format,
             archetype_override=archetype_override,
+            user_asset_url=user_asset_url,
+            alter_image_with_ai=alter_image_with_ai,
+            visual_instructions=visual_instructions,
         )
 
         publish_result = None

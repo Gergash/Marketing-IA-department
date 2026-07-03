@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     fal_api_key: str = ""
     # Modelo fal a usar; opciones: fal-ai/flux-pro/v1.1 | fal-ai/flux/schnell | fal-ai/recraft-v3
     fal_model: str = "fal-ai/flux-pro/v1.1"
+    # Modelo img2img cuando el usuario sube foto y pide alteración con IA
+    fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
+    fal_img2img_strength: float = 0.72
 
     # Social publishing — provider: mock | linkedin | meta
     social_provider: str = "mock"

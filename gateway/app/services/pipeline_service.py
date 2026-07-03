@@ -275,6 +275,9 @@ def execute_pipeline(
     idempotency_key: str | None,
     image_provider: str | None = None,
     archetype_override: str | None = None,
+    user_asset_url: str | None = None,
+    alter_image_with_ai: bool = False,
+    visual_instructions: str | None = None,
 ) -> dict:
     """Orquesta el pipeline completo: deduplicación, agentes, aprobación humana opcional, persistencia y publicación."""
     run = db.get(AgentRun, run_id)
@@ -317,6 +320,9 @@ def execute_pipeline(
             content_format=content_format,
             image_provider=image_provider,
             archetype_override=archetype_override,
+            user_asset_url=user_asset_url,
+            alter_image_with_ai=alter_image_with_ai,
+            visual_instructions=visual_instructions,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
@@ -334,6 +340,9 @@ def execute_pipeline(
         content_format=content_format,
         image_provider=image_provider,
         archetype_override=archetype_override,
+        user_asset_url=user_asset_url,
+        alter_image_with_ai=alter_image_with_ai,
+        visual_instructions=visual_instructions,
     )
 
     if publish and result.get("quality", {}).get("approved", False):

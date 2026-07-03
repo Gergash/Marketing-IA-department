@@ -44,6 +44,7 @@ class DesignOutput(BaseModel):
     layout_archetype: str = ""
     layout_label: str = ""
     color_palette: str = ""
+    design_source: str = "generated"  # generated | user_overlay | user_img2img
 
 
 class PublishOutput(BaseModel):

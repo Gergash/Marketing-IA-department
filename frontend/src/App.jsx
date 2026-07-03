@@ -52,6 +52,21 @@ async function api(path, method = "GET", body = null) {
   return res.json();
 }
 
+async function uploadAsset(file) {
+  const headers = {};
+  const key = getApiKey();
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${API_BASE}/briefs/upload-asset`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Componente principal
 // ---------------------------------------------------------------------------
@@ -71,6 +86,10 @@ export default function App() {
   const [imageProviders, setImageProviders] = useState([]);
   const [archetypeOverride, setArchetypeOverride] = useState("");
   const [archetypes, setArchetypes] = useState([]);
+  const [userAssetUrl, setUserAssetUrl] = useState("");
+  const [userAssetName, setUserAssetName] = useState("");
+  const [alterImageWithAi, setAlterImageWithAi] = useState(false);
+  const [visualInstructions, setVisualInstructions] = useState("");
   const [loading, setLoading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
   const [error, setError] = useState(null);
@@ -154,6 +173,11 @@ export default function App() {
         content_format: contentFormat,
         image_provider: imageProvider,
         ...(archetypeOverride ? { archetype_override: archetypeOverride } : {}),
+        ...(userAssetUrl ? { user_asset_url: userAssetUrl } : {}),
+        ...(userAssetUrl && alterImageWithAi ? { alter_image_with_ai: true } : {}),
+        ...(userAssetUrl && alterImageWithAi && visualInstructions.trim()
+          ? { visual_instructions: visualInstructions.trim() }
+          : {}),
       };
       const run = await api(asyncMode ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -301,6 +325,67 @@ export default function App() {
           </p>
         </div>
 
+        <div className="user-asset-block">
+          <span className="field-label">Tu foto (Design-as-Code)</span>
+          <label>
+            Subir imagen base
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={loading}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setError(null);
+                setLoading(true);
+                try {
+                  const up = await uploadAsset(file);
+                  setUserAssetUrl(up.url);
+                  setUserAssetName(up.filename);
+                } catch (err) {
+                  setError(err.message);
+                  setUserAssetUrl("");
+                  setUserAssetName("");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            />
+          </label>
+          {userAssetUrl && (
+            <p className="hint">
+              Foto cargada: <code>{userAssetName || userAssetUrl}</code>
+              {" "}
+              <button type="button" onClick={() => { setUserAssetUrl(""); setUserAssetName(""); setAlterImageWithAi(false); }}>
+                Quitar
+              </button>
+            </p>
+          )}
+          <label style={{ display: "block", marginTop: "0.5rem" }}>
+            <input
+              type="checkbox"
+              checked={alterImageWithAi}
+              disabled={!userAssetUrl || loading}
+              onChange={(e) => setAlterImageWithAi(e.target.checked)}
+            />
+            {" "}Alterar imagen con IA (requiere prompt; pasa por pending_approval)
+          </label>
+          {alterImageWithAi && userAssetUrl && (
+            <label>
+              Indicaciones visuales
+              <textarea
+                rows={2}
+                placeholder="Ej: expandir fondo con nieve, estilo ilustración suave..."
+                value={visualInstructions}
+                onChange={(e) => setVisualInstructions(e.target.value)}
+              />
+            </label>
+          )}
+          <p className="hint">
+            Sin IA: tu foto queda intacta como capa base; Pillow añade texto y diseño editorial.
+          </p>
+        </div>
+
         {Object.keys(form).map((key) => (
           <label key={key}>
             {key}
@@ -342,6 +427,9 @@ export default function App() {
               )}
               {result.result.design.layout_label && (
                 <> · layout: {result.result.design.layout_label}</>
+              )}
+              {result.result.design.design_source && (
+                <> · fuente: {result.result.design.design_source}</>
               )}
               :
             </p>

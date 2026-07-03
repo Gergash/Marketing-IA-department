@@ -50,6 +50,19 @@ class RunRequest(BaseModel):
     archetype_override: Literal[
         "typographic_poster", "minimal_conceptual", "editorial_infographic", "cinematic_hero"
     ] | None = None
+    # Foto del usuario (URL de POST /api/briefs/upload-asset)
+    user_asset_url: str | None = None
+    alter_image_with_ai: bool = False
+    visual_instructions: str | None = None
+
+
+class UploadAssetResponse(BaseModel):
+    """Respuesta tras subir una foto del usuario."""
+
+    url: str
+    filename: str
+    content_type: str
+    size_bytes: int
 
 
 class ImageProvidersResponse(BaseModel):

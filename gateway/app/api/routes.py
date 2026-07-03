@@ -5,7 +5,7 @@ import json
 import kombu.exceptions
 import redis
 import redis.exceptions
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from gateway.app.schemas.contracts import (
     RunRequest,
     RunResponse,
     SocialPublishStatusResponse,
+    UploadAssetResponse,
 )
 from gateway.app.services.pipeline_service import (
     approve_run,
@@ -136,6 +137,51 @@ def background_health() -> dict:
     }
 
 
+@router.post("/briefs/upload-asset", response_model=UploadAssetResponse)
+async def upload_brief_asset(
+    file: UploadFile = File(...),
+    tenant_id: str = Depends(require_auth),
+) -> UploadAssetResponse:
+    """Sube foto del usuario a static/uploads/ para Design-as-Code (capa base intacta)."""
+    _ = tenant_id
+    from agents.marketing_agents.user_assets import (
+        ALLOWED_UPLOAD_MIME,
+        MAX_UPLOAD_BYTES,
+        local_url_for_upload,
+        uploads_dir,
+    )
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type not in ALLOWED_UPLOAD_MIME:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tipo no permitido: {content_type}. Usa JPEG, PNG o WebP.",
+        )
+
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Archivo demasiado grande (máx {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)",
+        )
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archivo vacío")
+
+    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(content_type, ".bin")
+    import uuid
+
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = uploads_dir() / filename
+    dest.write_bytes(data)
+
+    return UploadAssetResponse(
+        url=local_url_for_upload(filename),
+        filename=filename,
+        content_type=content_type,
+        size_bytes=len(data),
+    )
+
+
 @router.post("/briefs", response_model=BriefResponse)
 def create_brief(
     payload: BriefCreate,
@@ -185,6 +231,9 @@ def run_pipeline_sync(
             idempotency_key=payload.idempotency_key,
             image_provider=payload.image_provider,
             archetype_override=payload.archetype_override,
+            user_asset_url=payload.user_asset_url,
+            alter_image_with_ai=payload.alter_image_with_ai,
+            visual_instructions=payload.visual_instructions,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
@@ -222,6 +271,9 @@ def run_pipeline_async(
             ],
             kwargs={
                 "archetype_override": payload.archetype_override,
+                "user_asset_url": payload.user_asset_url,
+                "alter_image_with_ai": payload.alter_image_with_ai,
+                "visual_instructions": payload.visual_instructions,
             },
         )
     except (

@@ -60,6 +60,8 @@ class GeneratedAsset(Base):
     run_id: Mapped[int] = mapped_column(Integer, index=True)
     image_url: Mapped[str] = mapped_column(Text)
     image_prompt: Mapped[str] = mapped_column(Text)
+    # Video renderizado (Reels); nullable porque solo se puebla en runs content_format=reel
+    video_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

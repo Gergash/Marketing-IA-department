@@ -34,8 +34,14 @@ def _brief_input(brief: Brief) -> BriefInput:
     )
 
 
+def _media_url(result: dict) -> str:
+    """URL del medio a servir/publicar: video para reels, imagen para feed/story (video_url tiene prioridad)."""
+    design = result.get("design") or {}
+    return design.get("video_url") or design.get("image_url") or ""
+
+
 def _persist_result(db: Session, run: AgentRun, result: dict, platform: str) -> None:
-    """Guarda JSON del resultado, marca run completado y persiste asset gráfico y publicación si aplica."""
+    """Guarda JSON del resultado, marca run completado y persiste asset gráfico/video y publicación si aplica."""
     run.result_json = json.dumps(result, ensure_ascii=True)
     run.status = "completed"
     db.add(run)
@@ -45,8 +51,9 @@ def _persist_result(db: Session, run: AgentRun, result: dict, platform: str) -> 
         GeneratedAsset(
             tenant_id=run.tenant_id,
             run_id=run.id,
-            image_url=design.get("image_url", ""),
+            image_url=design.get("image_url") or "",
             image_prompt=design.get("image_prompt", ""),
+            video_url=design.get("video_url") or None,
         )
     )
 
@@ -202,21 +209,24 @@ def _publish_via_go(
         return "unavailable"
 
     # Sustituye localhost por la URL pública (Meta exige HTTPS accesible externamente)
-    image_url = result["design"]["image_url"]
+    content_format = getattr(run, "content_format", None) or "feed"
+    media_url = _media_url(result)
     public_base = settings.public_image_base_url.rstrip("/")
-    if image_url.startswith("http://localhost:8000"):
-        image_url = image_url.replace("http://localhost:8000", public_base, 1)
+    if media_url.startswith("http://localhost:8000"):
+        media_url = media_url.replace("http://localhost:8000", public_base, 1)
 
     try:
         payload = {
             "platform": brief.red_social,
             "copy": result["copy"]["copy_final"],
-            "image_url": image_url,
+            "image_url": media_url,
             "idempotency_key": idempotency_key or "",
-            "content_format": getattr(run, "content_format", None) or "feed",
+            "content_format": content_format,
             "access_token": access_token,
             "account_id": account_id,
         }
+        if content_format == "reel":
+            payload["video_url"] = media_url
         with httpx.Client(timeout=60) as client:
             published = client.post(f"{settings.go_publisher_url}/publish", json=payload)
         if published.is_success:

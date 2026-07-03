@@ -42,8 +42,8 @@ class RunRequest(BaseModel):
     publish: bool = True
     requires_approval: bool = True
     idempotency_key: str | None = None
-    # Instagram/Meta: story = historia; linkedin suele publicar como post de feed
-    content_format: Literal["feed", "story"] = "feed"
+    # Instagram/Meta: story = historia; reel = video corto vertical (solo async); linkedin suele publicar como post de feed
+    content_format: Literal["feed", "story", "reel"] = "feed"
     # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
     image_provider: Literal["stable_diffusion", "fal"] | None = None
     # Override manual del arquetipo visual (si None, el agente lo elige automáticamente)

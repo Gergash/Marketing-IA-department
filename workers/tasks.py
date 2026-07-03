@@ -50,6 +50,43 @@ def execute_pipeline_task(
         return result
 
 
+@celery_app.task(bind=True, base=Task, queue="video_render")
+def execute_video_pipeline_task(
+    self,  # noqa: ANN001
+    run_id: int,
+    publish: bool,
+    requires_approval: bool,
+    idempotency_key: str | None,
+    image_provider: str | None = None,
+    archetype_override: str | None = None,
+    user_asset_url: str | None = None,
+    alter_image_with_ai: bool = False,
+    visual_instructions: str | None = None,
+) -> dict:
+    """Tarea de reels en cola dedicada `video_render`: Task base plano (SIN autoretry_for).
+
+    Un render de video tarda minutos y cuesta dinero real (Shotstack/ElevenLabs); reintentar
+    automaticamente re-renderizaria y duplicaria costo/medios, por eso NO hereda de
+    `BaseTaskWithRetry` (que trae `autoretry_for=(Exception,)` incluso con max_retries=0).
+    """
+    with SessionLocal() as db:
+        logger.info("execute_video_pipeline_task.start", run_id=run_id)
+        result = execute_pipeline(
+            db,
+            run_id,
+            publish=publish,
+            requires_approval=requires_approval,
+            idempotency_key=idempotency_key,
+            image_provider=image_provider,
+            archetype_override=archetype_override,
+            user_asset_url=user_asset_url,
+            alter_image_with_ai=alter_image_with_ai,
+            visual_instructions=visual_instructions,
+        )
+        logger.info("execute_video_pipeline_task.done", run_id=run_id)
+        return result
+
+
 @celery_app.task(name="workers.healthcheck_task")
 def healthcheck_task() -> dict:
     """Tarea mínima para comprobar que el worker puede consumir y ejecutar jobs."""

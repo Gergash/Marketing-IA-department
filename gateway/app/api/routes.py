@@ -37,7 +37,7 @@ from gateway.app.services.pipeline_service import (
 )
 from gateway.app.services.scheduler_service import fire_campaign_by_id, sync_campaign_jobs
 from workers.celery_app import celery_app
-from workers.tasks import execute_pipeline_task
+from workers.tasks import execute_pipeline_task, execute_video_pipeline_task
 
 router = APIRouter(prefix="/api")
 
@@ -214,6 +214,14 @@ def run_pipeline_sync(
     db: Session = Depends(get_db),
 ) -> RunResponse:
     """Ejecuta el pipeline de agentes de forma síncrona en el mismo proceso que la API."""
+    if payload.content_format == "reel":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "content_format='reel' requiere ejecucion async (POST /api/runs/async): "
+                "el render de video puede tardar varios minutos."
+            ),
+        )
     run = create_run(
         db,
         brief_id=payload.brief_id,
@@ -260,22 +268,28 @@ def run_pipeline_async(
         idempotency_key=payload.idempotency_key,
         content_format=payload.content_format,
     )
+    is_reel = payload.content_format == "reel"
+    task = execute_video_pipeline_task if is_reel else execute_pipeline_task
+    apply_async_kwargs: dict = {
+        "args": [
+            run.id,
+            payload.publish,
+            payload.requires_approval,
+            payload.idempotency_key,
+            payload.image_provider,
+        ],
+        "kwargs": {
+            "archetype_override": payload.archetype_override,
+            "user_asset_url": payload.user_asset_url,
+            "alter_image_with_ai": payload.alter_image_with_ai,
+            "visual_instructions": payload.visual_instructions,
+        },
+    }
+    if is_reel:
+        # Renders pueden tardar minutos: cola dedicada para no bloquear la cola de imagenes.
+        apply_async_kwargs["queue"] = "video_render"
     try:
-        execute_pipeline_task.apply_async(
-            args=[
-                run.id,
-                payload.publish,
-                payload.requires_approval,
-                payload.idempotency_key,
-                payload.image_provider,
-            ],
-            kwargs={
-                "archetype_override": payload.archetype_override,
-                "user_asset_url": payload.user_asset_url,
-                "alter_image_with_ai": payload.alter_image_with_ai,
-                "visual_instructions": payload.visual_instructions,
-            },
-        )
+        task.apply_async(**apply_async_kwargs)
     except (
         redis.exceptions.ConnectionError,
         kombu.exceptions.OperationalError,

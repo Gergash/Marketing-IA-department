@@ -161,6 +161,8 @@ export default function App() {
   };
 
   const createAndRun = async (asyncMode = false) => {
+    // Los reels se procesan en la cola video_render y tardan minutos: no admiten /runs/sync (422).
+    const effectiveAsync = contentFormat === "reel" ? true : asyncMode;
     setLoading(true);
     setError(null);
     try {
@@ -179,7 +181,7 @@ export default function App() {
           ? { visual_instructions: visualInstructions.trim() }
           : {}),
       };
-      const run = await api(asyncMode ? "/runs/async" : "/runs/sync", "POST", runReq);
+      const run = await api(effectiveAsync ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
       await loadHistory();
     } catch (e) {
@@ -269,10 +271,12 @@ export default function App() {
           <select value={contentFormat} onChange={(e) => setContentFormat(e.target.value)}>
             <option value="feed">Post en feed (Instagram 1080×1350, 4:5)</option>
             <option value="story">Historia (Instagram 1080×1920)</option>
+            <option value="reel">Reel (Instagram 1080×1920, video)</option>
           </select>
         </label>
         <p className="hint">
           Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
+          {contentFormat === "reel" && " Los reels son async-only: se envían siempre con \"Enviar Async\"."}
         </p>
       </section>
 
@@ -436,6 +440,28 @@ export default function App() {
             <img
               src={resolveImageUrl(result.result.design.image_url)}
               alt="Imagen generada"
+              style={{ maxWidth: "100%", borderRadius: "6px", border: "1px solid #333" }}
+            />
+          </div>
+        )}
+        {result?.result?.design?.video_url && (
+          <div style={{ marginBottom: "1rem" }}>
+            <p style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.4rem" }}>
+              Reel generado
+              {result.result.design.video_provider && (
+                <> — <code>{result.result.design.video_provider}</code></>
+              )}
+              {result.result.design.width > 0 && (
+                <> · {result.result.design.width}×{result.result.design.height}px</>
+              )}
+              {result.result.design.duration_s > 0 && (
+                <> · {result.result.design.duration_s.toFixed(1)}s</>
+              )}
+              :
+            </p>
+            <video
+              controls
+              src={resolveImageUrl(result.result.design.video_url)}
               style={{ maxWidth: "100%", borderRadius: "6px", border: "1px solid #333" }}
             />
           </div>

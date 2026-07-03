@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
     fal_img2img_strength: float = 0.72
 
+    # Voiceover generation — provider: elevenlabs | openai | mock
+    voice_provider: str = "elevenlabs"
+    voice_language: str = "es"
+    elevenlabs_api_key: str = ""
+    # Voz multilingüe por defecto (funciona en español con el modelo eleven_multilingual_v2)
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+
     # Social publishing — provider: mock | linkedin | meta
     social_provider: str = "mock"
     linkedin_access_token: str = ""

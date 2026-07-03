@@ -56,7 +56,8 @@ agents/marketing_agents/
   quality.py            — reglas de calidad de diseño
   designer.py           — arquetipo editorial + prompt Flux + composición PIL
   publisher.py          — publicación vía proveedor social
-  image_providers.py    — generación y overlay post-proceso
+  image_providers.py    — generación, overlay post-proceso e img2img
+  user_assets.py        — carga y fit de fotos del usuario
   layout_archetypes.py  — 4 arquetipos editoriales
   design_layouts.py     — composición PIL por arquetipo
 
@@ -113,12 +114,17 @@ fal.ai escala proporcionalmente si altura > 1440px.
 IMAGE_PROVIDER=fal
 FAL_API_KEY=...
 FAL_MODEL=fal-ai/flux-pro/v1.1
+FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_STRENGTH=0.72
 LLM_PROVIDER=ollama
 OLLAMA_MODEL=llama3.1
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 REDIS_URL=redis://localhost:6379/0
 SOCIAL_PROVIDER=meta
+GO_PUBLISHER_URL=http://localhost:8088
 PUBLIC_IMAGE_BASE_URL=https://TU-NGROK
+LINKEDIN_CLIENT_ID=...
+LINKEDIN_CLIENT_SECRET=...
 ```
 
 **Nunca commitear `.env`.**
@@ -154,7 +160,8 @@ ngrok http 8000
 
 ## API endpoints relevantes
 
-- `POST /api/runs/sync` / `/async` — ejecutar pipeline (acepta `archetype_override`)
+- `POST /api/briefs/upload-asset` — subir foto del usuario (multipart)
+- `POST /api/runs/sync` / `/async` — ejecutar pipeline (`user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`)
 - `POST /api/runs/{id}/approve` / `/reject` — aprobación humana
 - `POST /api/campaigns/{id}/fire` — disparar campaña
 - `GET /api/image/archetypes` — listar arquetipos disponibles
@@ -174,6 +181,8 @@ Archivos clave:
 - `tests/test_scheduler.py` — campañas → `pending_approval`
 - `tests/test_layout_archetypes.py` — specs 4:5, fal scaling
 - `tests/test_design_layouts.py` — composición PIL: 4 layouts, fallback
+- `tests/test_user_assets.py` — foto usuario + overlay sin fal
+- `tests/test_linkedin_native.py` — LinkedIn con imagen (mock)
 
 ---
 
@@ -190,8 +199,8 @@ Archivos clave:
 ## Deuda conocida (no implementar sin pedido explícito)
 
 1. Canva OAuth — placeholder, no implementado
-2. Stable Diffusion local — alternativa conservada, no es camino principal
-3. Frontend: selector de arquetipo en dashboard (API ya soporta `archetype_override`)
+2. Canva/Figma MCP — plantillas de marca vía MCP
+3. Stable Diffusion local — alternativa conservada, no es camino principal
 
 ---
 

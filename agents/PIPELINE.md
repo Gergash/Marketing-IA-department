@@ -37,7 +37,7 @@ PublisherAgent (si QA aprobó) ← lineal
 |--------|-----|-------------------|--------|
 | `strategist.py` | Estrategia de contenido | `BriefInput` | `StrategyOutput` |
 | `copywriter.py` | Redacción (y revisiones con feedback QA) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
-| `designer.py` | Imagen / prompt visual | `BriefInput`, `CopyOutput` | `DesignOutput` |
+| `designer.py` | Imagen: Flux, foto usuario (overlay/img2img) o mock | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
 | `publisher.py` | Publicación (mock o proveedor real) | plataforma, copy, diseño | `PublishOutput` |
 | `quality.py` | Reglas de compliance / tono | texto, `tono_marca` | `QualityReview` |
 

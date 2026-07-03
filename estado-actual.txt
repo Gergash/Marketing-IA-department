@@ -1,7 +1,7 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-05-19  
-Último commit en `main`: `feat(design): integrate editorial layout archetypes and 4:5 feed specs`
+Actualizado: 2026-07-03  
+Último commit en `main`: `feat(design): foto de usuario como capa base (Design-as-Code con Pillow) + img2img gobernado con HITL`
 
 ---
 
@@ -13,7 +13,7 @@ MVP de automatización de marketing con agentes de IA:
 brief → estrategia → copy con QA → diseño visual editorial → aprobación humana → publicación en redes
 ```
 
-Flujo principal de publicación: **Meta / Instagram Business** vía sidecar Go.
+Flujo principal de publicación: **Meta / Instagram Business** y **LinkedIn** vía sidecar Go (OAuth nativo).
 
 ---
 
@@ -28,7 +28,7 @@ Celery worker (async) + APScheduler (campañas)
         ↓
 Pipeline Python (agents/marketing_agents/)
         ↓
-Go sidecar social-publisher (:8088) → Meta Graph API
+Go sidecar social-publisher (:8088) → Meta Graph API / LinkedIn UGC API
 ```
 
 | Capa | Tecnología | Estado |
@@ -37,7 +37,8 @@ Go sidecar social-publisher (:8088) → Meta Graph API
 | Agentes | LangGraph (Copy/QA) + pipeline lineal | ✅ Operativo |
 | LLM | Ollama / Anthropic / OpenAI + stub mock | ✅ Configurable vía `.env` |
 | Imágenes | **fal.ai (Flux Pro)**, SD (A1111), DALL·E, mock | ✅ fal como principal en dev |
-| Social | Meta/IG, LinkedIn, Upload-Post, mock + Go | ✅ Meta con OAuth |
+| Imágenes usuario | Design-as-Code (Pillow) + fal img2img opcional | ✅ Operativo |
+| Social | Meta/IG, LinkedIn nativo, mock + Go | ✅ OAuth Meta + LinkedIn |
 | Async | Celery + Redis | ✅ Operativo |
 | Scheduler | APScheduler + `POST /api/campaigns/{id}/fire` | ✅ Prueba de fuego completada |
 | Human-in-the-loop | `pending_approval` → approve/reject | ✅ Activo |
@@ -59,10 +60,11 @@ Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher (opciona
 | `strategist.py` | Tipo de post, hook, mensaje base, hashtags |
 | `copywriter.py` | Copy + `headline_for_image` / `subline_for_image` |
 | `graph_copy_qa.py` + `quality.py` | Bucle QA con trazabilidad (`copy_qa_trace`) |
-| `designer.py` | Arquetipo editorial + prompt Flux + composición |
+| `designer.py` | Arquetipo + generación Flux **o** foto usuario + composición |
 | `layout_archetypes.py` | Selección y prompts por arquetipo |
 | `design_layouts.py` | Overlays PIL (poster, minimal, infográfico, hero) |
-| `image_providers.py` | fal / SD / DALL·E / mock + overlay post-generación |
+| `image_providers.py` | fal / SD / DALL·E / mock + overlay post-generación + img2img |
+| `user_assets.py` | Carga, fit (cover crop) y guardado de fotos del usuario |
 | `image_specs.py` | Dimensiones por red social y formato |
 | `overlay_text.py` | Tipografía, wrap y truncado en oración |
 | `publisher.py` | Publicación vía proveedor social |
@@ -73,7 +75,7 @@ Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher (opciona
 
 **Proveedor recomendado:** `IMAGE_PROVIDER=fal` con `FAL_API_KEY` y `FAL_MODEL=fal-ai/flux-pro/v1.1`
 
-Flujo en diseño:
+Flujo en diseño **sin foto de usuario**:
 
 1. `pick_archetype(brief, strategy)` elige layout (o `archetype_override` vía API)
 2. `build_flux_prompt()` genera prompt visual sin texto embebido
@@ -97,9 +99,37 @@ Flujo en diseño:
 - X/Twitter feed: 1200×675
 - fal escala proporcionalmente si alguna dimensión > 1440px (stories → ~810×1440)
 
-**Frontend:** selector feed/story, switch fal ↔ Stable Diffusion, muestra proveedor, dimensiones y `layout_label`.
+**Frontend:** selector feed/story, switch fal ↔ Stable Diffusion, dropdown de arquetipo, muestra proveedor, dimensiones, `layout_label` y `design_source`.
 
 ComfyUI descartado (GPU 4 GB insuficiente). Stable Diffusion local conservado como alternativa.
+
+---
+
+### Foto del usuario — Design-as-Code + img2img gobernado (Fase C)
+
+Dos modos al subir una imagen desde el dashboard:
+
+| Modo | Toggle | Comportamiento | `design_source` |
+|------|--------|----------------|-------------------|
+| **No destructivo** | OFF | Foto intacta como capa base → fit al formato → overlay Pillow | `user_overlay` |
+| **Alteración IA** | ON + prompt | fal img2img (`FAL_IMG2IMG_MODEL`) → overlay Pillow → `pending_approval` | `user_img2img` |
+| **Sin foto** | — | Flujo clásico txt2img fal/SD | `generated` |
+
+**Flujo técnico:**
+
+1. `POST /api/briefs/upload-asset` → guarda JPEG/PNG/WebP (máx. 10 MB) en `static/uploads/`
+2. `RunRequest` incluye `user_asset_url`, `alter_image_with_ai`, `visual_instructions`
+3. `DesignerAgent` bifurca: `compose_from_user_asset()` vs `generate_image()`
+4. Resultado final en `static/images/` (`user_overlay_*` o `user_img2img_*`)
+
+**Variables img2img:**
+
+```env
+FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_STRENGTH=0.72
+```
+
+**Pendiente a mediano plazo:** inserción en plantillas Canva/Figma vía MCP (no implementado).
 
 ---
 
@@ -111,28 +141,40 @@ Rutas en `gateway/app/api/routes.py`:
 - `GET /image/providers` — proveedores de imagen disponibles
 - `GET /image/archetypes` — lista de arquetipos para override manual
 - `GET /social/publish-status`
+- `POST /api/briefs/upload-asset` — subida de foto del usuario
 - `POST/GET /briefs`
-- `POST /runs/sync`, `/runs/async` — aceptan `image_provider`, `content_format`, `archetype_override`
+- `POST /runs/sync`, `/runs/async` — aceptan `image_provider`, `content_format`, `archetype_override`, `user_asset_url`, `alter_image_with_ai`, `visual_instructions`
 - `GET /runs`, `/runs/{id}`
 - `POST /runs/{id}/approve`, `/reject`
 - `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
-- OAuth Meta / LinkedIn (módulo auth)
+- OAuth Meta / LinkedIn (`gateway/app/api/auth_social.py`)
 
 **Persistencia:** briefs, runs (`status`, `content_format`, aprobación), assets generados, campañas programadas, tokens OAuth.
 
+**Estáticos:** `static/uploads/` (fotos originales del usuario), `static/images/` (composiciones finales).
+
 ---
 
-### Publicación Instagram (estable)
+### Publicación en redes (estable)
+
+#### Instagram / Meta
 
 - OAuth Meta con fallback granular de scopes
 - Estado `publishing` para evitar doble publicación
-- Go publisher en `:8088` (sin fallback Python duplicado si Go ya intentó Meta)
+- Go publisher en `:8088`
 - `PUBLIC_IMAGE_BASE_URL` con ngrok obligatorio para que Meta acceda a las imágenes
 - Anti-duplicados por error 9007 (container no `FINISHED`)
 
+#### LinkedIn (nativo)
+
+- OAuth: `/api/auth/login/linkedin` → callback → tokens en `oauth_tokens`
+- Scopes: `openid profile w_member_social`; URN vía `/v2/userinfo`
+- Publicación con imagen: `registerUpload` → PUT binario → `ugcPosts`
+- Sidecar Go (`internal/publisher/linkedin.go`) + fallback Python en `social_providers.py`
+
 ---
 
-### Tests (24 passing)
+### Tests (29 passing)
 
 | Archivo | Qué cubre |
 |---------|-----------|
@@ -141,6 +183,8 @@ Rutas en `gateway/app/api/routes.py`:
 | `test_scheduler.py` | Campañas → `pending_approval` |
 | `test_layout_archetypes.py` | Specs 4:5, fal scaling, arquetipos, prompts |
 | `test_design_layouts.py` | Composición PIL: 4 layouts, fallback, dimensiones |
+| `test_user_assets.py` | Fit de foto usuario + overlay sin fal |
+| `test_linkedin_native.py` | Flujo LinkedIn con imagen (mock) |
 
 ```bash
 python -m pytest tests/ -q
@@ -178,7 +222,7 @@ python -m celery -A workers.celery_app.celery_app worker -l info
 # T5 — Frontend
 cd frontend && npm run dev
 
-# T6 — Go publisher (solo al aprobar/publicar en IG)
+# T6 — Go publisher (al aprobar/publicar en IG o LinkedIn)
 cd microservices/social-publisher-go && go run ./cmd/server
 
 # T7 — ngrok (solo al publicar en Meta/Instagram)
@@ -196,6 +240,8 @@ Dashboard: http://localhost:5173 · API docs: http://127.0.0.1:8000/docs
 IMAGE_PROVIDER=fal
 FAL_API_KEY=tu_clave_fal.ai
 FAL_MODEL=fal-ai/flux-pro/v1.1
+FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_STRENGTH=0.72
 
 LLM_PROVIDER=ollama
 OLLAMA_MODEL=llama3.1
@@ -204,7 +250,11 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 REDIS_URL=redis://localhost:6379/0
 
 SOCIAL_PROVIDER=meta
+GO_PUBLISHER_URL=http://localhost:8088
 PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # obligatorio al publicar en IG
+
+LINKEDIN_CLIENT_ID=...
+LINKEDIN_CLIENT_SECRET=...
 
 PROMETHEUS_ENABLED=false   # true en producción
 ```
@@ -223,17 +273,21 @@ PROMETHEUS_ENABLED=false   # true en producción
 | 4 Auth + human-in-the-loop | ✅ |
 | 5 LangGraph Copy/QA | ✅ |
 | 6 Go / infra / K8s | 🟡 Parcial — sidecars Go existen; K8s es base |
+| 7 Diseño editorial (arquetipos + Pillow) | ✅ |
+| 8 Foto usuario (Design-as-Code + img2img HITL) | ✅ |
+| 9 LinkedIn nativo con imagen | ✅ |
+| 10 Canva/Figma MCP (plantillas de marca) | ⬜ Pendiente |
 
 ---
 
 ### Pendientes conocidos
 
-1. **Canva OAuth** — placeholder, no implementado.
-2. **Frontend: selector de arquetipo** — la API ya soporta `archetype_override`; falta dropdown en el dashboard React.
+1. **Canva OAuth** — placeholder en `image_providers.py`, no implementado.
+2. **Canva/Figma MCP** — inserción de foto del cliente en plantillas pre-aprobadas de marca (arquitectura definida, sin código).
 3. **Prometheus** — activable con `PROMETHEUS_ENABLED=true`; desactivado en dev por compatibilidad FastAPI ≥ 0.115.
 
 ---
 
 ### Resumen
 
-MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux en proporciones correctas por red social, aplica layouts tipo agencia, pasa por aprobación humana y publica en Instagram vía Go + Meta OAuth.
+MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux (o usa la foto del usuario como capa base sin destruirla), aplica layouts tipo agencia con Pillow, permite alteración img2img bajo indicaciones del usuario con aprobación humana, y publica en Instagram y LinkedIn vía Go + OAuth nativo.

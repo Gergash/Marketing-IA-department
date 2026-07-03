@@ -23,18 +23,17 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 | Migraciones | Alembic |
 | Cola de tareas | Celery |
 | Frontend | React + Vite |
-| Contenido visual | fal.ai (Flux Pro) + Pillow overlay |
-| Video | Shotstack |
+| Contenido visual | fal.ai (Flux Pro) + Pillow overlay + foto usuario (Design-as-Code) |
 | Contenedores | Docker |
 
 ## Estado del roadmap
 
 - **Paso 1** Happy path local: API + frontend sin fricciones (CORS + proxy Vite)
 - **Paso 2** PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
-- **Paso 3** APIs reales: LLMs (Anthropic/OpenAI), imagen (DALL-E 3/Canva), social (LinkedIn/Upload-Post)
+- **Paso 3** APIs reales: LLMs (Anthropic/OpenAI/Ollama), imagen (fal.ai/Flux, SD, DALL·E), social (Meta/LinkedIn nativo vía OAuth + Go)
 - **Paso 4** Seguridad: Auth real, secrets, human-in-the-loop
 - **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
-- **Paso 6** 🔲 Go/infra: microservicios MCP, contenedores, Kubernetes
+- **Paso 6** 🟡 Go/infra: sidecar Go operativo; MCP connect en stdio; Kubernetes esqueleto
 
 ## Estructura
 
@@ -250,6 +249,13 @@ pip install fal-client
 
 El pipeline descarga la imagen generada, aplica overlay de copy/CTA con Pillow y la guarda en `static/images/fal_<uuid>.png`. Logs esperados: `image.fal_generated` → `image.fal_saved`.
 
+**Foto del usuario (Design-as-Code):** sube JPEG/PNG/WebP con `POST /api/briefs/upload-asset` → `static/uploads/`. En el run, pasa `user_asset_url`. Sin toggle de IA: la foto queda como capa base y solo se aplica overlay editorial. Con `alter_image_with_ai: true` + `visual_instructions`: fal img2img (`FAL_IMG2IMG_MODEL`) y luego overlay; el run sigue en `pending_approval`.
+
+```env
+FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_STRENGTH=0.72
+```
+
 **DALL-E 3** (requiere `OPENAI_API_KEY`):
 
 ```env
@@ -270,20 +276,19 @@ Si `IMAGE_PROVIDER=mock` (por defecto), se genera una URL placeholder de dummyim
 
 ### 3C — Publicación en redes sociales
 
-**LinkedIn** (token de usuario con scope `w_member_social`):
+Publicación **nativa** vía OAuth (dashboard → Integraciones) y sidecar Go en `:8088`. No hay proveedor omnicanal de terceros.
+
+**LinkedIn** (OAuth + imagen):
 
 ```env
 SOCIAL_PROVIDER=linkedin
-LINKEDIN_ACCESS_TOKEN=...
-# LINKEDIN_PERSON_URN=urn:li:person:xxx  # opcional; se obtiene automáticamente
+LINKEDIN_CLIENT_ID=...
+LINKEDIN_CLIENT_SECRET=
+LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/callback/linkedin
+GO_PUBLISHER_URL=http://localhost:8088
 ```
 
-**Upload-Post** (API unificada — LinkedIn, Instagram, Facebook, X, TikTok):
-
-```env
-SOCIAL_PROVIDER=uploadpost
-UPLOADPOST_API_KEY=...
-```
+Conecta la cuenta en el dashboard. Publicación con imagen: `registerUpload` → PUT → `ugcPosts` (Go o Python).
 
 **Meta / Instagram Business** (publicación en feed o **historia** con Graph API; imagen en URL HTTPS pública):
 
@@ -295,8 +300,9 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 ```
 
 - Comprueba credenciales sin exponer secretos: `GET /api/social/publish-status`.
-- Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"` o `"story"`. **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional. LinkedIn hoy publica solo post de texto (historia no soportada en API UGC usada aquí).
-- Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (Meta descarga la imagen desde tu servidor o CDN).
+- Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"` o `"story"`, y opcionalmente `user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`.
+- **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional.
+- Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (`PUBLIC_IMAGE_BASE_URL` con ngrok en dev).
 
 Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.
 
@@ -392,12 +398,15 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
 - **Métricas Prometheus:** http://127.0.0.1:8000/metrics
 - **Endpoints principales:**
   - `POST /api/briefs` — crear brief de campaña
-  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente (acepta `archetype_override` para forzar un layout)
-  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker; acepta `archetype_override`)
+  - `POST /api/briefs/upload-asset` — subir foto del usuario (multipart)
+  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente
+  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker)
   - `GET /api/runs/{run_id}` — consultar estado
   - `GET /api/runs` — historial de ejecuciones
-  - `GET /api/image/archetypes` — lista los 4 arquetipos disponibles para override manual
+  - `GET /api/image/archetypes` — arquetipos para override manual
+  - `GET /api/image/providers` — proveedores de imagen disponibles
   - `POST /api/campaigns` — crear campaña programada (cron)
   - `POST /api/campaigns/{id}/fire` — disparar campaña de inmediato (prueba de fuego)
+- **Estado del proyecto (canónico):** [`estado-actual.txt`](estado-actual.txt)
 - **Prueba de Fuego del Scheduler:** [`infra/prueba-de-fuego-scheduler.md`](infra/prueba-de-fuego-scheduler.md)
 - **Arranque del stack completo (7 terminales):** [`infra/arranque-stack.md`](infra/arranque-stack.md)

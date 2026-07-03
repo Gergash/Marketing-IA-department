@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     # Voz multilingüe por defecto (funciona en español con el modelo eleven_multilingual_v2)
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
 
+    # Video rendering (Reels) — provider: shotstack | json2video | mock
+    video_provider: str = "shotstack"
+    shotstack_api_key: str = ""
+    shotstack_env: str = "stage"  # stage | v1 (produccion)
+    json2video_api_key: str = ""  # alternativa documentada, no implementada en v1
+    video_max_wait_seconds: int = 600
+    video_fps: int = 30
+
     # Social publishing — provider: mock | linkedin | meta
     social_provider: str = "mock"
     linkedin_access_token: str = ""

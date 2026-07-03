@@ -18,12 +18,23 @@ func PublishMeta(req PublishRequest) (PublishResponse, error) {
 	token := req.AccessToken
 
 	mediaParams := url.Values{
-		"image_url":    {req.ImageURL},
 		"access_token": {token},
 	}
+	containerTimeout := mediaContainerTimeout
 	if req.ContentFormat == "story" {
+		mediaParams.Set("image_url", req.ImageURL)
 		mediaParams.Set("media_type", "STORIES")
+	} else if req.ContentFormat == "reel" {
+		mediaParams.Set("video_url", req.VideoURL)
+		mediaParams.Set("media_type", "REELS")
+		caption := req.Copy
+		if len(caption) > 2200 {
+			caption = caption[:2200]
+		}
+		mediaParams.Set("caption", caption)
+		containerTimeout = reelMediaContainerTimeout
 	} else {
+		mediaParams.Set("image_url", req.ImageURL)
 		caption := req.Copy
 		if len(caption) > 2200 {
 			caption = caption[:2200]
@@ -36,7 +47,7 @@ func PublishMeta(req PublishRequest) (PublishResponse, error) {
 		return PublishResponse{}, fmt.Errorf("meta media_container: %w", err)
 	}
 
-	if err := waitForMediaContainer(containerID, token); err != nil {
+	if err := waitForMediaContainer(containerID, token, containerTimeout); err != nil {
 		return PublishResponse{}, fmt.Errorf("meta media_wait: %w", err)
 	}
 
@@ -58,9 +69,16 @@ func PublishMeta(req PublishRequest) (PublishResponse, error) {
 	}, nil
 }
 
-// waitForMediaContainer espera hasta que Meta confirme status_code=FINISHED (máx 60 s).
-func waitForMediaContainer(containerID, token string) error {
-	deadline := time.Now().Add(60 * time.Second)
+// mediaContainerTimeout es la espera máxima para contenedores de imagen/story.
+const mediaContainerTimeout = 60 * time.Second
+
+// reelMediaContainerTimeout es la espera máxima para contenedores de Reels (video),
+// que Meta procesa mucho más lento que imágenes.
+const reelMediaContainerTimeout = 300 * time.Second
+
+// waitForMediaContainer espera hasta que Meta confirme status_code=FINISHED (timeout configurable).
+func waitForMediaContainer(containerID, token string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		statusURL := fmt.Sprintf(
 			"%s/%s?fields=status_code&access_token=%s",

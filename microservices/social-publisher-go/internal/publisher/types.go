@@ -5,6 +5,7 @@ type PublishRequest struct {
 	Platform       string `json:"platform"`
 	Copy           string `json:"copy"`
 	ImageURL       string `json:"image_url"`
+	VideoURL       string `json:"video_url"`
 	IdempotencyKey string `json:"idempotency_key"`
 	ContentFormat  string `json:"content_format"`
 	AccessToken    string `json:"access_token"` // OAuth 2.0 token del proveedor

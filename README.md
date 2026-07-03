@@ -24,6 +24,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 | Cola de tareas | Celery |
 | Frontend | React + Vite |
 | Contenido visual | fal.ai (Flux Pro) + Pillow overlay + foto usuario (Design-as-Code) |
+| Video (Reels) | Shotstack (block-and-poll) + ElevenLabs/OpenAI TTS (voz en español) |
 | Contenedores | Docker |
 
 ## Estado del roadmap
@@ -34,6 +35,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 4** Seguridad: Auth real, secrets, human-in-the-loop
 - **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Paso 6** 🟡 Go/infra: sidecar Go operativo; MCP connect en stdio; Kubernetes esqueleto
+- **Paso 7** Video-as-Code (Reels): `content_format=reel` genera un video corto vertical (script → escenas fal.ai + voz ElevenLabs → timeline JSON → render Shotstack → publicación nativa vía Go); async-only, cola Celery dedicada `video_render`. Pendiente v2: TikTok, música, clips de usuario.
 
 ## Estructura
 
@@ -300,9 +302,10 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 ```
 
 - Comprueba credenciales sin exponer secretos: `GET /api/social/publish-status`.
-- Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"` o `"story"`, y opcionalmente `user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`.
+- Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"`, `"story"` o `"reel"`, y opcionalmente `user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`.
 - **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional.
 - Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (`PUBLIC_IMAGE_BASE_URL` con ngrok en dev).
+- **Reels** (`content_format="reel"`) son **async-only**: `/runs/sync` responde `422`; usa siempre `/runs/async` con un segundo worker Celery en la cola `video_render` (`celery -A workers.celery_app.celery_app worker -l info -Q video_render`). Requiere `VIDEO_PROVIDER`/`SHOTSTACK_API_KEY` y `VOICE_PROVIDER`/`ELEVENLABS_API_KEY` en `.env` (ver sección **PASO 3D** en `.env.example`).
 
 Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.
 
@@ -311,7 +314,7 @@ Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa si
 
 ## Prometheus — Métricas en producción
 
-Prometheus se activa con la variable de entorno `PROMETHEUS_ENABLED=true`. En desarrollo viene desactivado (`false`) por incompatibilidades históricas entre `prometheus-fastapi-instrumentator` y algunas versiones de FastAPI >= 0.115.
+Prometheus se activa con `PROMETHEUS_ENABLED=true`. En desarrollo viene desactivado (`false`) para reducir ruido local; el stack actual (FastAPI 0.115 + `prometheus-fastapi-instrumentator` 7.x) es compatible.
 
 **Para activar en producción:**
 
@@ -399,8 +402,8 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
 - **Endpoints principales:**
   - `POST /api/briefs` — crear brief de campaña
   - `POST /api/briefs/upload-asset` — subir foto del usuario (multipart)
-  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente
-  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker)
+  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente (rechaza `content_format=reel` con 422)
+  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker; único camino para `content_format=reel`, cola dedicada `video_render`)
   - `GET /api/runs/{run_id}` — consultar estado
   - `GET /api/runs` — historial de ejecuciones
   - `GET /api/image/archetypes` — arquetipos para override manual

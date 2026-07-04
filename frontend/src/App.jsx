@@ -91,6 +91,7 @@ export default function App() {
   const [alterImageWithAi, setAlterImageWithAi] = useState(false);
   const [visualInstructions, setVisualInstructions] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -336,12 +337,12 @@ export default function App() {
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              disabled={loading}
+              disabled={loading || uploading}
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
                 setError(null);
-                setLoading(true);
+                setUploading(true);
                 try {
                   const up = await uploadAsset(file);
                   setUserAssetUrl(up.url);
@@ -351,10 +352,11 @@ export default function App() {
                   setUserAssetUrl("");
                   setUserAssetName("");
                 } finally {
-                  setLoading(false);
+                  setUploading(false);
                 }
               }}
             />
+            {uploading && <span className="spinner spinner-dark" style={{ marginLeft: "0.5rem" }}></span>}
           </label>
           {userAssetUrl && (
             <p className="hint">
@@ -400,10 +402,12 @@ export default function App() {
           </label>
         ))}
         <div className="actions">
-          <button disabled={loading} onClick={() => createAndRun(false)}>
+          <button disabled={loading || uploading} onClick={() => createAndRun(false)}>
+            {loading && contentFormat !== "reel" ? <span className="spinner"></span> : null}
             Ejecutar Sync
           </button>
-          <button disabled={loading} onClick={() => createAndRun(true)}>
+          <button disabled={loading || uploading} onClick={() => createAndRun(true)}>
+            {loading ? <span className="spinner"></span> : null}
             Enviar Async
           </button>
         </div>
@@ -492,6 +496,7 @@ export default function App() {
                     onClick={() => doApprove(item.run_id)}
                     style={{ marginRight: "0.3rem" }}
                   >
+                    {approvingRunId === item.run_id ? <span className="spinner"></span> : null}
                     {approvingRunId === item.run_id ? "Publicando…" : "✓ Aprobar"}
                   </button>
                   <button disabled={approvingRunId != null} onClick={() => doReject(item.run_id)}>✗ Rechazar</button>

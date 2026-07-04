@@ -1,7 +1,40 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-07-03  
-Último commit en `main`: `feat(design): foto de usuario como capa base (Design-as-Code con Pillow) + img2img gobernado con HITL`
+Actualizado: 2026-07-04  
+Último commit local en `main`: `test(video): limpiar cache de get_settings entre tests`  
+**Nota:** `main` está **9 commits por delante** de `origin/main` (rama Video-as-Code / Reels aún no pusheada).
+
+---
+
+### Cronología reciente
+
+#### 2026-07-03 — Imagen + higiene documental
+
+| Entrega | Detalle |
+|---------|---------|
+| **Design-as-Code (Fase C)** | `POST /api/briefs/upload-asset`, foto como capa base + overlay Pillow; img2img fal opcional con HITL |
+| **LinkedIn nativo** | OAuth + publicación con imagen vía Go (Upload-Post eliminado del código y docs) |
+| **Docs** | `estado-actual.txt`, README, `.env.example`, CLAUDE.md alineados a publicación 100% nativa |
+| **Higiene técnica** | Upload-Post ✅ limpio; Prometheus ✅ compatible (FastAPI 0.115 + instrumentator 7.x); Skaffold/Cloud Deploy ⬜ pendiente |
+
+Commit de referencia: `40904e2` — `feat(design): foto de usuario como capa base (Design-as-Code con Pillow) + img2img gobernado con HITL`
+
+#### 2026-07-04 — Video-as-Code / Reels (Fase D)
+
+| Entrega | Detalle |
+|---------|---------|
+| **Contrato Timeline** | `video_timeline.py` — JSON provider-neutral + `to_shotstack_edit()` |
+| **Voz** | `voice_providers.py` — ElevenLabs / OpenAI TTS / mock (español por defecto) |
+| **Render** | `video_providers.py` — Shotstack block-and-poll + mock → `static/videos/` |
+| **Agentes** | `video_script.py`, `video_designer.py` — guion 3-5 escenas, fal stills + Ken Burns |
+| **Pipeline** | `content_format=reel` — rama paralela post copy/QA; async-only |
+| **Infra async** | Cola Celery `video_render`, `execute_video_pipeline_task` (sin autoretry) |
+| **API/BD** | `GeneratedAsset.video_url`, migración Alembic `0005`; reel → 422 en `/runs/sync` |
+| **Go publisher** | Rama `media_type=REELS` + timeout contenedor 300s |
+| **Frontend** | Selector reel + preview `<video>` en dashboard |
+| **Tests** | +7 archivos de video → **68 passing** |
+
+Commits (orden cronológico): `e49564c` … `e01c5d5` (9 commits en local).
 
 ---
 
@@ -10,7 +43,7 @@ Actualizado: 2026-07-03
 MVP de automatización de marketing con agentes de IA:
 
 ```
-brief → estrategia → copy con QA → diseño visual editorial → aprobación humana → publicación en redes
+brief → estrategia → copy con QA → diseño (imagen o reel) → aprobación humana → publicación en redes
 ```
 
 Flujo principal de publicación: **Meta / Instagram Business** y **LinkedIn** vía sidecar Go (OAuth nativo).
@@ -24,7 +57,7 @@ Frontend (React/Vite :5173)
         ↓
 Gateway FastAPI (:8000)  ←→  PostgreSQL + Redis (Docker)
         ↓
-Celery worker (async) + APScheduler (campañas)
+Celery worker (default) + worker `video_render` (solo Reels) + APScheduler
         ↓
 Pipeline Python (agents/marketing_agents/)
         ↓
@@ -51,7 +84,9 @@ Go sidecar social-publisher (:8088) → Meta Graph API / LinkedIn UGC API
 ### Pipeline de agentes
 
 ```
-Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher (opcional)
+Strategist → LangGraph [Copywriter ↔ QA] → Designer (feed/story)
+                                      └→ VideoScript → VideoDesigner (reel)
+                                      → Publisher (opcional)
 ```
 
 **Módulos en** `agents/marketing_agents/`:
@@ -100,7 +135,7 @@ Flujo en diseño **sin foto de usuario**:
 - X/Twitter feed: 1200×675
 - fal escala proporcionalmente si alguna dimensión > 1440px (stories → ~810×1440)
 
-**Frontend:** selector feed/story, switch fal ↔ Stable Diffusion, dropdown de arquetipo, muestra proveedor, dimensiones, `layout_label` y `design_source`.
+**Frontend:** selector feed/story/reel, switch fal ↔ Stable Diffusion, dropdown de arquetipo, upload de foto, toggle img2img, muestra `layout_label`, `design_source` y preview de video en reels.
 
 ComfyUI descartado (GPU 4 GB insuficiente). Stable Diffusion local conservado como alternativa.
 
@@ -212,7 +247,7 @@ Rutas en `gateway/app/api/routes.py`:
 
 **Persistencia:** briefs, runs (`status`, `content_format`, aprobación), assets generados, campañas programadas, tokens OAuth.
 
-**Estáticos:** `static/uploads/` (fotos originales del usuario), `static/images/` (composiciones finales).
+**Estáticos:** `static/uploads/` (fotos originales), `static/images/` (composiciones), `static/videos/` (MP4 renderizados).
 
 ---
 
@@ -261,7 +296,7 @@ python -m pytest tests/ -q
 
 ---
 
-### Cómo levantar el stack (7 terminales)
+### Cómo levantar el stack (7–8 terminales)
 
 Documentación detallada: **`infra/arranque-stack.md`**
 
@@ -269,7 +304,7 @@ Documentación detallada: **`infra/arranque-stack.md`**
 
 ```bash
 pip install -r requirements.txt
-python -m alembic upgrade head
+python -m alembic upgrade head   # incluye migración 0005 (video_url)
 cd frontend && npm install && cd ..
 ```
 
@@ -285,16 +320,19 @@ curl http://localhost:11434/api/tags
 # T3 — API
 python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 
-# T4 — Celery
+# T4 — Celery (runs async imagen/story)
 python -m celery -A workers.celery_app.celery_app worker -l info
+
+# T4b — Celery video_render (solo si generas Reels)
+python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
 
 # T5 — Frontend
 cd frontend && npm run dev
 
-# T6 — Go publisher (al aprobar/publicar en IG o LinkedIn)
+# T6 — Go publisher (al aprobar/publicar en IG, LinkedIn o Reels)
 cd microservices/social-publisher-go && go run ./cmd/server
 
-# T7 — ngrok (solo al publicar en Meta/Instagram)
+# T7 — ngrok (solo al publicar en Meta/Instagram — imágenes y videos)
 cd tests/ngrok-v3-stable-windows-amd64 && ./ngrok.exe http 8000
 # Actualizar PUBLIC_IMAGE_BASE_URL con la URL https y reiniciar Uvicorn
 ```
@@ -324,6 +362,11 @@ PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # obligatorio al publicar en IG
 
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
+
+VIDEO_PROVIDER=shotstack
+SHOTSTACK_API_KEY=...
+VOICE_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=...
 
 PROMETHEUS_ENABLED=false   # true en producción
 ```

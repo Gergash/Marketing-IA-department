@@ -24,8 +24,10 @@ ContentStrategistAgent          ← lineal (LLM o stub)
 │   (hasta max_attempts)       │
 └─────────────────────────────┘
   │
-  ▼
-DesignerAgent                   ← lineal
+  ├─ content_format ≠ reel ──► DesignerAgent        ← lineal (imagen)
+  │
+  └─ content_format = reel ──► VideoScriptAgent
+                          └──► VideoDesignerAgent   ← lineal (video)
   │
   ▼
 PublisherAgent (si QA aprobó) ← lineal
@@ -38,6 +40,8 @@ PublisherAgent (si QA aprobó) ← lineal
 | `strategist.py` | Estrategia de contenido | `BriefInput` | `StrategyOutput` |
 | `copywriter.py` | Redacción (y revisiones con feedback QA) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
 | `designer.py` | Imagen: Flux, foto usuario (overlay/img2img) o mock | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
+| `video_script.py` | Guion reel 3-5 escenas | `BriefInput`, `CopyOutput`, `StrategyOutput` | guion escenas |
+| `video_designer.py` | Escenas fal + voz + Shotstack | brief, copy, strategy, guion | `VideoDesignOutput` |
 | `publisher.py` | Publicación (mock o proveedor real) | plataforma, copy, diseño | `PublishOutput` |
 | `quality.py` | Reglas de compliance / tono | texto, `tono_marca` | `QualityReview` |
 
@@ -70,6 +74,12 @@ Controla cuántas rondas de copy como máximo se permiten antes de salir del gra
 
 - `strategy`, `copy`, `design`, `quality`, `publish_result` (como antes).
 - **`copy_qa_trace`**: lista ordenada de eventos del grafo (auditoría / debugging / UI futura).
+
+## Rama Reels (`content_format="reel"`)
+
+- Tras copy/QA, `MarketingPipeline` delega a `VideoScriptAgent` + `VideoDesignerAgent` en lugar de `DesignerAgent`.
+- Render async vía Celery cola `video_render` (no usar `/runs/sync`).
+- `result["design"]` incluye `video_url` (reels) o `image_url` (feed/story); misma clave `design` en ambos casos.
 
 ## Cuándo ampliar LangGraph
 

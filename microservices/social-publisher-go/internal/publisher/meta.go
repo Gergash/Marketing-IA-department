@@ -12,19 +12,26 @@ import (
 
 const metaGraphBase = "https://graph.facebook.com/v21.0"
 
-// PublishMeta publica en Instagram o Facebook via Graph API (2 pasos: contenedor + publish).
-func PublishMeta(req PublishRequest) (PublishResponse, error) {
-	igID := req.AccountID
-	token := req.AccessToken
+// isReelFormat agrupa los content_format que Meta debe rutear al branch REELS (video):
+// "reel" (reel generado con IA) y "user_clip_reel" (reel armado desde clips del usuario).
+func isReelFormat(contentFormat string) bool {
+	return contentFormat == "reel" || contentFormat == "user_clip_reel"
+}
 
+// buildMediaParams arma los parametros del media container y el timeout de espera segun
+// el content_format del request. Extraido de PublishMeta para permitir pruebas unitarias
+// sin red (sin depender de httptest ni de mockear HTTPClient).
+func buildMediaParams(req PublishRequest) (url.Values, time.Duration) {
 	mediaParams := url.Values{
-		"access_token": {token},
+		"access_token": {req.AccessToken},
 	}
 	containerTimeout := mediaContainerTimeout
-	if req.ContentFormat == "story" {
+
+	switch {
+	case req.ContentFormat == "story":
 		mediaParams.Set("image_url", req.ImageURL)
 		mediaParams.Set("media_type", "STORIES")
-	} else if req.ContentFormat == "reel" {
+	case isReelFormat(req.ContentFormat):
 		mediaParams.Set("video_url", req.VideoURL)
 		mediaParams.Set("media_type", "REELS")
 		caption := req.Copy
@@ -33,7 +40,7 @@ func PublishMeta(req PublishRequest) (PublishResponse, error) {
 		}
 		mediaParams.Set("caption", caption)
 		containerTimeout = reelMediaContainerTimeout
-	} else {
+	default:
 		mediaParams.Set("image_url", req.ImageURL)
 		caption := req.Copy
 		if len(caption) > 2200 {
@@ -41,6 +48,16 @@ func PublishMeta(req PublishRequest) (PublishResponse, error) {
 		}
 		mediaParams.Set("caption", caption)
 	}
+
+	return mediaParams, containerTimeout
+}
+
+// PublishMeta publica en Instagram o Facebook via Graph API (2 pasos: contenedor + publish).
+func PublishMeta(req PublishRequest) (PublishResponse, error) {
+	igID := req.AccountID
+	token := req.AccessToken
+
+	mediaParams, containerTimeout := buildMediaParams(req)
 
 	containerID, err := graphAPIPost(fmt.Sprintf("%s/%s/media", metaGraphBase, igID), mediaParams)
 	if err != nil {

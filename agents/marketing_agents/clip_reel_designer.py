@@ -98,22 +98,31 @@ class ClipReelDesigner:
         for seg in segments:
             source_url = clip_url_by_id.get(seg.clip_id, "")
             duration_s = seg.end_s - seg.start_s
+            trim_in = seg.start_s
+            trim_out: float | None = seg.end_s
 
             if seg.is_hook and s.effects_enabled and s.fal_api_key:
-                source_url = _apply_wan_effect(
+                effect_url = _apply_wan_effect(
                     source_url,
                     strategy.hook,
                     s.fal_api_key,
                     s.fal_effects_model,
                 )
+                if effect_url != source_url:
+                    # El output de wan-effects YA es el segmento recortado (no el clip fuente
+                    # completo): el trim original ya no aplica y debe resetearse, o Shotstack
+                    # recortaria fuera de rango sobre el archivo equivocado.
+                    trim_in = 0.0
+                    trim_out = duration_s
+                source_url = effect_url
 
             scenes.append(
                 Scene(
                     background_url=source_url or seg.clip_id,
                     headline=strategy.hook if seg.is_hook else "",
                     asset_type="video",
-                    trim_in=seg.start_s,
-                    trim_out=seg.end_s,
+                    trim_in=trim_in,
+                    trim_out=trim_out,
                     duration_s=duration_s,
                 )
             )

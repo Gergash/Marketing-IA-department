@@ -88,6 +88,7 @@ export default function App() {
   const [archetypes, setArchetypes] = useState([]);
   const [userAssetUrl, setUserAssetUrl] = useState("");
   const [userAssetName, setUserAssetName] = useState("");
+  const [driveFolderId, setDriveFolderId] = useState("");
   const [alterImageWithAi, setAlterImageWithAi] = useState(false);
   const [visualInstructions, setVisualInstructions] = useState("");
   const [loading, setLoading] = useState(false);
@@ -162,8 +163,10 @@ export default function App() {
   };
 
   const createAndRun = async (asyncMode = false) => {
-    // Los reels se procesan en la cola video_render y tardan minutos: no admiten /runs/sync (422).
-    const effectiveAsync = contentFormat === "reel" ? true : asyncMode;
+    // Los reels (generados o con clips del usuario) se procesan en la cola video_render
+    // y tardan minutos: no admiten /runs/sync (422).
+    const isVideoFormat = contentFormat === "reel" || contentFormat === "user_clip_reel";
+    const effectiveAsync = isVideoFormat ? true : asyncMode;
     setLoading(true);
     setError(null);
     try {
@@ -181,6 +184,7 @@ export default function App() {
         ...(userAssetUrl && alterImageWithAi && visualInstructions.trim()
           ? { visual_instructions: visualInstructions.trim() }
           : {}),
+        ...(contentFormat === "user_clip_reel" ? { drive_folder_id: driveFolderId.trim() } : {}),
       };
       const run = await api(effectiveAsync ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -273,12 +277,24 @@ export default function App() {
             <option value="feed">Post en feed (Instagram 1080×1350, 4:5)</option>
             <option value="story">Historia (Instagram 1080×1920)</option>
             <option value="reel">Reel (Instagram 1080×1920, video)</option>
+            <option value="user_clip_reel">Video con mis clips (Drive)</option>
           </select>
         </label>
         <p className="hint">
           Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
-          {contentFormat === "reel" && " Los reels son async-only: se envían siempre con \"Enviar Async\"."}
+          {(contentFormat === "reel" || contentFormat === "user_clip_reel") &&
+            " Los reels son async-only: se envían siempre con \"Enviar Async\"."}
         </p>
+        {contentFormat === "user_clip_reel" && (
+          <label>
+            Carpeta de Drive (ID)
+            <input
+              placeholder="ID de la carpeta de Google Drive con tus clips"
+              value={driveFolderId}
+              onChange={(e) => setDriveFolderId(e.target.value)}
+            />
+          </label>
+        )}
       </section>
 
       {/* Formulario */}

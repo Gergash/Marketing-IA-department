@@ -214,12 +214,12 @@ def run_pipeline_sync(
     db: Session = Depends(get_db),
 ) -> RunResponse:
     """Ejecuta el pipeline de agentes de forma síncrona en el mismo proceso que la API."""
-    if payload.content_format == "reel":
+    if payload.content_format in ("reel", "user_clip_reel"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                "content_format='reel' requiere ejecucion async (POST /api/runs/async): "
-                "el render de video puede tardar varios minutos."
+                f"content_format='{payload.content_format}' requiere ejecucion async "
+                "(POST /api/runs/async): el render de video puede tardar varios minutos."
             ),
         )
     run = create_run(
@@ -242,6 +242,7 @@ def run_pipeline_sync(
             user_asset_url=payload.user_asset_url,
             alter_image_with_ai=payload.alter_image_with_ai,
             visual_instructions=payload.visual_instructions,
+            drive_folder_id=payload.drive_folder_id,
         )
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
@@ -268,8 +269,8 @@ def run_pipeline_async(
         idempotency_key=payload.idempotency_key,
         content_format=payload.content_format,
     )
-    is_reel = payload.content_format == "reel"
-    task = execute_video_pipeline_task if is_reel else execute_pipeline_task
+    is_video = payload.content_format in ("reel", "user_clip_reel")
+    task = execute_video_pipeline_task if is_video else execute_pipeline_task
     apply_async_kwargs: dict = {
         "args": [
             run.id,
@@ -283,9 +284,10 @@ def run_pipeline_async(
             "user_asset_url": payload.user_asset_url,
             "alter_image_with_ai": payload.alter_image_with_ai,
             "visual_instructions": payload.visual_instructions,
+            "drive_folder_id": payload.drive_folder_id,
         },
     }
-    if is_reel:
+    if is_video:
         # Renders pueden tardar minutos: cola dedicada para no bloquear la cola de imagenes.
         apply_async_kwargs["queue"] = "video_render"
     try:

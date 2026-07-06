@@ -225,7 +225,7 @@ def _publish_via_go(
             "access_token": access_token,
             "account_id": account_id,
         }
-        if content_format == "reel":
+        if content_format in ("reel", "user_clip_reel"):
             payload["video_url"] = media_url
         with httpx.Client(timeout=60) as client:
             published = client.post(f"{settings.go_publisher_url}/publish", json=payload)
@@ -247,9 +247,9 @@ def _publish_via_go(
 # ---------------------------------------------------------------------------
 
 def _normalize_content_format(value: str | None) -> str:
-    """Normaliza el formato de publicación a `feed`/`story`/`reel` (valores desconocidos → feed)."""
+    """Normaliza el formato de publicación a `feed`/`story`/`reel`/`user_clip_reel` (desconocido → feed)."""
     v = (value or "feed").lower()
-    return v if v in ("feed", "story", "reel") else "feed"
+    return v if v in ("feed", "story", "reel", "user_clip_reel") else "feed"
 
 
 def create_run(
@@ -288,6 +288,7 @@ def execute_pipeline(
     user_asset_url: str | None = None,
     alter_image_with_ai: bool = False,
     visual_instructions: str | None = None,
+    drive_folder_id: str | None = None,
 ) -> dict:
     """Orquesta el pipeline completo: deduplicación, agentes, aprobación humana opcional, persistencia y publicación."""
     run = db.get(AgentRun, run_id)
@@ -333,6 +334,10 @@ def execute_pipeline(
             user_asset_url=user_asset_url,
             alter_image_with_ai=alter_image_with_ai,
             visual_instructions=visual_instructions,
+            db=db,
+            tenant_id=run.tenant_id,
+            run_id=run.id,
+            drive_folder_id=drive_folder_id,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
@@ -353,6 +358,10 @@ def execute_pipeline(
         user_asset_url=user_asset_url,
         alter_image_with_ai=alter_image_with_ai,
         visual_instructions=visual_instructions,
+        db=db,
+        tenant_id=run.tenant_id,
+        run_id=run.id,
+        drive_folder_id=drive_folder_id,
     )
 
     if publish and result.get("quality", {}).get("approved", False):

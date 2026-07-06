@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class BriefCreate(BaseModel):
@@ -42,8 +42,10 @@ class RunRequest(BaseModel):
     publish: bool = True
     requires_approval: bool = True
     idempotency_key: str | None = None
-    # Instagram/Meta: story = historia; reel = video corto vertical (solo async); linkedin suele publicar como post de feed
-    content_format: Literal["feed", "story", "reel"] = "feed"
+    # Instagram/Meta: story = historia; reel = video corto vertical generado con IA (solo async);
+    # user_clip_reel = reel armado con clips reales del usuario desde Google Drive (solo async);
+    # linkedin suele publicar como post de feed
+    content_format: Literal["feed", "story", "reel", "user_clip_reel"] = "feed"
     # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
     image_provider: Literal["stable_diffusion", "fal"] | None = None
     # Override manual del arquetipo visual (si None, el agente lo elige automáticamente)
@@ -54,6 +56,16 @@ class RunRequest(BaseModel):
     user_asset_url: str | None = None
     alter_image_with_ai: bool = False
     visual_instructions: str | None = None
+    # Carpeta de Google Drive con los clips fuente — requerida cuando content_format=user_clip_reel
+    drive_folder_id: str | None = None
+
+    @model_validator(mode="after")
+    def _require_drive_folder_for_user_clip_reel(self) -> "RunRequest":
+        if self.content_format == "user_clip_reel" and not self.drive_folder_id:
+            raise ValueError(
+                "content_format='user_clip_reel' requiere drive_folder_id (carpeta de Google Drive con los clips)"
+            )
+        return self
 
 
 class UploadAssetResponse(BaseModel):

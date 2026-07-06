@@ -27,3 +27,7 @@ microservices/mcp-connect-go/server
 # Imágenes generadas localmente por Stable Diffusion
 static/images/*.png
 static/images/*.jpg
+
+# Videos renderizados localmente (Shotstack/mock) y clips descargados de Drive
+static/videos/
+static/uploads/clips/

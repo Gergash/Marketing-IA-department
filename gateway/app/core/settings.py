@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Voz multilingüe por defecto (funciona en español con el modelo eleven_multilingual_v2)
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
 
+    # Transcripción de audio (clips de usuario) — provider: whisper | mock
+    stt_provider: str = "whisper"
+
     # Video rendering (Reels) — provider: shotstack | json2video | mock
     video_provider: str = "shotstack"
     shotstack_api_key: str = ""

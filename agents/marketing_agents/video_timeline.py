@@ -5,18 +5,21 @@ Este módulo no hace I/O; es el único lugar donde se filtra la forma del JSON d
 
 from __future__ import annotations
 
+from typing import Literal
+
 import structlog
 from pydantic import BaseModel, Field, field_validator
 
 logger = structlog.get_logger(__name__)
 
-# Banda objetivo de duración total del reel (spec: 15-30s)
+# Banda objetivo de duración total del reel (spec: 15-30s) — solo aplica a reels generados,
+# NUNCA a user_clip_reel (banda 6-60s vive en clip_reel_designer.py, WU5)
 _MIN_TOTAL_DURATION_S = 15.0
 _MAX_TOTAL_DURATION_S = 30.0
 
 
 class Scene(BaseModel):
-    """Una escena del reel: fondo fijo (fal.ai) + overlay de texto + efecto Ken Burns."""
+    """Una escena del reel: fondo fijo (imagen fal.ai) o clip de video (user_clip_reel) + overlay."""
 
     background_url: str = Field(min_length=1)
     headline: str = ""
@@ -24,6 +27,18 @@ class Scene(BaseModel):
     archetype: str = "typographic_poster"  # reutiliza IDs de layout_archetypes para estilo de overlay
     duration_s: float = Field(default=4.0, gt=0)
     effect: str = "zoomIn"  # token provider-neutral (Ken Burns); mapeado a Shotstack en to_shotstack_edit
+    asset_type: Literal["image", "video"] = "image"
+    # trim_in/trim_out solo tienen sentido para asset_type="video" (clip fuente recortado)
+    trim_in: float = 0.0
+    trim_out: float | None = None
+
+
+class Caption(BaseModel):
+    """Cue de subtítulo sincronizado a timestamps de palabra (Whisper)."""
+
+    text: str = Field(min_length=1)
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
 
 
 class VoiceoverTrack(BaseModel):
@@ -47,14 +62,15 @@ class Timeline(BaseModel):
 
     scenes: list[Scene] = Field(min_length=1)
     voiceover: VoiceoverTrack | None = None
+    captions: list[Caption] = Field(default_factory=list)
     output: OutputSpec = Field(default_factory=OutputSpec)
 
     @field_validator("scenes")
     @classmethod
     def _scenes_have_narration(cls, scenes: list[Scene]) -> list[Scene]:
-        """Cada escena debe tener texto de narración (headline o subline); si no, error de validación."""
+        """Escenas de imagen deben tener narración (headline/subline); escenas de video no la requieren."""
         for scene in scenes:
-            if not (scene.headline or scene.subline):
+            if scene.asset_type == "image" and not (scene.headline or scene.subline):
                 raise ValueError("scene missing narration text (headline/subline)")
         return scenes
 
@@ -99,12 +115,19 @@ def to_shotstack_edit(timeline: Timeline) -> dict:
     clips: list[dict] = []
     start = 0.0
     for scene, length in zip(timeline.scenes, durations):
-        clip: dict = {
-            "asset": {"type": "image", "src": scene.background_url},
-            "start": start,
-            "length": length,
-            "effect": scene.effect,
-        }
+        if scene.asset_type == "video":
+            clip: dict = {
+                "asset": {"type": "video", "src": scene.background_url, "trim": scene.trim_in},
+                "start": start,
+                "length": length,
+            }
+        else:
+            clip = {
+                "asset": {"type": "image", "src": scene.background_url},
+                "start": start,
+                "length": length,
+                "effect": scene.effect,
+            }
         if scene.headline or scene.subline:
             clip["title_asset"] = {
                 "type": "title",
@@ -116,6 +139,17 @@ def to_shotstack_edit(timeline: Timeline) -> dict:
         start += length
 
     tracks: list[dict] = [{"clips": clips}]
+
+    if timeline.captions:
+        caption_clips = [
+            {
+                "asset": {"type": "title", "text": cap.text, "style": "minimal"},
+                "start": cap.start_s,
+                "length": cap.end_s - cap.start_s,
+            }
+            for cap in timeline.captions
+        ]
+        tracks.append({"clips": caption_clips})
 
     edit: dict = {
         "timeline": {"tracks": tracks},

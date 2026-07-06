@@ -1,12 +1,28 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-07-04  
-Último commit local en `main`: `test(video): limpiar cache de get_settings entre tests`  
-**Nota:** `main` está **9 commits por delante** de `origin/main` (rama Video-as-Code / Reels aún no pusheada).
+Actualizado: 2026-07-05
+Último commit local en `main`: `feat(frontend): opcion Video con mis clips (Drive) en el selector de formato`
+**Nota:** `main` está por delante de `origin/main` (rama Video-as-Code / Reels + Reel con clips del usuario aún no pusheada).
 
 ---
 
 ### Cronología reciente
+
+#### 2026-07-05 — Reel con clips del usuario (Fase E)
+
+| Entrega | Detalle |
+|---------|---------|
+| **OAuth Google Drive** | `drive_source.py` — listar/descargar clips de una carpeta privada (`drive.readonly`), filename sanitizado + prefijado por id |
+| **Transcripción** | `transcription_providers.py` — Whisper (`whisper-1`, timestamps por palabra), chunking >25MB con offset-correction |
+| **Selección de segmentos** | `clip_assets.py` + `clip_editor.py` — `ClipEditorAgent` hook-scored, banda 6-60s, stub determinístico si falla LLM |
+| **Orquestación** | `clip_reel_designer.py` — Drive → transcripción → selección → efecto opcional (fal wan-effects) → Timeline (video + captions) → render Shotstack |
+| **Timeline** | `video_timeline.py` extendido: `Scene.asset_type`/`trim_in`/`trim_out`, `captions` track, narración condicional (solo escenas de imagen) |
+| **API/BD** | `content_format=user_clip_reel`, `drive_folder_id` obligatorio (422 si falta o si se usa `/runs/sync`); sin migración (columna `String(16)` ya soporta) |
+| **Go publisher** | Branch REELS ampliado a `user_clip_reel` (mismo timeout 300s que `reel`) |
+| **Frontend** | Opción "Video con mis clips (Drive)" + input de `drive_folder_id` condicional |
+| **Tests** | +46 tests de clips/drive/transcripción/editor/reel-designer/contratos → **114 passing** |
+
+Commits (orden cronológico): `f8c820e` … `81670ba` (11 commits en local, incluye fix de trim post-efecto).
 
 #### 2026-07-03 — Imagen + higiene documental
 
@@ -78,6 +94,7 @@ Go sidecar social-publisher (:8088) → Meta Graph API / LinkedIn UGC API
 | Infra | Docker Compose (Postgres/Redis), k8s base | ✅ Dev listo; k8s esqueleto |
 | Métricas | Prometheus | ✅ Compatible (FastAPI 0.115 + instrumentator 7.x); off en dev por defecto |
 | Video (Reels) | Shotstack + ElevenLabs/OpenAI TTS | ✅ Operativo (async-only, worker Celery dedicado) |
+| Reel con clips del usuario | Drive OAuth + Whisper + `ClipEditorAgent` + Shotstack | ✅ Operativo (async-only, requiere `ffmpeg` en el host) |
 
 ---
 
@@ -225,7 +242,58 @@ ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 
 1. **TikTok** — v1 publica Reels solo en Instagram vía el sidecar Go existente.
 2. **Música de fondo** — v1 solo usa voz en off; sin pista musical ni mezcla de audio.
-3. **Clips de video del usuario** — v1 genera fondos únicamente con fal.ai stills + efecto Ken Burns; no admite subir clips propios (a diferencia de `user_assets.py` para fotos en imagen estática).
+
+**Nota:** "clips de video del usuario" ya no es pendiente — implementado en Fase E (`content_format=user_clip_reel`, ver sección siguiente).
+
+---
+
+### Reel con clips del usuario (Fase E)
+
+**Trigger:** nuevo valor de `content_format`: `"user_clip_reel"` (async-only, igual que `"reel"`). Requiere `drive_folder_id` en el request (422 si falta o si se usa `/runs/sync`).
+
+**Pipeline (rama hermana de `reel`, mismo brief→estrategia→copy/QA):**
+
+```
+Strategist → Copywriter/QA → ClipReelDesigner:
+    drive_source.list_and_download_clips(drive_folder_id)  [OAuth Google, drive.readonly]
+        → transcription_providers.transcribe_clips()        [ffmpeg extrae audio → Whisper word-ts]
+        → ClipEditorAgent.run()                              [selección hook-scored, banda 6-60s]
+        → [fal.ai wan-effects opcional sobre el segmento hook, EFFECTS_ENABLED]
+        → Timeline (Scene asset_type="video" + captions) → render_video() (Shotstack)
+    → HITL (pending_approval, igual que imagen/reel)
+    → Go sidecar (media_type=REELS, mismo branch que "reel") → Meta Graph API
+```
+
+**Módulos nuevos en** `agents/marketing_agents/`:
+
+| Archivo | Rol |
+|---------|-----|
+| `drive_source.py` | OAuth Google Drive (`auth_social.py` provider `"google"`) — listar/descargar clips de una carpeta; filename sanitizado (`Path(...).name`) + prefijado por id (evita path traversal y sobrescritura por duplicados) |
+| `transcription_providers.py` | `transcribe_clips()` — Whisper (`whisper-1`, timestamps por palabra) vía `subprocess`(ffmpeg) + chunking >25MB con offset-correction; `mock` para tests |
+| `clip_assets.py` | `clip_public_url()` — mapea path local de clip descargado a URL servida (mismo patrón que `user_assets.py`) |
+| `clip_editor.py` | `ClipEditorAgent` — LLM (JSON de segmentos) con fallback determinístico a stub; heurísticas de hook (brevedad, pregunta/número/revelación, ritmo); banda de duración total 6-60s (`_MIN_CLIP_S`/`_MAX_CLIP_S`), nunca la banda 15-30s de `reel` |
+| `clip_reel_designer.py` | `ClipReelDesigner` — orquesta drive → transcripción → selección → efecto opcional → `Timeline` → render; **importante:** si el efecto wan reemplaza el video del segmento hook, `trim_in`/`trim_out` se resetean a `0`/`duration_s` (el output del efecto YA es el segmento recortado, no el clip fuente completo) |
+
+**`video_timeline.py` extendido:** `Scene.asset_type: Literal["image","video"]="image"`, `Scene.trim_in`/`trim_out` (solo aplica a `"video"`), nueva clase `Caption` y `Timeline.captions` (2ª pista de título en `to_shotstack_edit`); la validación de narración (`headline`/`subline` obligatorios) ahora solo exige texto en escenas `"image"` — las de `"video"` no la requieren.
+
+**Variables `.env` nuevas (ver `.env.example`):**
+
+```env
+STT_PROVIDER=whisper
+EFFECTS_ENABLED=false
+FAL_EFFECTS_MODEL=fal-ai/wan-effects
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback/google
+```
+
+**Dependencia de sistema NUEVA:** `ffmpeg` debe estar instalado y en el `PATH` (usado vía `subprocess` para extraer audio antes de transcribir). No es necesario para `feed`/`story`/`reel` generado.
+
+**Limitación conocida:** las URLs de clips y del video final (`clip_assets.py`, `video_providers.py`) se generan siempre como `http://localhost:8000/static/...`; la sustitución a `PUBLIC_IMAGE_BASE_URL` (necesaria para que servicios externos como fal.ai/Shotstack alcancen el archivo) solo ocurre en el paso final de publicación (`_publish_via_go`), no a mitad de pipeline. Si el efecto wan o Shotstack necesitan bajar el clip desde fuera de la máquina, ngrok + `PUBLIC_IMAGE_BASE_URL` deben estar activos durante la ejecución del run, no solo al publicar.
+
+**Google OAuth:** el scope `drive.readonly` puede requerir verificación manual de la app por parte de Google para usuarios externos a tu organización (proceso de días/semanas). En dev, agregar el email como "test user" en la pantalla de consentimiento OAuth (modo "Testing") evita el trámite.
+
+**Captions:** se generan **por segmento** (un cue de subtítulo por segmento seleccionado), no por palabra — granularidad más fina queda para v2.
 
 ---
 
@@ -271,7 +339,7 @@ Rutas en `gateway/app/api/routes.py`:
 
 ---
 
-### Tests (68 passing)
+### Tests (114 passing)
 
 | Archivo | Qué cubre |
 |---------|-----------|
@@ -289,6 +357,12 @@ Rutas en `gateway/app/api/routes.py`:
 | `test_video_pipeline.py` | `MarketingPipeline.run(content_format="reel")` end-to-end + regresión feed |
 | `test_runs_api.py` | Reel 422 en `/sync`, ruteo async a cola `video_render` |
 | `test_pipeline_service_video.py` | `_media_url` y persistencia de `video_url` |
+| `test_drive_source.py` | OAuth Google Drive: listar/descargar, sanitización de nombre, duplicados |
+| `test_transcription_providers.py` | Whisper mockeado, chunking >25MB con offset-correction |
+| `test_clip_editor.py` / `test_clip_assets.py` | `ClipEditorAgent` hook-scored banda 6-60s, stub determinístico, `clip_public_url` |
+| `test_clip_reel_designer.py` | `ClipReelDesigner` end-to-end mockeado, wan-effects éxito/degradación, reset de trim tras efecto, captions multi-segmento |
+| `test_contracts_user_clip_reel.py` | `RunRequest` con `drive_folder_id` obligatorio, límite de columna `content_format` |
+| `test_format_normalization.py` (extendido) | `user_clip_reel` sobrevive normalización + `resolve_image_spec` |
 
 ```bash
 python -m pytest tests/ -q
@@ -368,6 +442,10 @@ SHOTSTACK_API_KEY=...
 VOICE_PROVIDER=elevenlabs
 ELEVENLABS_API_KEY=...
 
+STT_PROVIDER=whisper                 # user_clip_reel — requiere ffmpeg en el host
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+
 PROMETHEUS_ENABLED=false   # true en producción
 ```
 
@@ -390,6 +468,7 @@ PROMETHEUS_ENABLED=false   # true en producción
 | 9 LinkedIn nativo con imagen | ✅ |
 | 10 Canva/Figma MCP (plantillas de marca) | ⬜ Pendiente |
 | 11 Video-as-Code (Reels: script + escenas fal.ai + voz + Shotstack) | ✅ |
+| 12 Reel con clips del usuario (Drive OAuth + Whisper + selección hook-scored) | ✅ |
 
 ---
 
@@ -409,10 +488,11 @@ PROMETHEUS_ENABLED=false   # true en producción
 2. **Canva/Figma MCP** — inserción de foto del cliente en plantillas pre-aprobadas de marca (arquitectura definida, sin código).
 3. **Observabilidad en prod** — activar `PROMETHEUS_ENABLED=true` en despliegue + scrape Grafana/Cloud Monitoring (código listo; falta wiring infra).
 4. **CI/CD K8s** — Skaffold o Cloud Deploy para promover `api` / `worker` / `go-publisher` entre entornos (esqueleto K8s insuficiente solo).
-5. **Video v2** — TikTok (Reels v1 solo publica en Instagram), música de fondo, clips de video del usuario (v1 solo genera fondos con fal.ai stills + Ken Burns, sin subir clips propios).
+5. **Video v2** — TikTok (Reels v1 solo publica en Instagram), música de fondo, captions por palabra (hoy por segmento) para `user_clip_reel`.
+6. **Sustitución de `PUBLIC_IMAGE_BASE_URL` a mitad de pipeline** — las URLs de clips/video generadas por `clip_assets.py`/`video_providers.py` no se sustituyen antes de llegar a fal.ai (wan-effects) o Shotstack, solo en el paso final de publicación; requiere ngrok activo durante todo el run de `user_clip_reel`, no solo al publicar.
 
 ---
 
 ### Resumen
 
-MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux (o usa la foto del usuario como capa base sin destruirla), aplica layouts tipo agencia con Pillow, permite alteración img2img bajo indicaciones del usuario con aprobación humana, publica en Instagram y LinkedIn vía Go + OAuth nativo, y genera Reels programáticos (guion → escenas fal.ai + voz ElevenLabs → render Shotstack) publicados de forma async con aprobación humana idéntica al flujo de imagen.
+MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux (o usa la foto del usuario como capa base sin destruirla), aplica layouts tipo agencia con Pillow, permite alteración img2img bajo indicaciones del usuario con aprobación humana, publica en Instagram y LinkedIn vía Go + OAuth nativo, genera Reels programáticos (guion → escenas fal.ai + voz ElevenLabs → render Shotstack), y arma Reels a partir de clips propios del usuario (Drive OAuth → transcripción Whisper → selección hook-scored → captions → efecto visual opcional → mismo render/publicación que Reels), todo publicado de forma async con aprobación humana idéntica al flujo de imagen.

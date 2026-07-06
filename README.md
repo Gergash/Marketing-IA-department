@@ -35,7 +35,8 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 4** Seguridad: Auth real, secrets, human-in-the-loop
 - **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Paso 6** 🟡 Go/infra: sidecar Go operativo; MCP connect en stdio; Kubernetes esqueleto
-- **Paso 7** Video-as-Code (Reels): `content_format=reel` genera un video corto vertical (script → escenas fal.ai + voz ElevenLabs → timeline JSON → render Shotstack → publicación nativa vía Go); async-only, cola Celery dedicada `video_render`. Pendiente v2: TikTok, música, clips de usuario.
+- **Paso 7** Video-as-Code (Reels): `content_format=reel` genera un video corto vertical (script → escenas fal.ai + voz ElevenLabs → timeline JSON → render Shotstack → publicación nativa vía Go); async-only, cola Celery dedicada `video_render`.
+- **Paso 8** Reel con clips del usuario: `content_format=user_clip_reel` arma un Reel (6-60s) a partir de clips de video propios en una carpeta de Google Drive (OAuth `drive.readonly`) → transcripción con Whisper (timestamps por palabra) → selección de segmentos hook-scored (`ClipEditorAgent`) → captions por segmento → efecto visual opcional (fal.ai wan-effects) sobre el segmento hook → mismo render Shotstack y publicación Go REELS que `reel`. Pendiente v2: TikTok, música, captions por palabra.
 
 ## Estructura
 
@@ -62,6 +63,19 @@ python -m venv .venv
 python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
+
+### Dependencia de sistema: ffmpeg (requerida para `content_format=user_clip_reel`)
+
+El flujo de Reel con clips del usuario extrae el audio de cada clip vía `subprocess` antes de transcribirlo con Whisper. Instala `ffmpeg` y verifica que esté en el `PATH`:
+
+```bash
+# Windows (choco): choco install ffmpeg
+# macOS (brew):    brew install ffmpeg
+# Debian/Ubuntu:   sudo apt-get install ffmpeg
+ffmpeg -version
+```
+
+No es necesario para el resto del pipeline (feed/story/reel generado).
 
 ## Proveedores de imagen alternativos (legacy)
 
@@ -306,6 +320,8 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 - **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional.
 - Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (`PUBLIC_IMAGE_BASE_URL` con ngrok en dev).
 - **Reels** (`content_format="reel"`) son **async-only**: `/runs/sync` responde `422`; usa siempre `/runs/async` con un segundo worker Celery en la cola `video_render` (`celery -A workers.celery_app.celery_app worker -l info -Q video_render`). Requiere `VIDEO_PROVIDER`/`SHOTSTACK_API_KEY` y `VOICE_PROVIDER`/`ELEVENLABS_API_KEY` en `.env` (ver sección **PASO 3D** en `.env.example`).
+- **Reel con clips del usuario** (`content_format="user_clip_reel"`) es también **async-only** y requiere `drive_folder_id` en el request (422 si falta o si se usa `/runs/sync`). Requiere además: `ffmpeg` instalado en el host (dependencia de sistema NUEVA, ver sección **Requisito de Python** más abajo — se invoca vía `subprocess` para extraer el audio de cada clip antes de transcribir), credenciales OAuth de Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`) y, para el scope `drive.readonly` en producción con usuarios externos a tu organización, Google puede exigir un **paso manual de verificación de la app** (agrega tu email en modo "Testing" en la pantalla de consentimiento OAuth para evitarlo en dev). Los captions son **por segmento** (no por palabra) en esta versión — granularidad más fina queda para v2.
+  - **Limitación conocida:** las URLs de clips/video servidas por este backend se generan siempre como `http://localhost:8000/static/...` (no pasan por la sustitución a `PUBLIC_IMAGE_BASE_URL` que sí aplica al publicar en Meta). Si fal.ai (wan-effects) o Shotstack necesitan alcanzar esa URL desde fuera de tu máquina, debes exponerla vía ngrok y que `PUBLIC_IMAGE_BASE_URL` esté correctamente configurado, o el fetch remoto del clip fallará.
 
 Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.
 

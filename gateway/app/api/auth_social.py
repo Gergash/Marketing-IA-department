@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -61,8 +61,22 @@ def oauth_login(
             f"&scope={scopes}"
             f"&state={state}"
         )
+    elif provider == "google":
+        if not s.google_client_id:
+            raise HTTPException(status_code=400, detail="GOOGLE_CLIENT_ID no configurado en .env")
+        # access_type=offline + prompt=consent: obligatorio para recibir refresh_token (Celery-safe, headless)
+        auth_url = (
+            f"https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id={s.google_client_id}"
+            f"&redirect_uri={s.google_redirect_uri}"
+            f"&scope=https://www.googleapis.com/auth/drive.readonly"
+            f"&response_type=code"
+            f"&access_type=offline"
+            f"&prompt=consent"
+            f"&state={state}"
+        )
     else:
-        raise HTTPException(status_code=400, detail=f"Proveedor '{provider}' no soportado. Usa: meta | linkedin")
+        raise HTTPException(status_code=400, detail=f"Proveedor '{provider}' no soportado. Usa: meta | linkedin | google")
 
     return RedirectResponse(auth_url)
 
@@ -104,6 +118,9 @@ def oauth_callback(
         elif provider == "linkedin":
             token_data = _exchange_linkedin(code, s)
             account_id = _fetch_linkedin_urn(token_data["access_token"])
+        elif provider == "google":
+            token_data = _exchange_google(code, s)
+            account_id = _fetch_google_account(token_data["access_token"])
         else:
             raise HTTPException(status_code=400, detail=f"Proveedor '{provider}' no soportado.")
 
@@ -341,6 +358,45 @@ def _exchange_linkedin(code: str, s) -> dict:
         "refresh_token": data.get("refresh_token"),
         "expires_at": None,
     }
+
+
+def _exchange_google(code: str, s) -> dict:
+    """Intercambia authorization code por access/refresh token de Google (Drive)."""
+    with httpx.Client(timeout=15) as client:
+        r = client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": s.google_redirect_uri,
+                "client_id": s.google_client_id,
+                "client_secret": s.google_client_secret,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        r.raise_for_status()
+        data = r.json()
+
+    expires_at = None
+    if data.get("expires_in"):
+        expires_at = datetime.utcnow() + timedelta(seconds=int(data["expires_in"]))
+
+    return {
+        "access_token": data["access_token"],
+        "refresh_token": data.get("refresh_token"),
+        "expires_at": expires_at,
+    }
+
+
+def _fetch_google_account(token: str) -> str:
+    """Obtiene el email de la cuenta de Google conectada (userinfo)."""
+    with httpx.Client(timeout=10) as client:
+        r = client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        r.raise_for_status()
+        return r.json().get("email", "")
 
 
 def _fetch_linkedin_urn(token: str) -> str:

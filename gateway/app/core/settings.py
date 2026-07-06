@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8000/api/auth/callback/linkedin"
 
+    # OAuth 2.0 — Google Drive (fuente de clips de video del usuario)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/auth/callback/google"
+
     # URL pública base para imágenes — Meta exige HTTPS accesible públicamente (ej. ngrok en dev)
     public_image_base_url: str = "http://localhost:8000"
 

@@ -202,3 +202,62 @@ def test_mixed_video_and_nonvideo_only_videos_downloaded(
     clips = ds.list_and_download_clips(db_session, "demo-tenant", "folder123", run_id=7)
     assert len(clips) == 1
     assert downloaded_ids == ["f1"]
+
+
+def test_malicious_filename_is_sanitized_no_path_traversal(
+    db_session, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El nombre viene crudo de Drive; un nombre tipo '../../etc/passwd' no debe escapar dest_dir."""
+    token = _token_row(expires_at=datetime.utcnow() + timedelta(hours=1))
+    db_session.add(token)
+    db_session.commit()
+
+    clips_root = tmp_path / "clips"
+    monkeypatch.setattr(ds, "_STATIC_CLIPS_DIR", clips_root)
+
+    files = [{"id": "f1", "name": "../../../etc/passwd", "mimeType": "video/mp4"}]
+    monkeypatch.setattr(ds, "_list_folder_files", lambda access_token, folder_id: files)
+
+    def _fake_download(access_token, file_id, dest_path):
+        dest_path.write_bytes(b"fake-video-bytes")
+
+    monkeypatch.setattr(ds, "_download_file", _fake_download)
+
+    clips = ds.list_and_download_clips(db_session, "demo-tenant", "folder123", run_id=99)
+    assert len(clips) == 1
+    dest_dir = (clips_root / "99").resolve()
+    resolved_path = Path(clips[0].path).resolve()
+    assert resolved_path.parent == dest_dir
+    assert ".." not in Path(clips[0].filename).parts
+
+
+def test_duplicate_filenames_do_not_overwrite_each_other(
+    db_session, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dos archivos de Drive con el mismo `name` deben descargarse a rutas distintas (prefijo con el id de Drive)."""
+    token = _token_row(expires_at=datetime.utcnow() + timedelta(hours=1))
+    db_session.add(token)
+    db_session.commit()
+
+    monkeypatch.setattr(ds, "_STATIC_CLIPS_DIR", tmp_path / "clips")
+
+    files = [
+        {"id": "f1", "name": "clip.mp4", "mimeType": "video/mp4"},
+        {"id": "f2", "name": "clip.mp4", "mimeType": "video/mp4"},
+    ]
+    monkeypatch.setattr(ds, "_list_folder_files", lambda access_token, folder_id: files)
+
+    def _fake_download(access_token, file_id, dest_path):
+        dest_path.write_bytes(f"bytes-{file_id}".encode())
+
+    monkeypatch.setattr(ds, "_download_file", _fake_download)
+
+    clips = ds.list_and_download_clips(db_session, "demo-tenant", "folder123", run_id=5)
+    assert len(clips) == 2
+    paths = {clip.path for clip in clips}
+    assert len(paths) == 2  # rutas distintas, sin pisarse
+    filenames = {clip.filename for clip in clips}
+    assert filenames == {"f1_clip.mp4", "f2_clip.mp4"}
+    for clip in clips:
+        file_id = clip.filename.split("_", 1)[0]
+        assert Path(clip.path).read_bytes() == f"bytes-{file_id}".encode()

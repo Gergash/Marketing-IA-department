@@ -130,7 +130,12 @@ def list_and_download_clips(
     downloaded: list[DownloadedClip] = []
     for f in video_files:
         clip_id = uuid.uuid4().hex
-        filename = f.get("name") or f"{clip_id}.mp4"
+        raw_name = f.get("name") or f"{clip_id}.mp4"
+        # Path(...).name descarta cualquier componente de directorio (../, rutas absolutas) del nombre
+        # que Drive devuelve sin sanitizar, evitando path traversal al construir dest_path.
+        safe_name = Path(raw_name).name or f"{clip_id}.mp4"
+        # Prefijo con el id de archivo de Drive: nombres duplicados en la carpeta ya no se pisan entre si.
+        filename = f"{f['id']}_{safe_name}"
         dest_path = dest_dir / filename
         _download_file(access_token, f["id"], dest_path)
         downloaded.append(DownloadedClip(clip_id=clip_id, path=str(dest_path), filename=filename))

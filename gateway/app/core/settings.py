@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # Transcripción de audio (clips de usuario) — provider: whisper | mock
     stt_provider: str = "whisper"
 
+    # Efecto visual generativo opcional sobre el segmento hook de user_clip_reel — fal.ai wan-effects
+    effects_enabled: bool = False
+    fal_effects_model: str = "fal-ai/wan-effects"
+
     # Video rendering (Reels) — provider: shotstack | json2video | mock
     video_provider: str = "shotstack"
     shotstack_api_key: str = ""

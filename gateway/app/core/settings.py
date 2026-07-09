@@ -40,6 +40,24 @@ class Settings(BaseSettings):
     fal_api_key: str = ""
     # Modelo fal a usar; opciones: fal-ai/flux-pro/v1.1 | fal-ai/flux/schnell | fal-ai/recraft-v3
     fal_model: str = "fal-ai/flux-pro/v1.1"
+    # Modelo img2img cuando el usuario sube foto y pide alteración con IA
+    fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
+    fal_img2img_strength: float = 0.72
+
+    # Voiceover generation — provider: elevenlabs | openai | mock
+    voice_provider: str = "elevenlabs"
+    voice_language: str = "es"
+    elevenlabs_api_key: str = ""
+    # Voz multilingüe por defecto (funciona en español con el modelo eleven_multilingual_v2)
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+
+    # Video rendering (Reels) — provider: shotstack | json2video | mock
+    video_provider: str = "shotstack"
+    shotstack_api_key: str = ""
+    shotstack_env: str = "stage"  # stage | v1 (produccion)
+    json2video_api_key: str = ""  # alternativa documentada, no implementada en v1
+    video_max_wait_seconds: int = 600
+    video_fps: int = 30
 
     # Social publishing — provider: mock | linkedin | meta
     social_provider: str = "mock"

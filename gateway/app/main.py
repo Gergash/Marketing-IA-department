@@ -41,6 +41,7 @@ if settings.prometheus_enabled:
 _static_root = Path(__file__).resolve().parents[2] / "static"
 _static_root.mkdir(parents=True, exist_ok=True)
 (_static_root / "images").mkdir(parents=True, exist_ok=True)
+(_static_root / "uploads").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_static_root)), name="static")
 
 

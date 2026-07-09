@@ -149,14 +149,18 @@ def _layout_editorial_infographic(
     font_title, font_body, font_cta = _load_fonts(font_seed, title_size, title_size - 4)
 
     y = h - bar_h + 20
-    draw.rectangle([(20, y), (26, y + 40)], fill=accent + (255,))
     wrapped = wrap_for_width(headline, w - 60, font_size=title_size)
+    bbox_head = draw.multiline_textbbox((36, y), wrapped, font=font_title)
+    head_h = bbox_head[3] - bbox_head[1]
+    draw.rectangle([(20, y), (26, y + max(40, head_h))], fill=accent + (255,))
     draw.text((36, y), wrapped, font=font_title, fill=white + (255,))
-    y += title_size * (wrapped.count("\n") + 1) + 8
+    y += head_h + 12
 
     if subline:
-        draw.rectangle([(20, y), (26, y + 28)], fill=accent + (180,))
         wrapped_sub = wrap_for_width(subline, w - 60, font_size=title_size - 4)
+        bbox_sub = draw.multiline_textbbox((36, y), wrapped_sub, font=font_body)
+        sub_h = bbox_sub[3] - bbox_sub[1]
+        draw.rectangle([(20, y), (26, y + max(28, sub_h))], fill=accent + (180,))
         draw.text((36, y), wrapped_sub, font=font_body, fill=(220, 220, 230, 240))
 
     if cta:
@@ -218,16 +222,30 @@ def _draw_cta_pill(
     accent: tuple[int, int, int],
     y_offset: int | None = None,
 ) -> None:
-    cta_label = f"  {cta[:45]}  "
-    cta_y = y_offset if y_offset is not None else h - 40
+    cta_label = f" {cta[:45]} "
     bbox = draw.textbbox((0, 0), cta_label, font=font)
-    cta_w = bbox[2] - bbox[0] + 4
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    
+    pad_x = 16
+    pad_y = 10
+    
+    pill_w = text_w + pad_x * 2
+    pill_h = text_h + pad_y * 2
+    
+    cta_y = y_offset if y_offset is not None else h - pill_h - 20
+    cta_x = 20
+    
     draw.rounded_rectangle(
-        [(20, cta_y - 6), (20 + cta_w, cta_y + 22)],
+        [(cta_x, cta_y), (cta_x + pill_w, cta_y + pill_h)],
         radius=8,
         fill=accent + (230,),
     )
-    draw.text((22, cta_y), cta_label, font=font, fill=(255, 255, 255, 255))
+    
+    text_draw_x = cta_x + pad_x - bbox[0]
+    text_draw_y = cta_y + pad_y - bbox[1]
+    
+    draw.text((text_draw_x, text_draw_y), cta_label, font=font, fill=(255, 255, 255, 255))
 
 
 def _composite(img: Image.Image, overlay: Image.Image) -> bytes:

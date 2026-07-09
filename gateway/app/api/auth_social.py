@@ -70,11 +70,27 @@ def oauth_login(
 @router.get("/callback/{provider}")
 def oauth_callback(
     provider: str,
-    code: str,
     state: str,
     db: Session = Depends(get_db),
+    code: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
 ):
     """Recibe el authorization code, lo intercambia por token y lo persiste en oauth_tokens."""
+    if error:
+        return _oauth_frontend_redirect(
+            provider,
+            oauth="error",
+            message=error_description or error,
+        )
+
+    if not code:
+        return _oauth_frontend_redirect(
+            provider,
+            oauth="error",
+            message="No se recibió código de autorización.",
+        )
+
     tenant_id = _pending_states.pop(state, None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="State inválido o expirado. Inicia el flujo desde /api/auth/login/{provider}.")

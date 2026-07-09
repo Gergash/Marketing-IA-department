@@ -38,8 +38,10 @@ Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher
 | Agentes | LangGraph + LangChain |
 | LLM | Ollama / Anthropic / OpenAI — configurable vía `.env` |
 | Imágenes | **fal.ai (Flux Pro)** — principal; DALL·E y SD como alternativas |
+| Video (Reels) | **Shotstack** (block-and-poll) — principal; JSON2Video documentado, no implementado |
+| Voz (voiceover) | **ElevenLabs** — principal; OpenAI TTS como alternativa; español por defecto |
 | Social | Meta/IG OAuth + Go publisher; LinkedIn; mocks |
-| Async | Celery + Redis |
+| Async | Celery + Redis (worker default + worker dedicado `-Q video_render` para reels) |
 | Scheduler | APScheduler |
 | Frontend | React + Vite |
 | DB | PostgreSQL (Docker) |
@@ -56,9 +58,15 @@ agents/marketing_agents/
   quality.py            — reglas de calidad de diseño
   designer.py           — arquetipo editorial + prompt Flux + composición PIL
   publisher.py          — publicación vía proveedor social
-  image_providers.py    — generación y overlay post-proceso
+  image_providers.py    — generación, overlay post-proceso e img2img
+  user_assets.py        — carga y fit de fotos del usuario
   layout_archetypes.py  — 4 arquetipos editoriales
   design_layouts.py     — composición PIL por arquetipo
+  video_script.py       — VideoScriptAgent: guion 3-5 escenas, hook/CTA, banda 15-30s
+  video_timeline.py     — contrato Timeline/Scene/VoiceoverTrack (Pydantic) + to_shotstack_edit()
+  video_providers.py    — render_video(): Shotstack block-and-poll / mock
+  voice_providers.py    — synthesize_voice(): ElevenLabs / OpenAI TTS / mock
+  video_designer.py     — VideoDesignerAgent: escenas fal.ai + voz + Timeline + render
 
 gateway/app/
   api/routes.py         — endpoints principales
@@ -100,7 +108,8 @@ workers/tasks.py        — tareas Celery
 | Plataforma/Formato | Dimensión | Aspecto |
 |--------------------|-----------|---------|
 | Instagram/Facebook feed | 1080×1350 | 4:5 |
-| Stories/Reels | 1080×1920 (~810×1440 fal) | 9:16 |
+| Stories/Reels (imagen) | 1080×1920 (~810×1440 fal) | 9:16 |
+| Reel (video, `content_format=reel`) | 1080×1920, 30fps | 9:16 |
 | LinkedIn feed | 1200×627 | — |
 
 fal.ai escala proporcionalmente si altura > 1440px.
@@ -113,15 +122,35 @@ fal.ai escala proporcionalmente si altura > 1440px.
 IMAGE_PROVIDER=fal
 FAL_API_KEY=...
 FAL_MODEL=fal-ai/flux-pro/v1.1
+FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_STRENGTH=0.72
+VIDEO_PROVIDER=shotstack
+SHOTSTACK_API_KEY=...
+SHOTSTACK_ENV=stage
+VIDEO_MAX_WAIT_SECONDS=600
+VIDEO_FPS=30
+VOICE_PROVIDER=elevenlabs
+VOICE_LANGUAGE=es
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 LLM_PROVIDER=ollama
 OLLAMA_MODEL=llama3.1
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 REDIS_URL=redis://localhost:6379/0
 SOCIAL_PROVIDER=meta
+GO_PUBLISHER_URL=http://localhost:8088
 PUBLIC_IMAGE_BASE_URL=https://TU-NGROK
+LINKEDIN_CLIENT_ID=...
+LINKEDIN_CLIENT_SECRET=...
 ```
 
 **Nunca commitear `.env`.**
+
+**Reel es async-only:** `content_format=reel` requiere `POST /api/runs/async` (se rechaza con 422 en `/runs/sync`) y un **segundo worker Celery** en la cola dedicada:
+
+```bash
+celery -A workers.celery_app worker -Q video_render --loglevel=info
+```
 
 ---
 
@@ -154,7 +183,8 @@ ngrok http 8000
 
 ## API endpoints relevantes
 
-- `POST /api/runs/sync` / `/async` — ejecutar pipeline (acepta `archetype_override`)
+- `POST /api/briefs/upload-asset` — subir foto del usuario (multipart)
+- `POST /api/runs/sync` / `/async` — ejecutar pipeline (`user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`, `content_format` incluye `reel`; reel solo vía `/async`, 422 en `/sync`)
 - `POST /api/runs/{id}/approve` / `/reject` — aprobación humana
 - `POST /api/campaigns/{id}/fire` — disparar campaña
 - `GET /api/image/archetypes` — listar arquetipos disponibles
@@ -174,24 +204,35 @@ Archivos clave:
 - `tests/test_scheduler.py` — campañas → `pending_approval`
 - `tests/test_layout_archetypes.py` — specs 4:5, fal scaling
 - `tests/test_design_layouts.py` — composición PIL: 4 layouts, fallback
+- `tests/test_user_assets.py` — foto usuario + overlay sin fal
+- `tests/test_linkedin_native.py` — LinkedIn con imagen (mock)
+- `tests/test_video_timeline.py` — contrato Timeline/Scene, `to_shotstack_edit()`, clamp de duración
+- `tests/test_voice_providers.py` — `synthesize_voice` (mock/ElevenLabs/OpenAI, default español)
+- `tests/test_video_providers.py` — `render_video` (mock/Shotstack poll, fallo y timeout distintos)
+- `tests/test_video_designer.py` — `VideoDesignerAgent.run` end-to-end mockeado
+- `tests/test_video_pipeline.py` — `MarketingPipeline.run(content_format="reel")` end-to-end + regresión feed
+- `tests/test_pipeline_service_video.py` — `_media_url` y persistencia de `video_url`
 
 ---
 
 ## Decisiones arquitectónicas fijas
 
 - **ComfyUI: descartado** (GPU local insuficiente para Flux; usar fal.ai)
-- **Prometheus:** activable con `PROMETHEUS_ENABLED=true`; no es prioridad en dev
+- **Prometheus:** activable con `PROMETHEUS_ENABLED=true` → `/metrics` (compatible con FastAPI 0.115); off en dev por defecto
 - **Go publisher:** no duplicar lógica de publicación Meta en Python si Go ya intentó
 - **Anti-duplicados IG:** error 9007 indica container no `FINISHED` — manejar sin reintentar ciegamente
 - **ngrok obligatorio** para que Meta acceda a las imágenes generadas
+- **Reel es async-only:** `content_format="reel"` se rechaza con 422 en `/runs/sync`; corre solo vía `/runs/async` en la cola Celery dedicada `video_render` — requiere levantar un **segundo worker** (`celery -A workers.celery_app worker -Q video_render`) además del worker default
+- **Video sin retries:** la tarea `execute_video_pipeline_task` usa el `celery.Task` base plano (sin `autoretry_for`) para no re-renderizar video ante errores transitorios (costo/duplicados)
 
 ---
 
 ## Deuda conocida (no implementar sin pedido explícito)
 
 1. Canva OAuth — placeholder, no implementado
-2. Stable Diffusion local — alternativa conservada, no es camino principal
-3. Frontend: selector de arquetipo en dashboard (API ya soporta `archetype_override`)
+2. Canva/Figma MCP — plantillas de marca vía MCP
+3. Stable Diffusion local — alternativa conservada, no es camino principal
+4. Video v2 (no implementado en v1) — TikTok (solo Instagram Reels por ahora), música de fondo, clips de video del usuario (v1 solo genera fondos con fal.ai stills + Ken Burns)
 
 ---
 

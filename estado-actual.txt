@@ -1,7 +1,40 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-05-19  
-Último commit en `main`: `feat(design): integrate editorial layout archetypes and 4:5 feed specs`
+Actualizado: 2026-07-04  
+Último commit local en `main`: `test(video): limpiar cache de get_settings entre tests`  
+**Nota:** `main` está **9 commits por delante** de `origin/main` (rama Video-as-Code / Reels aún no pusheada).
+
+---
+
+### Cronología reciente
+
+#### 2026-07-03 — Imagen + higiene documental
+
+| Entrega | Detalle |
+|---------|---------|
+| **Design-as-Code (Fase C)** | `POST /api/briefs/upload-asset`, foto como capa base + overlay Pillow; img2img fal opcional con HITL |
+| **LinkedIn nativo** | OAuth + publicación con imagen vía Go (Upload-Post eliminado del código y docs) |
+| **Docs** | `estado-actual.txt`, README, `.env.example`, CLAUDE.md alineados a publicación 100% nativa |
+| **Higiene técnica** | Upload-Post ✅ limpio; Prometheus ✅ compatible (FastAPI 0.115 + instrumentator 7.x); Skaffold/Cloud Deploy ⬜ pendiente |
+
+Commit de referencia: `40904e2` — `feat(design): foto de usuario como capa base (Design-as-Code con Pillow) + img2img gobernado con HITL`
+
+#### 2026-07-04 — Video-as-Code / Reels (Fase D)
+
+| Entrega | Detalle |
+|---------|---------|
+| **Contrato Timeline** | `video_timeline.py` — JSON provider-neutral + `to_shotstack_edit()` |
+| **Voz** | `voice_providers.py` — ElevenLabs / OpenAI TTS / mock (español por defecto) |
+| **Render** | `video_providers.py` — Shotstack block-and-poll + mock → `static/videos/` |
+| **Agentes** | `video_script.py`, `video_designer.py` — guion 3-5 escenas, fal stills + Ken Burns |
+| **Pipeline** | `content_format=reel` — rama paralela post copy/QA; async-only |
+| **Infra async** | Cola Celery `video_render`, `execute_video_pipeline_task` (sin autoretry) |
+| **API/BD** | `GeneratedAsset.video_url`, migración Alembic `0005`; reel → 422 en `/runs/sync` |
+| **Go publisher** | Rama `media_type=REELS` + timeout contenedor 300s |
+| **Frontend** | Selector reel + preview `<video>` en dashboard |
+| **Tests** | +7 archivos de video → **68 passing** |
+
+Commits (orden cronológico): `e49564c` … `e01c5d5` (9 commits en local).
 
 ---
 
@@ -10,10 +43,10 @@ Actualizado: 2026-05-19
 MVP de automatización de marketing con agentes de IA:
 
 ```
-brief → estrategia → copy con QA → diseño visual editorial → aprobación humana → publicación en redes
+brief → estrategia → copy con QA → diseño (imagen o reel) → aprobación humana → publicación en redes
 ```
 
-Flujo principal de publicación: **Meta / Instagram Business** vía sidecar Go.
+Flujo principal de publicación: **Meta / Instagram Business** y **LinkedIn** vía sidecar Go (OAuth nativo).
 
 ---
 
@@ -24,11 +57,11 @@ Frontend (React/Vite :5173)
         ↓
 Gateway FastAPI (:8000)  ←→  PostgreSQL + Redis (Docker)
         ↓
-Celery worker (async) + APScheduler (campañas)
+Celery worker (default) + worker `video_render` (solo Reels) + APScheduler
         ↓
 Pipeline Python (agents/marketing_agents/)
         ↓
-Go sidecar social-publisher (:8088) → Meta Graph API
+Go sidecar social-publisher (:8088) → Meta Graph API / LinkedIn UGC API
 ```
 
 | Capa | Tecnología | Estado |
@@ -37,19 +70,23 @@ Go sidecar social-publisher (:8088) → Meta Graph API
 | Agentes | LangGraph (Copy/QA) + pipeline lineal | ✅ Operativo |
 | LLM | Ollama / Anthropic / OpenAI + stub mock | ✅ Configurable vía `.env` |
 | Imágenes | **fal.ai (Flux Pro)**, SD (A1111), DALL·E, mock | ✅ fal como principal en dev |
-| Social | Meta/IG, LinkedIn, Upload-Post, mock + Go | ✅ Meta con OAuth |
+| Imágenes usuario | Design-as-Code (Pillow) + fal img2img opcional | ✅ Operativo |
+| Social | Meta/IG, LinkedIn nativo, mock + Go | ✅ OAuth Meta + LinkedIn |
 | Async | Celery + Redis | ✅ Operativo |
 | Scheduler | APScheduler + `POST /api/campaigns/{id}/fire` | ✅ Prueba de fuego completada |
 | Human-in-the-loop | `pending_approval` → approve/reject | ✅ Activo |
 | Infra | Docker Compose (Postgres/Redis), k8s base | ✅ Dev listo; k8s esqueleto |
-| Métricas | Prometheus | ⚠️ Desactivado en dev (`PROMETHEUS_ENABLED=false`) |
+| Métricas | Prometheus | ✅ Compatible (FastAPI 0.115 + instrumentator 7.x); off en dev por defecto |
+| Video (Reels) | Shotstack + ElevenLabs/OpenAI TTS | ✅ Operativo (async-only, worker Celery dedicado) |
 
 ---
 
 ### Pipeline de agentes
 
 ```
-Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher (opcional)
+Strategist → LangGraph [Copywriter ↔ QA] → Designer (feed/story)
+                                      └→ VideoScript → VideoDesigner (reel)
+                                      → Publisher (opcional)
 ```
 
 **Módulos en** `agents/marketing_agents/`:
@@ -59,10 +96,11 @@ Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher (opciona
 | `strategist.py` | Tipo de post, hook, mensaje base, hashtags |
 | `copywriter.py` | Copy + `headline_for_image` / `subline_for_image` |
 | `graph_copy_qa.py` + `quality.py` | Bucle QA con trazabilidad (`copy_qa_trace`) |
-| `designer.py` | Arquetipo editorial + prompt Flux + composición |
+| `designer.py` | Arquetipo + generación Flux **o** foto usuario + composición |
 | `layout_archetypes.py` | Selección y prompts por arquetipo |
 | `design_layouts.py` | Overlays PIL (poster, minimal, infográfico, hero) |
-| `image_providers.py` | fal / SD / DALL·E / mock + overlay post-generación |
+| `image_providers.py` | fal / SD / DALL·E / mock + overlay post-generación + img2img |
+| `user_assets.py` | Carga, fit (cover crop) y guardado de fotos del usuario |
 | `image_specs.py` | Dimensiones por red social y formato |
 | `overlay_text.py` | Tipografía, wrap y truncado en oración |
 | `publisher.py` | Publicación vía proveedor social |
@@ -73,7 +111,7 @@ Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher (opciona
 
 **Proveedor recomendado:** `IMAGE_PROVIDER=fal` con `FAL_API_KEY` y `FAL_MODEL=fal-ai/flux-pro/v1.1`
 
-Flujo en diseño:
+Flujo en diseño **sin foto de usuario**:
 
 1. `pick_archetype(brief, strategy)` elige layout (o `archetype_override` vía API)
 2. `build_flux_prompt()` genera prompt visual sin texto embebido
@@ -97,9 +135,97 @@ Flujo en diseño:
 - X/Twitter feed: 1200×675
 - fal escala proporcionalmente si alguna dimensión > 1440px (stories → ~810×1440)
 
-**Frontend:** selector feed/story, switch fal ↔ Stable Diffusion, muestra proveedor, dimensiones y `layout_label`.
+**Frontend:** selector feed/story/reel, switch fal ↔ Stable Diffusion, dropdown de arquetipo, upload de foto, toggle img2img, muestra `layout_label`, `design_source` y preview de video en reels.
 
 ComfyUI descartado (GPU 4 GB insuficiente). Stable Diffusion local conservado como alternativa.
+
+---
+
+### Foto del usuario — Design-as-Code + img2img gobernado (Fase C)
+
+Dos modos al subir una imagen desde el dashboard:
+
+| Modo | Toggle | Comportamiento | `design_source` |
+|------|--------|----------------|-------------------|
+| **No destructivo** | OFF | Foto intacta como capa base → fit al formato → overlay Pillow | `user_overlay` |
+| **Alteración IA** | ON + prompt | fal img2img (`FAL_IMG2IMG_MODEL`) → overlay Pillow → `pending_approval` | `user_img2img` |
+| **Sin foto** | — | Flujo clásico txt2img fal/SD | `generated` |
+
+**Flujo técnico:**
+
+1. `POST /api/briefs/upload-asset` → guarda JPEG/PNG/WebP (máx. 10 MB) en `static/uploads/`
+2. `RunRequest` incluye `user_asset_url`, `alter_image_with_ai`, `visual_instructions`
+3. `DesignerAgent` bifurca: `compose_from_user_asset()` vs `generate_image()`
+4. Resultado final en `static/images/` (`user_overlay_*` o `user_img2img_*`)
+
+**Variables img2img:**
+
+```env
+FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_STRENGTH=0.72
+```
+
+**Pendiente a mediano plazo:** inserción en plantillas Canva/Figma vía MCP (no implementado).
+
+---
+
+### Video as Code — Reels programáticos (Fase D)
+
+**Trigger:** el mismo campo `content_format` que ya existía (`"feed"` / `"story"`) ahora acepta `"reel"`. No hay campo nuevo, no hay migración de `AgentRun`.
+
+**Pipeline (rama paralela a imagen, mismo brief→estrategia→copy/QA):**
+
+```
+Strategist → Copywriter/QA → VideoScriptAgent (guion 3-5 escenas)
+        → VideoDesignerAgent:
+              escenas: fal.ai still (1080×1920) + Ken Burns
+              voz: ElevenLabs/OpenAI TTS (español, banda 15-30s)
+              → Timeline (JSON provider-neutral) → render_video() (Shotstack block-and-poll)
+        → HITL (pending_approval, igual que imagen)
+        → Go sidecar (media_type=REELS, video_url) → Meta Graph API
+```
+
+**Módulos nuevos en** `agents/marketing_agents/`:
+
+| Archivo | Rol |
+|---------|-----|
+| `video_script.py` | `VideoScriptAgent` — guion 3-5 escenas + hook + CTA, banda 15-30s por conteo de palabras |
+| `video_timeline.py` | Contrato Pydantic `Timeline`/`Scene`/`VoiceoverTrack` + `to_shotstack_edit()` (único lugar donde se filtra el JSON de Shotstack) |
+| `voice_providers.py` | `synthesize_voice()` — ElevenLabs (principal) / OpenAI TTS (alt) / mock; español por defecto |
+| `video_providers.py` | `render_video()` — Shotstack (submit → poll → descarga MP4) / JSON2Video (documentado, no implementado) / mock |
+| `video_designer.py` | `VideoDesignerAgent` — orquesta escenas + voz + timeline + render, devuelve `VideoDesignOutput` |
+
+**Dimensiones:** 1080×1920 (9:16), 30 fps, MP4 — mismo spec 9:16 que stories (`resolve_image_spec` acepta `"reel"`).
+
+**Async-only:** `content_format="reel"` se rechaza con `422` en `POST /runs/sync`; solo corre vía `POST /runs/async`, en una cola Celery dedicada `video_render` (renders tardan minutos, no deben competir con la cola de imágenes). Requiere levantar un **segundo worker**:
+
+```bash
+python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
+```
+
+La tarea (`execute_video_pipeline_task`) usa el `celery.Task` base plano — **sin** `autoretry_for` — para no re-renderizar video ante fallos transitorios (costo + duplicados).
+
+**Persistencia:** `GeneratedAsset.video_url` (columna nullable, migración Alembic `0005`); `result["design"]` sigue siendo la misma clave para imagen y reel (`video_url` seteado + `image_url` `None` en reels).
+
+**Variables `.env` (ver `.env.example`, sección PASO 3D):**
+
+```env
+VIDEO_PROVIDER=shotstack
+SHOTSTACK_API_KEY=...
+SHOTSTACK_ENV=stage
+VIDEO_MAX_WAIT_SECONDS=600
+VIDEO_FPS=30
+VOICE_PROVIDER=elevenlabs
+VOICE_LANGUAGE=es
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+```
+
+**Pendiente v2 (no implementado, fuera de alcance v1):**
+
+1. **TikTok** — v1 publica Reels solo en Instagram vía el sidecar Go existente.
+2. **Música de fondo** — v1 solo usa voz en off; sin pista musical ni mezcla de audio.
+3. **Clips de video del usuario** — v1 genera fondos únicamente con fal.ai stills + efecto Ken Burns; no admite subir clips propios (a diferencia de `user_assets.py` para fotos en imagen estática).
 
 ---
 
@@ -111,28 +237,41 @@ Rutas en `gateway/app/api/routes.py`:
 - `GET /image/providers` — proveedores de imagen disponibles
 - `GET /image/archetypes` — lista de arquetipos para override manual
 - `GET /social/publish-status`
+- `POST /api/briefs/upload-asset` — subida de foto del usuario
 - `POST/GET /briefs`
-- `POST /runs/sync`, `/runs/async` — aceptan `image_provider`, `content_format`, `archetype_override`
+- `POST /runs/sync`, `/runs/async` — aceptan `image_provider`, `content_format` (`feed`/`story`/`reel`), `archetype_override`, `user_asset_url`, `alter_image_with_ai`, `visual_instructions`; `content_format=reel` solo vía `/runs/async` (422 en `/sync`)
 - `GET /runs`, `/runs/{id}`
 - `POST /runs/{id}/approve`, `/reject`
 - `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
-- OAuth Meta / LinkedIn (módulo auth)
+- OAuth Meta / LinkedIn (`gateway/app/api/auth_social.py`)
 
 **Persistencia:** briefs, runs (`status`, `content_format`, aprobación), assets generados, campañas programadas, tokens OAuth.
 
+**Estáticos:** `static/uploads/` (fotos originales), `static/images/` (composiciones), `static/videos/` (MP4 renderizados).
+
 ---
 
-### Publicación Instagram (estable)
+### Publicación en redes (estable)
+
+#### Instagram / Meta
 
 - OAuth Meta con fallback granular de scopes
 - Estado `publishing` para evitar doble publicación
-- Go publisher en `:8088` (sin fallback Python duplicado si Go ya intentó Meta)
+- Go publisher en `:8088`
 - `PUBLIC_IMAGE_BASE_URL` con ngrok obligatorio para que Meta acceda a las imágenes
 - Anti-duplicados por error 9007 (container no `FINISHED`)
+- **Reels** (`content_format="reel"`): rama `media_type=REELS` + `video_url` en `PublishMeta`; timeout de contenedor ampliado a 300s (vs 60s en imagen/story) porque Meta procesa video mucho más lento
+
+#### LinkedIn (nativo)
+
+- OAuth: `/api/auth/login/linkedin` → callback → tokens en `oauth_tokens`
+- Scopes: `openid profile w_member_social`; URN vía `/v2/userinfo`
+- Publicación con imagen: `registerUpload` → PUT binario → `ugcPosts`
+- Sidecar Go (`internal/publisher/linkedin.go`) + fallback Python en `social_providers.py`
 
 ---
 
-### Tests (24 passing)
+### Tests (68 passing)
 
 | Archivo | Qué cubre |
 |---------|-----------|
@@ -141,6 +280,15 @@ Rutas en `gateway/app/api/routes.py`:
 | `test_scheduler.py` | Campañas → `pending_approval` |
 | `test_layout_archetypes.py` | Specs 4:5, fal scaling, arquetipos, prompts |
 | `test_design_layouts.py` | Composición PIL: 4 layouts, fallback, dimensiones |
+| `test_user_assets.py` | Fit de foto usuario + overlay sin fal |
+| `test_linkedin_native.py` | Flujo LinkedIn con imagen (mock) |
+| `test_video_timeline.py` | Contrato `Timeline`/`Scene`, `to_shotstack_edit()`, clamp de duración |
+| `test_voice_providers.py` | `synthesize_voice` (mock/ElevenLabs/OpenAI, default español) |
+| `test_video_providers.py` | `render_video` (mock/Shotstack poll, fallo y timeout distintos) |
+| `test_video_designer.py` | `VideoDesignerAgent.run` end-to-end mockeado |
+| `test_video_pipeline.py` | `MarketingPipeline.run(content_format="reel")` end-to-end + regresión feed |
+| `test_runs_api.py` | Reel 422 en `/sync`, ruteo async a cola `video_render` |
+| `test_pipeline_service_video.py` | `_media_url` y persistencia de `video_url` |
 
 ```bash
 python -m pytest tests/ -q
@@ -148,7 +296,7 @@ python -m pytest tests/ -q
 
 ---
 
-### Cómo levantar el stack (7 terminales)
+### Cómo levantar el stack (7–8 terminales)
 
 Documentación detallada: **`infra/arranque-stack.md`**
 
@@ -156,7 +304,7 @@ Documentación detallada: **`infra/arranque-stack.md`**
 
 ```bash
 pip install -r requirements.txt
-python -m alembic upgrade head
+python -m alembic upgrade head   # incluye migración 0005 (video_url)
 cd frontend && npm install && cd ..
 ```
 
@@ -172,16 +320,19 @@ curl http://localhost:11434/api/tags
 # T3 — API
 python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 
-# T4 — Celery
+# T4 — Celery (runs async imagen/story)
 python -m celery -A workers.celery_app.celery_app worker -l info
+
+# T4b — Celery video_render (solo si generas Reels)
+python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
 
 # T5 — Frontend
 cd frontend && npm run dev
 
-# T6 — Go publisher (solo al aprobar/publicar en IG)
+# T6 — Go publisher (al aprobar/publicar en IG, LinkedIn o Reels)
 cd microservices/social-publisher-go && go run ./cmd/server
 
-# T7 — ngrok (solo al publicar en Meta/Instagram)
+# T7 — ngrok (solo al publicar en Meta/Instagram — imágenes y videos)
 cd tests/ngrok-v3-stable-windows-amd64 && ./ngrok.exe http 8000
 # Actualizar PUBLIC_IMAGE_BASE_URL con la URL https y reiniciar Uvicorn
 ```
@@ -196,6 +347,8 @@ Dashboard: http://localhost:5173 · API docs: http://127.0.0.1:8000/docs
 IMAGE_PROVIDER=fal
 FAL_API_KEY=tu_clave_fal.ai
 FAL_MODEL=fal-ai/flux-pro/v1.1
+FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_STRENGTH=0.72
 
 LLM_PROVIDER=ollama
 OLLAMA_MODEL=llama3.1
@@ -204,7 +357,16 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 REDIS_URL=redis://localhost:6379/0
 
 SOCIAL_PROVIDER=meta
+GO_PUBLISHER_URL=http://localhost:8088
 PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # obligatorio al publicar en IG
+
+LINKEDIN_CLIENT_ID=...
+LINKEDIN_CLIENT_SECRET=...
+
+VIDEO_PROVIDER=shotstack
+SHOTSTACK_API_KEY=...
+VOICE_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=...
 
 PROMETHEUS_ENABLED=false   # true en producción
 ```
@@ -223,17 +385,34 @@ PROMETHEUS_ENABLED=false   # true en producción
 | 4 Auth + human-in-the-loop | ✅ |
 | 5 LangGraph Copy/QA | ✅ |
 | 6 Go / infra / K8s | 🟡 Parcial — sidecars Go existen; K8s es base |
+| 7 Diseño editorial (arquetipos + Pillow) | ✅ |
+| 8 Foto usuario (Design-as-Code + img2img HITL) | ✅ |
+| 9 LinkedIn nativo con imagen | ✅ |
+| 10 Canva/Figma MCP (plantillas de marca) | ⬜ Pendiente |
+| 11 Video-as-Code (Reels: script + escenas fal.ai + voz + Shotstack) | ✅ |
+
+---
+
+### Higiene técnica (revisión 2026-07-03)
+
+| Tarea | Estado | Notas |
+|-------|--------|-------|
+| Limpieza Upload-Post en docs | ✅ Hecho | Sin referencias en README, `.env.example`, k8s secrets |
+| Prometheus + FastAPI | ✅ Resuelto | `PROMETHEUS_ENABLED=true` expone `/metrics`; instrumentator 7.1.0 + FastAPI 0.115.6 probados |
+| Skaffold / Google Cloud Deploy | ⬜ No iniciado | Existe `k8s/base/` + Dockerfiles; falta pipeline CI/CD, imágenes en registry, perfiles staging/prod |
 
 ---
 
 ### Pendientes conocidos
 
-1. **Canva OAuth** — placeholder, no implementado.
-2. **Frontend: selector de arquetipo** — la API ya soporta `archetype_override`; falta dropdown en el dashboard React.
-3. **Prometheus** — activable con `PROMETHEUS_ENABLED=true`; desactivado en dev por compatibilidad FastAPI ≥ 0.115.
+1. **Canva OAuth** — placeholder en `image_providers.py`, no implementado.
+2. **Canva/Figma MCP** — inserción de foto del cliente en plantillas pre-aprobadas de marca (arquitectura definida, sin código).
+3. **Observabilidad en prod** — activar `PROMETHEUS_ENABLED=true` en despliegue + scrape Grafana/Cloud Monitoring (código listo; falta wiring infra).
+4. **CI/CD K8s** — Skaffold o Cloud Deploy para promover `api` / `worker` / `go-publisher` entre entornos (esqueleto K8s insuficiente solo).
+5. **Video v2** — TikTok (Reels v1 solo publica en Instagram), música de fondo, clips de video del usuario (v1 solo genera fondos con fal.ai stills + Ken Burns, sin subir clips propios).
 
 ---
 
 ### Resumen
 
-MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux en proporciones correctas por red social, aplica layouts tipo agencia, pasa por aprobación humana y publica en Instagram vía Go + Meta OAuth.
+MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux (o usa la foto del usuario como capa base sin destruirla), aplica layouts tipo agencia con Pillow, permite alteración img2img bajo indicaciones del usuario con aprobación humana, publica en Instagram y LinkedIn vía Go + OAuth nativo, y genera Reels programáticos (guion → escenas fal.ai + voz ElevenLabs → render Shotstack) publicados de forma async con aprobación humana idéntica al flujo de imagen.

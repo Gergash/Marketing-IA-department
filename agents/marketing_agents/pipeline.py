@@ -7,6 +7,7 @@ from .publisher import PublisherAgent
 from .quality import ContentQualityGuard
 from .schemas import BriefInput
 from .strategist import ContentStrategistAgent
+from .video_designer import VideoDesignerAgent
 
 
 class MarketingPipeline:
@@ -17,6 +18,7 @@ class MarketingPipeline:
         self.strategist = ContentStrategistAgent()
         self.copywriter = CopywriterAgent()
         self.designer = DesignerAgent()
+        self.video_designer = VideoDesignerAgent()
         self.publisher = PublisherAgent()
         self.quality_guard = ContentQualityGuard()
         self._max_copy_qa_attempts = max_copy_qa_attempts
@@ -31,6 +33,9 @@ class MarketingPipeline:
         content_format: str = "feed",
         image_provider: str | None = None,
         archetype_override: str | None = None,
+        user_asset_url: str | None = None,
+        alter_image_with_ai: bool = False,
+        visual_instructions: str | None = None,
     ) -> dict:
         """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable."""
         strategy = self.strategist.run(brief)
@@ -44,17 +49,31 @@ class MarketingPipeline:
         quality = gout["quality"]
         copy_qa_trace = list(gout.get("events", []))
 
-        design = self.designer.run(
-            brief,
-            copy,
-            strategy,
-            image_provider=image_provider,
-            content_format=content_format,
-            archetype_override=archetype_override,
-        )
+        if content_format == "reel":
+            # Branch de video: guion -> fondos fal.ai -> voz off -> Timeline -> render (Shotstack).
+            design = self.video_designer.run(
+                brief,
+                copy,
+                strategy,
+                image_provider=image_provider,
+            )
+        else:
+            design = self.designer.run(
+                brief,
+                copy,
+                strategy,
+                image_provider=image_provider,
+                content_format=content_format,
+                archetype_override=archetype_override,
+                user_asset_url=user_asset_url,
+                alter_image_with_ai=alter_image_with_ai,
+                visual_instructions=visual_instructions,
+            )
 
         publish_result = None
-        if publish and quality.approved:
+        # PublisherAgent/social_providers aún no son video-aware (image_url requerido);
+        # la publicación de reels ocurre vía Go sidecar (result["design"]["video_url"]), no aquí.
+        if publish and quality.approved and content_format != "reel":
             publish_result = self.publisher.run(
                 brief.red_social,
                 copy,

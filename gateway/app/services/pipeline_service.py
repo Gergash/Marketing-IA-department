@@ -34,8 +34,14 @@ def _brief_input(brief: Brief) -> BriefInput:
     )
 
 
+def _media_url(result: dict) -> str:
+    """URL del medio a servir/publicar: video para reels, imagen para feed/story (video_url tiene prioridad)."""
+    design = result.get("design") or {}
+    return design.get("video_url") or design.get("image_url") or ""
+
+
 def _persist_result(db: Session, run: AgentRun, result: dict, platform: str) -> None:
-    """Guarda JSON del resultado, marca run completado y persiste asset gráfico y publicación si aplica."""
+    """Guarda JSON del resultado, marca run completado y persiste asset gráfico/video y publicación si aplica."""
     run.result_json = json.dumps(result, ensure_ascii=True)
     run.status = "completed"
     db.add(run)
@@ -45,8 +51,9 @@ def _persist_result(db: Session, run: AgentRun, result: dict, platform: str) -> 
         GeneratedAsset(
             tenant_id=run.tenant_id,
             run_id=run.id,
-            image_url=design.get("image_url", ""),
+            image_url=design.get("image_url") or "",
             image_prompt=design.get("image_prompt", ""),
+            video_url=design.get("video_url") or None,
         )
     )
 
@@ -202,21 +209,24 @@ def _publish_via_go(
         return "unavailable"
 
     # Sustituye localhost por la URL pública (Meta exige HTTPS accesible externamente)
-    image_url = result["design"]["image_url"]
+    content_format = getattr(run, "content_format", None) or "feed"
+    media_url = _media_url(result)
     public_base = settings.public_image_base_url.rstrip("/")
-    if image_url.startswith("http://localhost:8000"):
-        image_url = image_url.replace("http://localhost:8000", public_base, 1)
+    if media_url.startswith("http://localhost:8000"):
+        media_url = media_url.replace("http://localhost:8000", public_base, 1)
 
     try:
         payload = {
             "platform": brief.red_social,
             "copy": result["copy"]["copy_final"],
-            "image_url": image_url,
+            "image_url": media_url,
             "idempotency_key": idempotency_key or "",
-            "content_format": getattr(run, "content_format", None) or "feed",
+            "content_format": content_format,
             "access_token": access_token,
             "account_id": account_id,
         }
+        if content_format == "reel":
+            payload["video_url"] = media_url
         with httpx.Client(timeout=60) as client:
             published = client.post(f"{settings.go_publisher_url}/publish", json=payload)
         if published.is_success:
@@ -237,9 +247,9 @@ def _publish_via_go(
 # ---------------------------------------------------------------------------
 
 def _normalize_content_format(value: str | None) -> str:
-    """Normaliza el formato de publicación a `feed` o `story` (valores desconocidos → feed)."""
+    """Normaliza el formato de publicación a `feed`/`story`/`reel` (valores desconocidos → feed)."""
     v = (value or "feed").lower()
-    return v if v in ("feed", "story") else "feed"
+    return v if v in ("feed", "story", "reel") else "feed"
 
 
 def create_run(
@@ -275,6 +285,9 @@ def execute_pipeline(
     idempotency_key: str | None,
     image_provider: str | None = None,
     archetype_override: str | None = None,
+    user_asset_url: str | None = None,
+    alter_image_with_ai: bool = False,
+    visual_instructions: str | None = None,
 ) -> dict:
     """Orquesta el pipeline completo: deduplicación, agentes, aprobación humana opcional, persistencia y publicación."""
     run = db.get(AgentRun, run_id)
@@ -317,6 +330,9 @@ def execute_pipeline(
             content_format=content_format,
             image_provider=image_provider,
             archetype_override=archetype_override,
+            user_asset_url=user_asset_url,
+            alter_image_with_ai=alter_image_with_ai,
+            visual_instructions=visual_instructions,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
@@ -334,6 +350,9 @@ def execute_pipeline(
         content_format=content_format,
         image_provider=image_provider,
         archetype_override=archetype_override,
+        user_asset_url=user_asset_url,
+        alter_image_with_ai=alter_image_with_ai,
+        visual_instructions=visual_instructions,
     )
 
     if publish and result.get("quality", {}).get("approved", False):

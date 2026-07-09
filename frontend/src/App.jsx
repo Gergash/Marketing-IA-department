@@ -52,6 +52,21 @@ async function api(path, method = "GET", body = null) {
   return res.json();
 }
 
+async function uploadAsset(file) {
+  const headers = {};
+  const key = getApiKey();
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${API_BASE}/briefs/upload-asset`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Componente principal
 // ---------------------------------------------------------------------------
@@ -71,7 +86,12 @@ export default function App() {
   const [imageProviders, setImageProviders] = useState([]);
   const [archetypeOverride, setArchetypeOverride] = useState("");
   const [archetypes, setArchetypes] = useState([]);
+  const [userAssetUrl, setUserAssetUrl] = useState("");
+  const [userAssetName, setUserAssetName] = useState("");
+  const [alterImageWithAi, setAlterImageWithAi] = useState(false);
+  const [visualInstructions, setVisualInstructions] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -142,6 +162,8 @@ export default function App() {
   };
 
   const createAndRun = async (asyncMode = false) => {
+    // Los reels se procesan en la cola video_render y tardan minutos: no admiten /runs/sync (422).
+    const effectiveAsync = contentFormat === "reel" ? true : asyncMode;
     setLoading(true);
     setError(null);
     try {
@@ -154,8 +176,13 @@ export default function App() {
         content_format: contentFormat,
         image_provider: imageProvider,
         ...(archetypeOverride ? { archetype_override: archetypeOverride } : {}),
+        ...(userAssetUrl ? { user_asset_url: userAssetUrl } : {}),
+        ...(userAssetUrl && alterImageWithAi ? { alter_image_with_ai: true } : {}),
+        ...(userAssetUrl && alterImageWithAi && visualInstructions.trim()
+          ? { visual_instructions: visualInstructions.trim() }
+          : {}),
       };
-      const run = await api(asyncMode ? "/runs/async" : "/runs/sync", "POST", runReq);
+      const run = await api(effectiveAsync ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
       await loadHistory();
     } catch (e) {
@@ -245,10 +272,12 @@ export default function App() {
           <select value={contentFormat} onChange={(e) => setContentFormat(e.target.value)}>
             <option value="feed">Post en feed (Instagram 1080×1350, 4:5)</option>
             <option value="story">Historia (Instagram 1080×1920)</option>
+            <option value="reel">Reel (Instagram 1080×1920, video)</option>
           </select>
         </label>
         <p className="hint">
           Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
+          {contentFormat === "reel" && " Los reels son async-only: se envían siempre con \"Enviar Async\"."}
         </p>
       </section>
 
@@ -301,6 +330,68 @@ export default function App() {
           </p>
         </div>
 
+        <div className="user-asset-block">
+          <span className="field-label">Tu foto (Design-as-Code)</span>
+          <label>
+            Subir imagen base
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={loading || uploading}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setError(null);
+                setUploading(true);
+                try {
+                  const up = await uploadAsset(file);
+                  setUserAssetUrl(up.url);
+                  setUserAssetName(up.filename);
+                } catch (err) {
+                  setError(err.message);
+                  setUserAssetUrl("");
+                  setUserAssetName("");
+                } finally {
+                  setUploading(false);
+                }
+              }}
+            />
+            {uploading && <span className="spinner spinner-dark" style={{ marginLeft: "0.5rem" }}></span>}
+          </label>
+          {userAssetUrl && (
+            <p className="hint">
+              Foto cargada: <code>{userAssetName || userAssetUrl}</code>
+              {" "}
+              <button type="button" onClick={() => { setUserAssetUrl(""); setUserAssetName(""); setAlterImageWithAi(false); }}>
+                Quitar
+              </button>
+            </p>
+          )}
+          <label style={{ display: "block", marginTop: "0.5rem" }}>
+            <input
+              type="checkbox"
+              checked={alterImageWithAi}
+              disabled={!userAssetUrl || loading}
+              onChange={(e) => setAlterImageWithAi(e.target.checked)}
+            />
+            {" "}Alterar imagen con IA (requiere prompt; pasa por pending_approval)
+          </label>
+          {alterImageWithAi && userAssetUrl && (
+            <label>
+              Indicaciones visuales
+              <textarea
+                rows={2}
+                placeholder="Ej: expandir fondo con nieve, estilo ilustración suave..."
+                value={visualInstructions}
+                onChange={(e) => setVisualInstructions(e.target.value)}
+              />
+            </label>
+          )}
+          <p className="hint">
+            Sin IA: tu foto queda intacta como capa base; Pillow añade texto y diseño editorial.
+          </p>
+        </div>
+
         {Object.keys(form).map((key) => (
           <label key={key}>
             {key}
@@ -311,10 +402,12 @@ export default function App() {
           </label>
         ))}
         <div className="actions">
-          <button disabled={loading} onClick={() => createAndRun(false)}>
+          <button disabled={loading || uploading} onClick={() => createAndRun(false)}>
+            {loading && contentFormat !== "reel" ? <span className="spinner"></span> : null}
             Ejecutar Sync
           </button>
-          <button disabled={loading} onClick={() => createAndRun(true)}>
+          <button disabled={loading || uploading} onClick={() => createAndRun(true)}>
+            {loading ? <span className="spinner"></span> : null}
             Enviar Async
           </button>
         </div>
@@ -343,11 +436,36 @@ export default function App() {
               {result.result.design.layout_label && (
                 <> · layout: {result.result.design.layout_label}</>
               )}
+              {result.result.design.design_source && (
+                <> · fuente: {result.result.design.design_source}</>
+              )}
               :
             </p>
             <img
               src={resolveImageUrl(result.result.design.image_url)}
               alt="Imagen generada"
+              style={{ maxWidth: "100%", borderRadius: "6px", border: "1px solid #333" }}
+            />
+          </div>
+        )}
+        {result?.result?.design?.video_url && (
+          <div style={{ marginBottom: "1rem" }}>
+            <p style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.4rem" }}>
+              Reel generado
+              {result.result.design.video_provider && (
+                <> — <code>{result.result.design.video_provider}</code></>
+              )}
+              {result.result.design.width > 0 && (
+                <> · {result.result.design.width}×{result.result.design.height}px</>
+              )}
+              {result.result.design.duration_s > 0 && (
+                <> · {result.result.design.duration_s.toFixed(1)}s</>
+              )}
+              :
+            </p>
+            <video
+              controls
+              src={resolveImageUrl(result.result.design.video_url)}
               style={{ maxWidth: "100%", borderRadius: "6px", border: "1px solid #333" }}
             />
           </div>
@@ -378,6 +496,7 @@ export default function App() {
                     onClick={() => doApprove(item.run_id)}
                     style={{ marginRight: "0.3rem" }}
                   >
+                    {approvingRunId === item.run_id ? <span className="spinner"></span> : null}
                     {approvingRunId === item.run_id ? "Publicando…" : "✓ Aprobar"}
                   </button>
                   <button disabled={approvingRunId != null} onClick={() => doReject(item.run_id)}>✗ Rechazar</button>

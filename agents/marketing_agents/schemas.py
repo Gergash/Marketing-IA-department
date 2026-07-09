@@ -44,6 +44,22 @@ class DesignOutput(BaseModel):
     layout_archetype: str = ""
     layout_label: str = ""
     color_palette: str = ""
+    design_source: str = "generated"  # generated | user_overlay | user_img2img
+
+
+class VideoDesignOutput(BaseModel):
+    """Salida del diseñador de video: URL del reel renderizado, sibling de `DesignOutput` para content_format=reel."""
+
+    image_url: str | None = None
+    video_url: str = ""
+    video_prompt: str = ""
+    video_provider: str = ""
+    voice_provider: str = ""
+    width: int = 0
+    height: int = 0
+    duration_s: float = 0.0
+    scene_count: int = 0
+    layout_archetype: str = ""
 
 
 class PublishOutput(BaseModel):

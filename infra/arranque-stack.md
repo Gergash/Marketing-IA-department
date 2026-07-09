@@ -22,17 +22,18 @@ Copia y configura `.env` desde `.env.example` (nunca commitear `.env`).
 
 ---
 
-## Orden de arranque — 7 terminales
+## Orden de arranque — 7–8 terminales
 
 | # | Servicio | Cuándo | Puerto |
 |---|----------|--------|--------|
 | T1 | Docker (Postgres + Redis) | Siempre | 5433, 6379 |
 | T2 | Ollama | Siempre (LLM) | 11434 |
 | T3 | FastAPI (Uvicorn) | Siempre | 8000 |
-| T4 | Celery worker | Runs async | — |
+| T4 | Celery worker (cola default) | Runs async imagen/story | — |
+| T4b | Celery worker `video_render` | Solo Reels (`content_format=reel`) | — |
 | T5 | Frontend Vite | Dashboard | 5173 |
-| T6 | Go publisher | Al aprobar/publicar en IG | 8088 |
-| T7 | ngrok | Al publicar en Meta/Instagram | túnel → 8000 |
+| T6 | Go publisher | Al aprobar/publicar en IG / Reels | 8088 |
+| T7 | ngrok | Al publicar en Meta (imagen o video) | túnel → 8000 |
 
 ---
 
@@ -97,7 +98,22 @@ source .venv/Scripts/activate
 python -m celery -A workers.celery_app.celery_app worker -l info
 ```
 
-Necesario para **Enviar async** desde el dashboard.
+Necesario para **Enviar async** desde el dashboard (formatos `feed` y `story`).
+
+---
+
+### T4b — Celery worker cola `video_render` (Reels)
+
+Solo si vas a generar **`content_format=reel`**. Los renders de video tardan minutos y usan una cola dedicada (no compite con imágenes):
+
+```bash
+cd ~/Desktop/PowerUps/Marketing\ DEPA\ IA
+source .venv/Scripts/activate
+python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
+```
+
+Requisitos en `.env`: `VIDEO_PROVIDER=shotstack`, `SHOTSTACK_API_KEY`, `VOICE_PROVIDER=elevenlabs`, `ELEVENLABS_API_KEY` (ver sección PASO 3D en `.env.example`).  
+`/runs/sync` con `reel` responde **422** — usa siempre **Enviar async**.
 
 ---
 
@@ -127,7 +143,7 @@ Log esperado: `social-publisher-go escuchando en :8088`
 
 ### T7 — ngrok (URL pública para Meta)
 
-Meta exige HTTPS para descargar imágenes. El túnel apunta al **API (:8000)**, no al frontend.
+Meta exige HTTPS para descargar **imágenes y videos**. El túnel apunta al **API (:8000)**, no al frontend.
 
 Ejecutable incluido en el repo:
 
@@ -148,11 +164,19 @@ Reinicia **Uvicorn** (T3) tras cambiar `.env`.
 
 ## Flujo de prueba rápida (fal.ai + human-in-the-loop)
 
-1. T1–T5 levantados (T6–T7 solo si publicas en IG).
+1. T1–T5 levantados (T4b solo para Reels; T6–T7 solo si publicas en IG).
 2. `.env`: `IMAGE_PROVIDER=fal`, `FAL_API_KEY=...`, `LLM_PROVIDER=ollama`.
-3. Dashboard → crear brief → **Enviar async**.
+3. Dashboard → crear brief → formato **feed** o **story** → **Enviar async**.
 4. Esperar `pending_approval` con imagen en Resultado.
 5. T6 + T7 → un solo clic en **Aprobar**.
+
+### Flujo Reels (Video-as-Code)
+
+1. T1–T5 + **T4b** (`video_render`).
+2. `.env`: además `VIDEO_PROVIDER=shotstack`, `VOICE_PROVIDER=elevenlabs` (+ API keys).
+3. Dashboard → formato **reel** → **Enviar async** (no usar Sync).
+4. Esperar `pending_approval` con preview `<video>` en Resultado.
+5. T6 + T7 → **Aprobar** (Go publica con `media_type=REELS`).
 
 ---
 
@@ -160,8 +184,9 @@ Reinicia **Uvicorn** (T3) tras cambiar `.env`.
 
 | Escenario | Terminales necesarias |
 |-----------|------------------------|
-| Solo generar contenido (fal.ai) | T1, T2, T3, T4, T5 |
-| Publicar en Instagram | + T6, T7 |
+| Solo generar contenido imagen (fal.ai) | T1, T2, T3, T4, T5 |
+| Generar Reels (Shotstack + voz) | T1, T2, T3, T4, **T4b**, T5 |
+| Publicar en Instagram (imagen o reel) | + T6, T7 |
 | Prueba de fuego scheduler | T3 (+ seed script, sin Celery obligatorio) |
 
 Runbook scheduler: [`prueba-de-fuego-scheduler.md`](prueba-de-fuego-scheduler.md)

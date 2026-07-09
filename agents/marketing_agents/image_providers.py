@@ -303,3 +303,115 @@ def _placeholder(prompt: str, *, spec=None) -> str:
         logger.warning("image.placeholder_fallback", error=str(exc))
         text = prompt[:50].replace(" ", "+")
         return f"https://dummyimage.com/{spec.width}x{spec.height}/1a202c/ffffff&text={text}"
+
+
+def compose_from_user_asset(
+    user_asset_url: str,
+    *,
+    spec,
+    overlay_text: str | None = None,
+    overlay_subline: str | None = None,
+    overlay_cta: str | None = None,
+    red_social: str = "instagram",
+    layout_archetype: str = "typographic_poster",
+    alter_with_ai: bool = False,
+    visual_instructions: str | None = None,
+    image_provider: str | None = None,
+) -> tuple[str, int, int, str]:
+    """
+    Design-as-Code: foto del usuario como capa base + overlay Pillow.
+    Si alter_with_ai=True, pasa por fal img2img antes del overlay.
+    Retorna (url, width, height, design_source).
+    """
+    from gateway.app.core.settings import get_settings
+
+    from .user_assets import fit_image_to_spec, load_asset_bytes, save_composed_image
+
+    s = get_settings()
+    raw = load_asset_bytes(user_asset_url)
+    fitted = fit_image_to_spec(raw, spec)
+
+    design_source = "user_overlay"
+    if alter_with_ai:
+        provider = (image_provider or s.image_provider).strip().lower()
+        if provider == "fal" and s.fal_api_key:
+            prompt = (visual_instructions or "Enhance for social media, keep subject recognizable").strip()
+            fitted = _fal_img2img(
+                fitted,
+                prompt,
+                s.fal_api_key,
+                s.fal_img2img_model,
+                strength=s.fal_img2img_strength,
+                spec=spec,
+            )
+            design_source = "user_img2img"
+        else:
+            logger.warning("user_asset.img2img_skipped", reason="fal not configured")
+
+    if overlay_text:
+        fitted = _apply_layout_overlay(
+            fitted,
+            overlay_text,
+            overlay_subline,
+            overlay_cta,
+            layout_archetype=layout_archetype,
+            font_seed=red_social,
+        )
+
+    prefix = "user_img2img" if design_source == "user_img2img" else "user_overlay"
+    url, w, h = save_composed_image(fitted, prefix=prefix)
+    logger.info("user_asset.composed", source=design_source, url=url)
+    return url, w, h, design_source
+
+
+def _fal_img2img(
+    img_bytes: bytes,
+    prompt: str,
+    api_key: str,
+    model: str,
+    *,
+    strength: float,
+    spec,
+) -> bytes:
+    """Alteración controlada vía fal image-to-image; devuelve bytes PNG."""
+    import os
+    import tempfile
+
+    import httpx
+
+    os.environ.setdefault("FAL_KEY", api_key)
+
+    try:
+        import fal_client
+    except ImportError:
+        logger.error("image.fal_missing_sdk", hint="pip install fal-client")
+        return img_bytes
+
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(img_bytes)
+            tmp_path = tmp.name
+        uploaded_url = fal_client.upload_file(tmp_path)
+        result = fal_client.run(
+            model,
+            arguments={
+                "prompt": prompt[:2000],
+                "image_url": uploaded_url,
+                "strength": strength,
+                "image_size": fal_image_size_arg(spec),
+                "num_inference_steps": 28,
+                "enable_safety_checker": False,
+            },
+        )
+        out_url: str = result["images"][0]["url"]
+        resp = httpx.get(out_url, timeout=90, follow_redirects=True)
+        resp.raise_for_status()
+        logger.info("image.fal_img2img_ok", model=model)
+        return resp.content
+    except Exception as exc:
+        logger.error("image.fal_img2img_error", error=str(exc))
+        return img_bytes
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)

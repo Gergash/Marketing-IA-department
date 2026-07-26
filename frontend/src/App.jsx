@@ -97,6 +97,10 @@ export default function App() {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
+  // Stub de edición: instrucciones de cambio locales hasta conectar POST /runs/{id}/revise
+  const [revisionNotes, setRevisionNotes] = useState("");
+  const [revisionByRunId, setRevisionByRunId] = useState({});
+  const [revisionFeedback, setRevisionFeedback] = useState(null);
 
   const loadHistory = async () => {
     try {
@@ -188,6 +192,8 @@ export default function App() {
       };
       const run = await api(effectiveAsync ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
+      setRevisionNotes("");
+      setRevisionFeedback(null);
       await loadHistory();
     } catch (e) {
       setError(e.message);
@@ -221,6 +227,29 @@ export default function App() {
     } catch (e) {
       setError(e.message);
     }
+  };
+
+  /** Stub: captura instrucciones de edición sin llamar al pipeline todavía. */
+  const requestRevision = (runId, notes) => {
+    const trimmed = (notes || "").trim();
+    if (!trimmed) {
+      setRevisionFeedback({
+        runId: runId ?? null,
+        ok: false,
+        message: "Escribe qué quieres cambiar en la pieza antes de solicitar cambios.",
+      });
+      return;
+    }
+    if (runId != null) {
+      setRevisionByRunId((prev) => ({ ...prev, [runId]: trimmed }));
+    } else {
+      setRevisionNotes(trimmed);
+    }
+    setRevisionFeedback({
+      runId: runId ?? null,
+      ok: true,
+      message: "Instrucción guardada; conexión al pipeline pendiente.",
+    });
   };
 
   // ------------------------------------------------------------------
@@ -486,6 +515,41 @@ export default function App() {
             />
           </div>
         )}
+        {(result?.result?.design?.image_url || result?.result?.design?.video_url) && (
+          <div className="revision-block" style={{ marginBottom: "1rem" }}>
+            <label>
+              Modificaciones a la pieza
+              <textarea
+                rows={3}
+                placeholder="Ej: cambia el headline, fondo más oscuro, CTA más corto…"
+                value={revisionNotes}
+                onChange={(e) => {
+                  setRevisionNotes(e.target.value);
+                  if (revisionFeedback && revisionFeedback.runId == null) setRevisionFeedback(null);
+                }}
+              />
+            </label>
+            <div className="actions" style={{ marginTop: "0.5rem" }}>
+              <button
+                type="button"
+                onClick={() => requestRevision(result?.run_id ?? null, revisionNotes)}
+              >
+                Solicitar cambios
+              </button>
+            </div>
+            {revisionFeedback && revisionFeedback.runId == null && (
+              <p
+                className="hint"
+                style={{ color: revisionFeedback.ok ? "#2f6f4e" : "#b00020", marginTop: "0.4rem" }}
+              >
+                {revisionFeedback.message}
+              </p>
+            )}
+            <p className="hint">
+              Describe los cambios deseados. La regeneración automática se conectará al pipeline más adelante.
+            </p>
+          </div>
+        )}
         <pre>{result ? JSON.stringify(result, null, 2) : "Sin ejecución sincrónica aún."}</pre>
       </section>
 
@@ -506,17 +570,52 @@ export default function App() {
                 </span>
               )}
               {item.status === "pending_approval" && (
-                <span style={{ marginLeft: "1rem" }}>
-                  <button
-                    disabled={approvingRunId != null}
-                    onClick={() => doApprove(item.run_id)}
-                    style={{ marginRight: "0.3rem" }}
-                  >
-                    {approvingRunId === item.run_id ? <span className="spinner"></span> : null}
-                    {approvingRunId === item.run_id ? "Publicando…" : "✓ Aprobar"}
-                  </button>
-                  <button disabled={approvingRunId != null} onClick={() => doReject(item.run_id)}>✗ Rechazar</button>
-                </span>
+                <div style={{ marginTop: "0.5rem", marginLeft: 0 }}>
+                  <span>
+                    <button
+                      disabled={approvingRunId != null}
+                      onClick={() => doApprove(item.run_id)}
+                      style={{ marginRight: "0.3rem" }}
+                    >
+                      {approvingRunId === item.run_id ? <span className="spinner"></span> : null}
+                      {approvingRunId === item.run_id ? "Publicando…" : "✓ Aprobar"}
+                    </button>
+                    <button disabled={approvingRunId != null} onClick={() => doReject(item.run_id)}>✗ Rechazar</button>
+                  </span>
+                  <label style={{ display: "block", marginTop: "0.5rem" }}>
+                    Modificaciones a la pieza
+                    <textarea
+                      rows={2}
+                      placeholder="Ej: cambia el headline, fondo más oscuro, CTA más corto…"
+                      value={revisionByRunId[item.run_id] || ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setRevisionByRunId((prev) => ({ ...prev, [item.run_id]: value }));
+                        if (revisionFeedback?.runId === item.run_id) setRevisionFeedback(null);
+                      }}
+                    />
+                  </label>
+                  <div className="actions" style={{ marginTop: "0.35rem" }}>
+                    <button
+                      type="button"
+                      disabled={approvingRunId != null}
+                      onClick={() => requestRevision(item.run_id, revisionByRunId[item.run_id] || "")}
+                    >
+                      Solicitar cambios
+                    </button>
+                  </div>
+                  {revisionFeedback?.runId === item.run_id && (
+                    <p
+                      className="hint"
+                      style={{
+                        color: revisionFeedback.ok ? "#2f6f4e" : "#b00020",
+                        marginTop: "0.35rem",
+                      }}
+                    >
+                      {revisionFeedback.message}
+                    </p>
+                  )}
+                </div>
               )}
             </li>
           ))}

@@ -13,37 +13,46 @@ LangGraph no sustituye al pipeline completo: solo encapsula el subgrafo donde ti
 Brief
   │
   ▼
-ContentStrategistAgent          ← lineal (LLM o stub)
+ContentStrategistAgent          ← lineal (LLM o stub; doctrina inbound inyectada)
   │
   ▼
 ┌─────────────────────────────┐
 │ LangGraph: CopyQAState      │
-│   copywriter → qa           │
+│   copywriter → qa           │  ← copywriter también lleva inbound
 │        ▲         │          │
 │        └─ revise ┘          │
 │   (hasta max_attempts)       │
 └─────────────────────────────┘
   │
-  ├─ content_format ≠ reel ──► DesignerAgent        ← lineal (imagen)
+  ├─ feed / story ───────────► DesignerAgent        ← lineal (imagen)
   │
-  └─ content_format = reel ──► VideoScriptAgent
-                          └──► VideoDesignerAgent   ← lineal (video)
+  ├─ content_format = reel ──► VideoScriptAgent (inbound) → VideoDesignerAgent
+  │
+  └─ user_clip_reel ─────────► ClipReelDesigner     ← Drive → Whisper → Shotstack
   │
   ▼
-PublisherAgent (si QA aprobó) ← lineal
+HITL (Aprobar / Rechazar; UI "Solicitar cambios" stub)
+  │
+  ▼
+PublisherAgent (si QA aprobó) ← lineal (Go sidecar Meta/LinkedIn)
 ```
+
+Doctrina: `knowledge/inbound_marketing.py` → addendum en Strategist, Copywriter y VideoScriptAgent
+(pirámide Entretener → Información → Conexión; `publico_objetivo` del brief).
 
 ## Módulos lineales
 
 | Módulo | Rol | Entrada principal | Salida |
 |--------|-----|-------------------|--------|
-| `strategist.py` | Estrategia de contenido | `BriefInput` | `StrategyOutput` |
-| `copywriter.py` | Redacción (y revisiones con feedback QA) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
+| `strategist.py` | Estrategia de contenido (inbound) | `BriefInput` | `StrategyOutput` |
+| `copywriter.py` | Redacción (y revisiones con feedback QA; inbound) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
 | `designer.py` | Imagen: Flux, foto usuario (overlay/img2img) o mock | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
-| `video_script.py` | Guion reel 3-5 escenas | `BriefInput`, `CopyOutput`, `StrategyOutput` | guion escenas |
-| `video_designer.py` | Escenas fal + voz + Shotstack | brief, copy, strategy, guion | `VideoDesignOutput` |
+| `video_script.py` | Guion reel 3-5 escenas (inbound) | `BriefInput`, `CopyOutput`, `StrategyOutput` | guion escenas |
+| `video_designer.py` | Escenas fal + voz + Shotstack (`fal.media` o publicize) | brief, copy, strategy, guion | `VideoDesignOutput` |
+| `clip_reel_designer.py` | Reel desde clips Drive | brief, `drive_folder_id` | `VideoDesignOutput` |
 | `publisher.py` | Publicación (mock o proveedor real) | plataforma, copy, diseño | `PublishOutput` |
 | `quality.py` | Reglas de compliance / tono | texto, `tono_marca` | `QualityReview` |
+| `knowledge/inbound_marketing.py` | Doctrina inbound + pirámide redes | — | addendum `_SYSTEM` |
 
 ## Subgrafo LangGraph (`graph_copy_qa.py`)
 
@@ -79,7 +88,13 @@ Controla cuántas rondas de copy como máximo se permiten antes de salir del gra
 
 - Tras copy/QA, `MarketingPipeline` delega a `VideoScriptAgent` + `VideoDesignerAgent` en lugar de `DesignerAgent`.
 - Render async vía Celery cola `video_render` (no usar `/runs/sync`).
+- Con fal.ai, fondos/voz se pasan a Shotstack como URLs `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) sigue siendo necesario para Meta y assets locales.
 - `result["design"]` incluye `video_url` (reels) o `image_url` (feed/story); misma clave `design` en ambos casos.
+
+## Rama clips usuario (`content_format="user_clip_reel"`)
+
+- Async-only; requiere `drive_folder_id`. Orquestación en `ClipReelDesigner` (Drive → Whisper → hook-scored → captions → wan-effects opcional → Shotstack).
+- HITL: Aprobar/Rechazar; **Solicitar cambios** es stub de UI (sin `POST /runs/{id}/revise` aún).
 
 ## Cuándo ampliar LangGraph
 

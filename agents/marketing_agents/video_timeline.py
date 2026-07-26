@@ -108,54 +108,93 @@ def _clamped_scene_durations(timeline: Timeline) -> list[float]:
     return [d * scale for d in base]
 
 
+# Estilos TitleAsset válidos en Shotstack (el archetype interno no se envía tal cual).
+_SHOTSTACK_TITLE_STYLE = "minimal"
+
+
 def to_shotstack_edit(timeline: Timeline) -> dict:
-    """Mapea el Timeline provider-neutral a la forma de JSON `edit` que espera la API de Shotstack."""
+    """Mapea el Timeline provider-neutral a la forma de JSON `edit` que espera la API de Shotstack.
+
+    Shotstack exige un Clip por asset: el texto va en pistas overlay (arriba), no como
+    propiedad inventada `title_asset` dentro del clip de imagen/video.
+    Orden de tracks: captions → títulos → media (el primero se renderiza encima).
+    """
     durations = _clamped_scene_durations(timeline)
 
-    clips: list[dict] = []
+    media_clips: list[dict] = []
+    title_clips: list[dict] = []
     start = 0.0
     for scene, length in zip(timeline.scenes, durations):
         if scene.asset_type == "video":
-            clip: dict = {
-                "asset": {"type": "video", "src": scene.background_url, "trim": scene.trim_in},
-                "start": start,
-                "length": length,
-            }
+            media_clips.append(
+                {
+                    "asset": {"type": "video", "src": scene.background_url, "trim": scene.trim_in},
+                    "start": start,
+                    "length": length,
+                    "fit": "cover",
+                }
+            )
         else:
-            clip = {
-                "asset": {"type": "image", "src": scene.background_url},
-                "start": start,
-                "length": length,
-                "effect": scene.effect,
-            }
-        if scene.headline or scene.subline:
-            clip["title_asset"] = {
-                "type": "title",
-                "text": scene.headline,
-                "sub_text": scene.subline,
-                "style": scene.archetype,
-            }
-        clips.append(clip)
+            media_clips.append(
+                {
+                    "asset": {"type": "image", "src": scene.background_url},
+                    "start": start,
+                    "length": length,
+                    "effect": scene.effect,
+                    "fit": "cover",
+                }
+            )
+
+        overlay_text = "\n".join(part for part in (scene.headline, scene.subline) if part).strip()
+        if overlay_text:
+            title_clips.append(
+                {
+                    "asset": {
+                        "type": "title",
+                        "text": overlay_text,
+                        "style": _SHOTSTACK_TITLE_STYLE,
+                        "color": "#ffffff",
+                        "size": "large",
+                        "position": "center",
+                    },
+                    "start": start,
+                    "length": length,
+                }
+            )
         start += length
 
-    tracks: list[dict] = [{"clips": clips}]
-
+    # tracks[0] = capa superior. Media siempre al fondo.
+    tracks: list[dict] = []
     if timeline.captions:
-        caption_clips = [
+        tracks.append(
             {
-                "asset": {"type": "title", "text": cap.text, "style": "minimal"},
-                "start": cap.start_s,
-                "length": cap.end_s - cap.start_s,
+                "clips": [
+                    {
+                        "asset": {
+                            "type": "title",
+                            "text": cap.text,
+                            "style": "subtitle",
+                            "color": "#ffffff",
+                            "size": "small",
+                            "position": "bottom",
+                        },
+                        "start": cap.start_s,
+                        "length": max(cap.end_s - cap.start_s, 0.1),
+                    }
+                    for cap in timeline.captions
+                ]
             }
-            for cap in timeline.captions
-        ]
-        tracks.append({"clips": caption_clips})
+        )
+    if title_clips:
+        tracks.append({"clips": title_clips})
+    tracks.append({"clips": media_clips})
 
     edit: dict = {
         "timeline": {"tracks": tracks},
+        # Shotstack no admite resolution="custom": presets = preview|mobile|sd|hd|1080|4k.
+        # Con size custom hay que omitir resolution y aspectRatio; para Reels usamos preset 1080 + 9:16.
         "output": {
-            "resolution": "custom",
-            "size": {"width": timeline.output.width, "height": timeline.output.height},
+            "resolution": "1080",
             "aspectRatio": "9:16",
             "fps": timeline.output.fps,
             "format": timeline.output.fmt,

@@ -24,6 +24,12 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     broker_connection_retry_on_startup=True,
     broker_transport_options={"visibility_timeout": 3600},
+    task_annotations={
+        "workers.tasks.execute_video_pipeline_task": {
+            "time_limit": 1200,
+            "soft_time_limit": 1080,
+        },
+    },
 )
 
 # Windows: prefork (billiard) suele fallar con PermissionError en semaforos (WinError 5).
@@ -32,3 +38,5 @@ celery_app.conf.update(
 if sys.platform == "win32":
     celery_app.conf.worker_pool = "threads"
     celery_app.conf.worker_concurrency = 4
+
+import workers.tasks  # noqa: E402,F401

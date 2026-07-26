@@ -67,8 +67,7 @@ def generate_image(
         return url, spec.width, spec.height
     if provider == "fal" and not s.fal_api_key:
         logger.error("image.fal_missing_key")
-        url = _placeholder(prompt, spec=spec)
-        return url, spec.width, spec.height
+        raise RuntimeError("image_gen_failed:fal: missing API key")
     if provider == "openai" and s.openai_api_key:
         url = _dalle(prompt, s.openai_api_key)
         return url, spec.width, spec.height
@@ -117,7 +116,7 @@ def _stable_diffusion(
         images = resp.json().get("images", [])
         if not images:
             logger.warning("image.sd_empty_response")
-            return _placeholder(prompt, spec=spec)
+            raise RuntimeError("image_gen_failed:stable_diffusion: empty response")
 
         raw = base64.b64decode(images[0])
 
@@ -137,9 +136,14 @@ def _stable_diffusion(
         url = f"http://localhost:8000/static/images/{filename}"
         logger.info("image.sd_generated", url=url, size=f"{spec.width}x{spec.height}")
         return url
+    except RuntimeError:
+        raise
     except Exception as exc:
         logger.error("image.sd_error", error=str(exc))
-        return _placeholder(prompt, spec=spec)
+        raise RuntimeError(
+            f"image_gen_failed:stable_diffusion: {exc}. "
+            "Arranca A1111/Forge en STABLE_DIFFUSION_URL o elige fal.ai en el dashboard."
+        ) from exc
 
 
 def _apply_layout_overlay(
@@ -186,7 +190,7 @@ def _fal(
         import fal_client  # pip install fal-client
     except ImportError:
         logger.error("image.fal_missing_sdk", hint="pip install fal-client")
-        return _placeholder(prompt, spec=spec)
+        raise RuntimeError("image_gen_failed:fal: fal_client not installed") from None
 
     visual_prompt = (
         f"{prompt[:1800]}. No text, no letters, no watermark. "
@@ -209,10 +213,11 @@ def _fal(
             model=model,
             size=f"{spec.width}x{spec.height}",
             url=image_url[:80],
+            prompt_preview=visual_prompt[:160],
         )
     except Exception as exc:
-        logger.error("image.fal_api_error", error=str(exc))
-        return _placeholder(prompt, spec=spec)
+        logger.error("image.fal_api_error", error=str(exc), prompt_preview=visual_prompt[:160])
+        raise RuntimeError(f"image_gen_failed:fal: {exc}") from exc
 
     try:
         img_resp = httpx.get(image_url, timeout=60, follow_redirects=True)
@@ -232,12 +237,17 @@ def _fal(
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
         filename = f"fal_{uuid.uuid4().hex}.png"
         (_STATIC_DIR / filename).write_bytes(raw)
-        url = f"http://localhost:8000/static/images/{filename}"
-        logger.info("image.fal_saved", url=url)
-        return url
+        local_url = f"http://localhost:8000/static/images/{filename}"
+        # Sin overlay: Shotstack puede bajar directo de fal.media (evita ngrok/interstitial).
+        # Con overlay Pillow el bytes cambió → hay que servir el PNG local vía PUBLIC_IMAGE_BASE_URL.
+        if overlay_text:
+            logger.info("image.fal_saved", url=local_url, source="local_overlay")
+            return local_url
+        logger.info("image.fal_saved", url=local_url, source="fal_cdn", cdn_url=image_url[:80])
+        return image_url
     except Exception as exc:
         logger.error("image.fal_download_error", error=str(exc))
-        return _placeholder(prompt, spec=spec)
+        raise RuntimeError(f"image_gen_failed:fal:download: {exc}") from exc
 
 
 def _dalle(prompt: str, api_key: str) -> str:
@@ -346,7 +356,11 @@ def compose_from_user_asset(
             )
             design_source = "user_img2img"
         else:
-            logger.warning("user_asset.img2img_skipped", reason="fal not configured")
+            logger.warning(
+                "user_asset.img2img_skipped",
+                reason="img2img solo está implementado con fal",
+                provider=provider,
+            )
 
     if overlay_text:
         fitted = _apply_layout_overlay(

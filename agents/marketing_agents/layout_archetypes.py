@@ -137,17 +137,26 @@ def build_flux_prompt(
 
 
 def _visual_metaphor_hint(brief: BriefInput, strategy: StrategyOutput) -> str:
-    """Metáfora visual corta derivada del brief (sin LLM extra)."""
+    """Metáfora visual corta derivada del brief (sin LLM extra).
+
+    El orden importa: keywords específicos (IoT, cámaras) van antes que coincidencias
+    amplias como \"ia\" dentro de \"con IA\", que de otro modo diluyen el tema.
+    """
     tema = brief.tema.lower()
+    if any(k in tema for k in ("iot", "cámara", "camara", "seguridad", "vigilancia", "cctv")):
+        return (
+            "smart city IoT security cameras, AI video analytics dashboard, "
+            "surveillance sensors connected to a control center"
+        )
     if "instagram" in tema or "redes" in tema or "social" in tema:
         return "breaking dependency on single platform, digital independence"
-    if "ia" in tema or "inteligencia" in tema or "automatiz" in tema:
+    if "inteligencia artificial" in tema or "automatiz" in tema or tema.endswith(" ia") or " ia " in f" {tema} ":
         return "human plus AI collaboration, futuristic workflow"
     if "dato" in tema or "decision" in tema:
         return "data-driven clarity, precision and insight"
     if strategy.tipo_post == "promocional":
         return "growth, momentum, bold transformation"
-    return f"professional {brief.objetivo} for {brief.publico_objetivo}"
+    return f"professional scene about {brief.tema} for {brief.publico_objetivo}, {brief.objetivo}"
 
 
 def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:

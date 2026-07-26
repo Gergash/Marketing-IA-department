@@ -44,12 +44,15 @@ class Settings(BaseSettings):
     fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
     fal_img2img_strength: float = 0.72
 
-    # Voiceover generation — provider: elevenlabs | openai | mock
+    # Voiceover generation — provider: elevenlabs | openai | fal | mock
     voice_provider: str = "elevenlabs"
     voice_language: str = "es"
     elevenlabs_api_key: str = ""
     # Voz multilingüe por defecto (funciona en español con el modelo eleven_multilingual_v2)
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    # fal.ai TTS (reusa fal_api_key) — modelo nativo en español; voces: ef_dora | em_alex | em_santa
+    fal_tts_model: str = "fal-ai/kokoro/spanish"
+    fal_tts_voice: str = "ef_dora"
 
     # Transcripción de audio (clips de usuario) — provider: whisper | mock
     stt_provider: str = "whisper"

@@ -24,7 +24,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 | Cola de tareas | Celery |
 | Frontend | React + Vite |
 | Contenido visual | fal.ai (Flux Pro) + Pillow overlay + foto usuario (Design-as-Code) |
-| Video (Reels) | Shotstack (block-and-poll) + ElevenLabs/OpenAI TTS (voz en español) |
+| Video (Reels) | Shotstack (block-and-poll, `stage`/`v1`) + fal.ai Kokoro TTS (voz; ElevenLabs/OpenAI alt) |
 | Contenedores | Docker |
 
 ## Estado del roadmap
@@ -33,10 +33,13 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 2** PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
 - **Paso 3** APIs reales: LLMs (Anthropic/OpenAI/Ollama), imagen (fal.ai/Flux, SD, DALL·E), social (Meta/LinkedIn nativo vía OAuth + Go)
 - **Paso 4** Seguridad: Auth real, secrets, human-in-the-loop
-- **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
+- **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md). Doctrina inbound en `agents/marketing_agents/knowledge/` (Entretener→Informacion→Conexion).
 - **Paso 6** 🟡 Go/infra: sidecar Go operativo; MCP connect en stdio; Kubernetes esqueleto
-- **Paso 7** Video-as-Code (Reels): `content_format=reel` genera un video corto vertical (script → escenas fal.ai + voz ElevenLabs → timeline JSON → render Shotstack → publicación nativa vía Go); async-only, cola Celery dedicada `video_render`.
-- **Paso 8** Reel con clips del usuario: `content_format=user_clip_reel` arma un Reel (6-60s) a partir de clips de video propios en una carpeta de Google Drive (OAuth `drive.readonly`) → transcripción con Whisper (timestamps por palabra) → selección de segmentos hook-scored (`ClipEditorAgent`) → captions por segmento → efecto visual opcional (fal.ai wan-effects) sobre el segmento hook → mismo render Shotstack y publicación Go REELS que `reel`. Pendiente v2: TikTok, música, captions por palabra.
+- **Paso 7** Video-as-Code (Reels): `content_format=reel` (script → escenas fal.ai + voz fal → timeline TitleAsset → Shotstack). Assets fal van a Shotstack como URLs `fal.media`; ngrok/`PUBLIC_IMAGE_BASE_URL` sigue siendo necesario para **Meta** y assets locales. Async-only, cola Celery `video_render`.
+- **Paso 8** Reel con clips del usuario: `user_clip_reel` (Drive → Whisper → hook-scored → captions → wan-effects opcional → Shotstack/Go). Pendiente v2: TikTok, música, captions por palabra.
+- **Paso 9** 🟡 Revisión de piezas: UI **Solicitar cambios** en dashboard (stub); backend `POST /runs/{id}/revise` pendiente.
+
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-07-25).
 
 ## Estructura
 
@@ -244,6 +247,8 @@ OPENAI_API_KEY=sk-...
 
 Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto estático (stub).
 
+> **Gotcha — texto genérico en las imágenes:** si el LLM no responde, estratega y copywriter caen a un **stub** de plantilla y el copy sale genérico **sin error visible**. Con `LLM_PROVIDER=ollama`, esto pasa si `ollama serve` está apagado o si la **primera** llamada hace timeout (cold-start del modelo > 180s). Ollama descarga el modelo tras ~5 min inactivo, así que el cold-start reaparece. Solución: mantén `ollama serve` corriendo y el modelo pre-cargado antes de generar (`ollama run llama3.1 ""`), o usa un proveedor cloud (`LLM_PROVIDER=anthropic`). Verifica en los logs que **no** aparezcan `strategist.using_stub` / `strategist.llm_error` / `copywriter.llm_error`.
+
 ### 3B — Imagen (diseño de posts)
 
 **fal.ai — Flux Pro** (proveedor principal recomendado, sin GPU local):
@@ -319,9 +324,11 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 - Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"`, `"story"` o `"reel"`, y opcionalmente `user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`.
 - **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional.
 - Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (`PUBLIC_IMAGE_BASE_URL` con ngrok en dev).
-- **Reels** (`content_format="reel"`) son **async-only**: `/runs/sync` responde `422`; usa siempre `/runs/async` con un segundo worker Celery en la cola `video_render` (`celery -A workers.celery_app.celery_app worker -l info -Q video_render`). Requiere `VIDEO_PROVIDER`/`SHOTSTACK_API_KEY` y `VOICE_PROVIDER`/`ELEVENLABS_API_KEY` en `.env` (ver sección **PASO 3D** en `.env.example`).
-- **Reel con clips del usuario** (`content_format="user_clip_reel"`) es también **async-only** y requiere `drive_folder_id` en el request (422 si falta o si se usa `/runs/sync`). Requiere además: `ffmpeg` instalado en el host (dependencia de sistema NUEVA, ver sección **Requisito de Python** más abajo — se invoca vía `subprocess` para extraer el audio de cada clip antes de transcribir), credenciales OAuth de Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`) y, para el scope `drive.readonly` en producción con usuarios externos a tu organización, Google puede exigir un **paso manual de verificación de la app** (agrega tu email en modo "Testing" en la pantalla de consentimiento OAuth para evitarlo en dev). Los captions son **por segmento** (no por palabra) en esta versión — granularidad más fina queda para v2.
-  - **Limitación conocida:** las URLs de clips/video servidas por este backend se generan siempre como `http://localhost:8000/static/...` (no pasan por la sustitución a `PUBLIC_IMAGE_BASE_URL` que sí aplica al publicar en Meta). Si fal.ai (wan-effects) o Shotstack necesitan alcanzar esa URL desde fuera de tu máquina, debes exponerla vía ngrok y que `PUBLIC_IMAGE_BASE_URL` esté correctamente configurado, o el fetch remoto del clip fallará.
+- **Reels** (`content_format="reel"`) son **async-only**: `/runs/sync` responde `422`; usa siempre `/runs/async` con un segundo worker Celery en la cola `video_render` (`python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render`). Requiere `VIDEO_PROVIDER`/`SHOTSTACK_API_KEY` (`SHOTSTACK_ENV=stage` para sandbox) y `VOICE_PROVIDER=fal` (o elevenlabs). Con fal.ai, Shotstack descarga fondos/voz desde `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) es obligatorio para **publicar en Meta** y para assets locales (overlays / `user_clip_reel`). Ver sección **PASO 3D** en `.env.example`.
+- **Reel con clips del usuario** (`content_format="user_clip_reel"`) es también **async-only** y requiere `drive_folder_id` en el request (422 si falta o si se usa `/runs/sync`). Requiere además: `ffmpeg` instalado en el host (dependencia de sistema NUEVA — se invoca vía `subprocess` para extraer el audio de cada clip antes de transcribir), credenciales OAuth de Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`) y, para el scope `drive.readonly` en producción con usuarios externos a tu organización, Google puede exigir un **paso manual de verificación de la app** (agrega tu email en modo "Testing" en la pantalla de consentimiento OAuth para evitarlo en dev). Los captions son **por segmento** (no por palabra) en esta versión — granularidad más fina queda para v2.
+  - **URLs públicas:** antes del submit a Shotstack, `video_providers._publicize_edit` reescribe `http://localhost:8000` → `PUBLIC_IMAGE_BASE_URL`. Si `EFFECTS_ENABLED=true`, fal.ai wan-effects aún necesita ngrok para alcanzar clips locales a mitad de pipeline.
+- **HITL:** Aprobar / Rechazar en dashboard. **Solicitar cambios** captura notas en UI (stub); regeneración vía API aún no cableada.
+- **Meta Instagram:** OAuth desde Integraciones con redirect URI **completo** (`…/api/auth/callback/meta`) y scopes `instagram_basic`, `instagram_content_publish`. Sin ellos, Graph API responde subcode 33.
 
 Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.
 

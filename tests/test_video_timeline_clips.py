@@ -29,22 +29,25 @@ def _image_scene(**overrides) -> Scene:
 
 
 def test_existing_image_reel_output_structurally_unchanged() -> None:
-    """Regresión: Timeline solo-imagen produce la misma forma de clip exacta que antes del cambio."""
+    """Regresión: imagen + overlay → track de títulos encima y track de media debajo."""
     timeline = Timeline(scenes=[_image_scene(duration_s=4.0)])
     edit = to_shotstack_edit(timeline)
-    clip = edit["timeline"]["tracks"][0]["clips"][0]
+    tracks = edit["timeline"]["tracks"]
+    assert len(tracks) == 2  # títulos + media (sin captions)
 
-    assert clip["asset"] == {"type": "image", "src": "http://localhost:8000/static/images/bg1.png"}
-    assert clip["start"] == pytest.approx(0.0)
-    assert clip["length"] == pytest.approx(4.0)
-    assert clip["effect"] == "zoomIn"
-    assert clip["title_asset"] == {
-        "type": "title",
-        "text": "Titulo",
-        "sub_text": "Sub",
-        "style": "typographic_poster",
-    }
-    assert len(edit["timeline"]["tracks"]) == 1  # sin captions, no hay 2do track
+    title_clip = tracks[0]["clips"][0]
+    assert title_clip["asset"]["type"] == "title"
+    assert title_clip["asset"]["text"] == "Titulo\nSub"
+    assert title_clip["asset"]["style"] == "minimal"
+    assert title_clip["start"] == pytest.approx(0.0)
+    assert title_clip["length"] == pytest.approx(4.0)
+
+    media_clip = tracks[1]["clips"][0]
+    assert media_clip["asset"] == {"type": "image", "src": "http://localhost:8000/static/images/bg1.png"}
+    assert media_clip["start"] == pytest.approx(0.0)
+    assert media_clip["length"] == pytest.approx(4.0)
+    assert media_clip["effect"] == "zoomIn"
+    assert "title_asset" not in media_clip
 
 
 def test_scene_defaults_asset_type_image() -> None:
@@ -64,6 +67,7 @@ def test_video_scene_emits_trim_matching_in_out() -> None:
     )
     timeline = Timeline(scenes=[scene])
     edit = to_shotstack_edit(timeline)
+    # Sin headline/subline → solo track de media
     clip = edit["timeline"]["tracks"][0]["clips"][0]
 
     assert clip["asset"]["type"] == "video"
@@ -100,16 +104,20 @@ def test_captions_track_aligns_to_word_timestamps() -> None:
     edit = to_shotstack_edit(timeline)
 
     tracks = edit["timeline"]["tracks"]
-    assert len(tracks) == 2
-    caption_clips = tracks[1]["clips"]
+    # captions (arriba) → títulos → media
+    assert len(tracks) == 3
+    caption_clips = tracks[0]["clips"]
     assert caption_clips[0]["start"] == pytest.approx(0.0)
     assert caption_clips[0]["length"] == pytest.approx(0.4)
     assert caption_clips[1]["start"] == pytest.approx(0.4)
     assert caption_clips[1]["length"] == pytest.approx(0.5)
+    assert tracks[1]["clips"][0]["asset"]["type"] == "title"
+    assert tracks[2]["clips"][0]["asset"]["type"] == "image"
 
 
 def test_no_captions_no_extra_track_and_no_render_failure() -> None:
     """Segmento sin habla (transcript vacío): no se emite cue, no falla el render."""
     timeline = Timeline(scenes=[_image_scene()], captions=[])
     edit = to_shotstack_edit(timeline)
-    assert len(edit["timeline"]["tracks"]) == 1
+    # títulos + media (sin captions)
+    assert len(edit["timeline"]["tracks"]) == 2

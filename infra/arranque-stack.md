@@ -29,8 +29,8 @@ Copia y configura `.env` desde `.env.example` (nunca commitear `.env`).
 | T1 | Docker (Postgres + Redis) | Siempre | 5433, 6379 |
 | T2 | Ollama | Siempre (LLM) | 11434 |
 | T3 | FastAPI (Uvicorn) | Siempre | 8000 |
-| T4 | Celery worker (cola default) | Runs async imagen/story | — |
-| T4b | Celery worker `video_render` | Solo Reels (`content_format=reel`) | — |
+| T4 | Celery worker (cola `celery`) | Runs async imagen/story (`feed` / `story`) | — |
+| T4b | Celery worker (cola `video_render`) | Reels y clips Drive (`reel` / `user_clip_reel`) | — |
 | T5 | Frontend Vite | Dashboard | 5173 |
 | T6 | Go publisher | Al aprobar/publicar en IG / Reels | 8088 |
 | T7 | ngrok | Al publicar en Meta (imagen o video) | túnel → 8000 |
@@ -88,7 +88,7 @@ python -m uvicorn gateway.app.main:app --reload --host 127.0.0.1 --port 8000
 
 ---
 
-### T4 — Celery worker (cola async)
+### T4 — Celery worker (cola default `celery`)
 
 Otra terminal, misma raíz y venv:
 
@@ -98,13 +98,23 @@ source .venv/Scripts/activate
 python -m celery -A workers.celery_app.celery_app worker -l info
 ```
 
-Necesario para **Enviar async** desde el dashboard (formatos `feed` y `story`).
+Necesario para **Enviar Async** con formatos `feed` y `story`.
+
+Al arrancar, el banner **`[tasks]`** debe listar al menos:
+
+```
+. workers.tasks.execute_pipeline_task
+. workers.tasks.execute_video_pipeline_task
+. workers.healthcheck_task
+```
+
+Si `[tasks]` aparece vacío, el worker descartará jobs (`unregistered task`). Causa habitual: proceso viejo sin reiniciar tras cambios en `workers/celery_app.py` (ese módulo importa `workers.tasks` al cargar).
 
 ---
 
 ### T4b — Celery worker cola `video_render` (Reels)
 
-Solo si vas a generar **`content_format=reel`**. Los renders de video tardan minutos y usan una cola dedicada (no compite con imágenes):
+**Obligatorio** para `content_format=reel` o `user_clip_reel`. Los renders tardan minutos y van a una cola dedicada (no compiten con imágenes):
 
 ```bash
 cd ~/Desktop/PowerUps/Marketing\ DEPA\ IA
@@ -112,8 +122,33 @@ source .venv/Scripts/activate
 python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
 ```
 
-Requisitos en `.env`: `VIDEO_PROVIDER=shotstack`, `SHOTSTACK_API_KEY`, `VOICE_PROVIDER=elevenlabs`, `ELEVENLABS_API_KEY` (ver sección PASO 3D en `.env.example`).  
-`/runs/sync` con `reel` responde **422** — usa siempre **Enviar async**.
+Comprueba el banner:
+
+```
+[queues]
+  .> video_render
+[tasks]
+  . workers.tasks.execute_pipeline_task
+  . workers.tasks.execute_video_pipeline_task
+  . workers.healthcheck_task
+```
+
+**Notas:**
+
+- `POST /runs/sync` con `reel` / `user_clip_reel` responde **422**. En el dashboard, aunque pulses Sync, el frontend **fuerza Async** y el run queda en `queued` hasta que T4b lo consuma.
+- Sin T4b: el job queda en Redis en cola `video_render` y el historial no avanza de `queued`.
+- Requisitos `.env` (Reel generado): `VIDEO_PROVIDER=shotstack`, `SHOTSTACK_API_KEY`, `SHOTSTACK_ENV=stage` (sandbox) o `v1`, `VOICE_PROVIDER=fal` (reusa `FAL_API_KEY`) o `elevenlabs` + key. Con `VOICE_PROVIDER=fal` / fondos fal.ai, Shotstack descarga directo de `fal.media` (no hace falta ngrok para el render). ngrok (`PUBLIC_IMAGE_BASE_URL`) sigue siendo obligatorio para **publicar en Meta** y para clips locales (`user_clip_reel` / overlays Pillow). Alternativa local: `VIDEO_PROVIDER=mock` / `VOICE_PROVIDER=mock`. Ver PASO 3D en `.env.example`.
+- `user_clip_reel` además: `ffmpeg` en PATH, OAuth Google y `drive_folder_id` en el formulario.
+- Timeout de video: `execute_video_pipeline_task` usa hasta ~20 min (`task_annotations` en `workers/celery_app.py`); el default de otras tareas sigue en 120s.
+- Tras cambiar `.env` o código de video: **reinicia T4b** (Celery no recarga env/módulos solos).
+
+**PowerShell (mismo comando):**
+
+```powershell
+cd 'C:\Users\57317\Desktop\PowerUps\Marketing DEPA IA'
+.\.venv\Scripts\Activate.ps1
+python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
+```
 
 ---
 
@@ -141,24 +176,31 @@ Log esperado: `social-publisher-go escuchando en :8088`
 
 ---
 
-### T7 — ngrok (URL pública para Meta)
+### T7 — ngrok (URL pública para Meta + assets locales)
 
-Meta exige HTTPS para descargar **imágenes y videos**. El túnel apunta al **API (:8000)**, no al frontend.
+Meta (al publicar) y Shotstack (cuando el edit usa assets **locales**) necesitan HTTPS. El túnel apunta al **API (:8000)**, no al frontend.
+
+- **Reel estándar con fal:** fondos/voz van a Shotstack como URLs `fal.media` → ngrok **no** es obligatorio solo para renderizar.
+- **Siempre obligatorio:** publicar en Meta/Instagram, y `user_clip_reel` / overlays Pillow / wan-effects con clips en `localhost`.
 
 Ejecutable incluido en el repo:
 
 ```bash
 cd ~/Desktop/PowerUps/Marketing\ DEPA\ IA/tests/ngrok-v3-stable-windows-amd64
-./ngrok.exe http 8000
+# Plan Free rota el dominio en cada arranque; preferible dominio reservado:
+./ngrok.exe http --url=TU-DOMINIO.ngrok-free.dev 8000
+# Sin dominio fijo:
+# ./ngrok.exe http 8000
 ```
 
-Copia la URL **https** (ej. `https://xxxx.ngrok-free.dev`) y actualiza en `.env`:
+Copia la URL **https** y actualiza en `.env`:
 
 ```env
-PUBLIC_IMAGE_BASE_URL=https://xxxx.ngrok-free.dev
+PUBLIC_IMAGE_BASE_URL=https://TU-DOMINIO.ngrok-free.dev
+META_REDIRECT_URI=https://TU-DOMINIO.ngrok-free.dev/api/auth/callback/meta
 ```
 
-Reinicia **Uvicorn** (T3) tras cambiar `.env`.
+En Meta Developers → Valid OAuth Redirect URIs: pegar la **URI completa** (path incluido), no solo el dominio. Reinicia **Uvicorn (T3)** y el **worker video_render (T4b)** tras cambiar `.env`.
 
 ---
 
@@ -172,11 +214,15 @@ Reinicia **Uvicorn** (T3) tras cambiar `.env`.
 
 ### Flujo Reels (Video-as-Code)
 
-1. T1–T5 + **T4b** (`video_render`).
-2. `.env`: además `VIDEO_PROVIDER=shotstack`, `VOICE_PROVIDER=elevenlabs` (+ API keys).
-3. Dashboard → formato **reel** → **Enviar async** (no usar Sync).
-4. Esperar `pending_approval` con preview `<video>` en Resultado.
-5. T6 + T7 → **Aprobar** (Go publica con `media_type=REELS`).
+1. T1–T5 + **T4b** (`-Q video_render`). **T7** (ngrok) obligatorio para publicar en Meta o para `user_clip_reel`; opcional en reel fal-only (assets `fal.media`).
+2. `.env`: `VIDEO_PROVIDER=shotstack`, `SHOTSTACK_API_KEY`, `SHOTSTACK_ENV=stage`, `VOICE_PROVIDER=fal` (+ `FAL_API_KEY`), o mocks.
+3. Dashboard → **Formato de publicación** → **Reel** (o **Video con mis clips (Drive)**) → **Enviar Async**.
+4. Historial: `queued` → `running` → `pending_approval` con preview `<video>` en Resultado.
+5. T6 (+ T7 si publicas) → **Aprobar** (Go publica con `media_type=REELS`). Requiere token Meta con scopes IG.
+
+Si el worker loguea `unregistered task of type 'workers.tasks.execute_video_pipeline_task'`: reinicia T4 y T4b para cargar `import workers.tasks` desde `celery_app.py`, y lanza un run **nuevo** (los mensajes descartados no se reencolan solos).
+
+Si Shotstack responde `400`, el log de T4b incluye `body=...` con el detalle de validación.
 
 ---
 
@@ -185,8 +231,9 @@ Reinicia **Uvicorn** (T3) tras cambiar `.env`.
 | Escenario | Terminales necesarias |
 |-----------|------------------------|
 | Solo generar contenido imagen (fal.ai) | T1, T2, T3, T4, T5 |
-| Generar Reels (Shotstack + voz) | T1, T2, T3, T4, **T4b**, T5 |
-| Publicar en Instagram (imagen o reel) | + T6, T7 |
+| Generar Reels (Shotstack + voz fal CDN) | T1, T2, T3, T4, **T4b**, T5 |
+| Reel con clips de Drive | T1, T2, T3, T4, **T4b**, T5, **T7** (+ ffmpeg + Google OAuth) |
+| Publicar en Instagram (imagen o reel) | + T6, T7 (ngrok + OAuth scopes IG) |
 | Prueba de fuego scheduler | T3 (+ seed script, sin Celery obligatorio) |
 
 Runbook scheduler: [`prueba-de-fuego-scheduler.md`](prueba-de-fuego-scheduler.md)

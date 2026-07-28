@@ -36,10 +36,11 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md). Doctrina inbound en `agents/marketing_agents/knowledge/` (Entretener→Informacion→Conexion).
 - **Paso 6** 🟡 Go/infra: sidecar Go operativo; MCP connect en stdio; Kubernetes esqueleto
 - **Paso 7** Video-as-Code (Reels): `content_format=reel` (script → escenas fal.ai + voz fal → timeline TitleAsset → Shotstack). Assets fal van a Shotstack como URLs `fal.media`; ngrok/`PUBLIC_IMAGE_BASE_URL` sigue siendo necesario para **Meta** y assets locales. Async-only, cola Celery `video_render`.
-- **Paso 8** Reel con clips del usuario: `user_clip_reel` (Drive → Whisper → hook-scored → captions → wan-effects opcional → Shotstack/Go). Pendiente v2: TikTok, música, captions por palabra.
-- **Paso 9** 🟡 Revisión de piezas: UI **Solicitar cambios** en dashboard (stub); backend `POST /runs/{id}/revise` pendiente.
+- **Paso 8** Reel con clips del usuario: `user_clip_reel` (Drive → Whisper → hook-scored → captions → wan-effects opcional → Shotstack/Go). Pendiente v2: música, captions por palabra.
+- **Paso 9** Revisión de piezas: **Solicitar cambios** en dashboard → `POST /runs/{id}/revise` regenera con las notas (nunca publica; vuelve a `pending_approval`).
+- **Paso 10** Multi-cuenta social: N cuentas por proveedor (`oauth_tokens` únicos por tenant+provider+account) con selector **Cuenta destino** por run; `GET /api/auth/accounts`. TikTok (Login Kit + Content Posting API en Go) queda como fase 2 — requiere auditoría de la app por TikTok.
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-07-25).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-07-27).
 
 ## Estructura
 
@@ -327,7 +328,8 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 - **Reels** (`content_format="reel"`) son **async-only**: `/runs/sync` responde `422`; usa siempre `/runs/async` con un segundo worker Celery en la cola `video_render` (`python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render`). Requiere `VIDEO_PROVIDER`/`SHOTSTACK_API_KEY` (`SHOTSTACK_ENV=stage` para sandbox) y `VOICE_PROVIDER=fal` (o elevenlabs). Con fal.ai, Shotstack descarga fondos/voz desde `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) es obligatorio para **publicar en Meta** y para assets locales (overlays / `user_clip_reel`). Ver sección **PASO 3D** en `.env.example`.
 - **Reel con clips del usuario** (`content_format="user_clip_reel"`) es también **async-only** y requiere `drive_folder_id` en el request (422 si falta o si se usa `/runs/sync`). Requiere además: `ffmpeg` instalado en el host (dependencia de sistema NUEVA — se invoca vía `subprocess` para extraer el audio de cada clip antes de transcribir), credenciales OAuth de Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`) y, para el scope `drive.readonly` en producción con usuarios externos a tu organización, Google puede exigir un **paso manual de verificación de la app** (agrega tu email en modo "Testing" en la pantalla de consentimiento OAuth para evitarlo en dev). Los captions son **por segmento** (no por palabra) en esta versión — granularidad más fina queda para v2.
   - **URLs públicas:** antes del submit a Shotstack, `video_providers._publicize_edit` reescribe `http://localhost:8000` → `PUBLIC_IMAGE_BASE_URL`. Si `EFFECTS_ENABLED=true`, fal.ai wan-effects aún necesita ngrok para alcanzar clips locales a mitad de pipeline.
-- **HITL:** Aprobar / Rechazar en dashboard. **Solicitar cambios** captura notas en UI (stub); regeneración vía API aún no cableada.
+- **HITL:** Aprobar / Rechazar / **Solicitar cambios** (`POST /runs/{id}/revise` regenera con notas y vuelve a `pending_approval`; nunca publica).
+- **Multi-cuenta:** selector **Cuenta destino** en el dashboard (`social_account_id`); Integraciones lista N cuentas por proveedor (`GET /api/auth/accounts`). Reconectar Meta/LinkedIn tras migración `0007` para poblar nombre/foto/Page token.
 - **Meta Instagram:** OAuth desde Integraciones con redirect URI **completo** (`…/api/auth/callback/meta`) y scopes `instagram_basic`, `instagram_content_publish`. Sin ellos, Graph API responde subcode 33.
 
 Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.

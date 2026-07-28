@@ -19,12 +19,12 @@ async function apiFetch(path, apiKey, method = "GET", body = null) {
   return res.json();
 }
 
-async function fetchStatus(apiKey) {
-  return apiFetch("/auth/status", apiKey);
+async function fetchAccounts(apiKey) {
+  return apiFetch("/auth/accounts", apiKey);
 }
 
-export default function Integrations({ apiKey }) {
-  const [connected, setConnected] = useState([]);
+export default function Integrations({ apiKey, onAccountsChanged }) {
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -32,8 +32,9 @@ export default function Integrations({ apiKey }) {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchStatus(apiKey);
-      setConnected(data.connected || []);
+      const data = await fetchAccounts(apiKey);
+      setAccounts(data.accounts || []);
+      onAccountsChanged?.();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -50,17 +51,29 @@ export default function Integrations({ apiKey }) {
       setError(null);
       load();
     } else if (oauth === "error") {
-      setError(params.get("message") || "Error al conectar con Meta");
+      setError(params.get("message") || "Error al conectar la red social");
     }
     if (oauth) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [apiKey]);
 
-  const connectedProviders = connected.map((c) => c.provider);
+  const connectedProviders = accounts.map((c) => c.provider);
 
   const handleConnect = (provider) => {
     window.location.href = `${API_BASE}/auth/login/${provider}`;
+  };
+
+  const handleDisconnect = async (account) => {
+    const label = account.account_name || account.account_id;
+    if (!confirm(`¿Desconectar ${label} (${account.provider})?`)) return;
+    setError(null);
+    try {
+      await apiFetch(`/auth/accounts/${account.id}`, apiKey, "DELETE");
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   return (
@@ -68,7 +81,7 @@ export default function Integrations({ apiKey }) {
       <h2>Integraciones de redes sociales</h2>
       <p style={{ fontSize: "0.85rem", color: "#888" }}>
         Conecta tus cuentas para publicación nativa. Meta/Instagram: OAuth + Go sidecar (:8088).
-        LinkedIn: OAuth + publisher Python nativo con imagen.
+        LinkedIn: OAuth (Community Management API) + publisher nativo con imagen.
       </p>
 
       {error && <p style={{ color: "red", fontSize: "0.85rem" }}>{error}</p>}
@@ -86,7 +99,7 @@ export default function Integrations({ apiKey }) {
             fontWeight: "bold",
           }}
         >
-          {connectedProviders.includes("meta") ? "✓ Meta (Instagram/Facebook) conectado" : "Conectar Meta (Instagram/Facebook)"}
+          {connectedProviders.includes("meta") ? "＋ Conectar otra cuenta Meta" : "Conectar Meta (Instagram/Facebook)"}
         </button>
 
         <button
@@ -101,7 +114,7 @@ export default function Integrations({ apiKey }) {
             fontWeight: "bold",
           }}
         >
-          {connectedProviders.includes("linkedin") ? "✓ LinkedIn conectado" : "Conectar LinkedIn"}
+          {connectedProviders.includes("linkedin") ? "＋ Conectar otra cuenta LinkedIn" : "Conectar LinkedIn"}
         </button>
 
         <button onClick={load} disabled={loading} style={{ background: "transparent", border: "1px solid #666", padding: "0.6rem 1rem", borderRadius: "6px", cursor: "pointer" }}>
@@ -109,21 +122,41 @@ export default function Integrations({ apiKey }) {
         </button>
       </div>
 
-      {connected.length > 0 && (
+      {accounts.length > 0 && (
         <table style={{ fontSize: "0.8rem", borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid #444" }}>
+              <th style={{ padding: "4px 8px" }}>Cuenta</th>
               <th style={{ padding: "4px 8px" }}>Proveedor</th>
               <th style={{ padding: "4px 8px" }}>Account ID</th>
               <th style={{ padding: "4px 8px" }}>Actualizado</th>
+              <th style={{ padding: "4px 8px" }}></th>
             </tr>
           </thead>
           <tbody>
-            {connected.map((c) => (
-              <tr key={c.provider}>
+            {accounts.map((c) => (
+              <tr key={c.id}>
+                <td style={{ padding: "4px 8px", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  {c.profile_picture_url && (
+                    <img
+                      src={c.profile_picture_url}
+                      alt=""
+                      style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover" }}
+                    />
+                  )}
+                  {c.account_name || "—"}
+                </td>
                 <td style={{ padding: "4px 8px" }}><code>{c.provider}</code></td>
                 <td style={{ padding: "4px 8px" }}><code>{c.account_id}</code></td>
                 <td style={{ padding: "4px 8px", color: "#888" }}>{new Date(c.updated_at).toLocaleString()}</td>
+                <td style={{ padding: "4px 8px" }}>
+                  <button
+                    onClick={() => handleDisconnect(c)}
+                    style={{ background: "transparent", border: "1px solid #a33", color: "#c66", padding: "2px 8px", borderRadius: "4px", cursor: "pointer" }}
+                  >
+                    Desconectar
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -137,13 +170,14 @@ META_CLIENT_ID=...
 META_CLIENT_SECRET=...
 META_REDIRECT_URI=http://localhost:8000/api/auth/callback/meta
 
-# LinkedIn OAuth
+# LinkedIn OAuth (Community Management API + OpenID)
+# Redirect URI en LinkedIn Developers debe coincidir EXACTO
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
 LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/callback/linkedin
 
-# URL pública de imágenes (ngrok para dev — Meta requiere HTTPS)
-PUBLIC_IMAGE_BASE_URL=https://xxxx.ngrok.io`}</pre>
+# URL pública de imágenes (ngrok para Meta; LinkedIn imagen también si localhost)
+PUBLIC_IMAGE_BASE_URL=https://xxxx.ngrok-free.dev`}</pre>
       </details>
     </section>
   );

@@ -1,0 +1,56 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: marketing-depa-ia
+
+build:
+  # El registry NO está hardcodeado: se pasa al invocar, así el mismo archivo sirve
+  # para cualquier proyecto GCP.
+  #   skaffold build --default-repo=REGION-docker.pkg.dev/PROJECT_ID/REPO
+  artifacts:
+    - image: marketing-depa/api
+      context: .
+      docker:
+        dockerfile: infra/docker/Dockerfile.api
+    # worker y video-worker comparten imagen: solo difieren en el `command` del
+    # Deployment (cola default vs. -Q video_render). Construirla dos veces sería desperdicio.
+    - image: marketing-depa/worker
+      context: .
+      docker:
+        dockerfile: infra/docker/Dockerfile.worker
+    - image: marketing-depa/go-publisher
+      context: .
+      docker:
+        dockerfile: infra/docker/Dockerfile.go-publisher
+  tagPolicy:
+    gitCommit: {}
+
+manifests:
+  kustomize:
+    paths:
+      - k8s/overlays/staging
+
+deploy:
+  kubectl: {}
+
+profiles:
+  # Local (kind / minikube / Docker Desktop): incluye el secret de ejemplo.
+  - name: dev
+    manifests:
+      kustomize:
+        paths:
+          - k8s/overlays/dev
+
+  # Perfiles que consume Cloud Deploy (ver clouddeploy.yaml).
+  # Los secretos no se versionan: se inyectan por Secret Manager / External Secrets.
+  - name: staging
+    manifests:
+      kustomize:
+        paths:
+          - k8s/overlays/staging
+
+  - name: prod
+    manifests:
+      kustomize:
+        paths:
+          - k8s/overlays/prod

@@ -81,6 +81,8 @@ export default function App() {
     tono_marca: "profesional y cercano",
   });
   const [socialStatus, setSocialStatus] = useState(null);
+  const [socialAccounts, setSocialAccounts] = useState([]);
+  const [socialAccountId, setSocialAccountId] = useState("");
   const [contentFormat, setContentFormat] = useState("feed");
   const [imageProvider, setImageProvider] = useState("fal");
   const [imageProviders, setImageProviders] = useState([]);
@@ -94,10 +96,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
+  const [revisingRunId, setRevisingRunId] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
-  // Stub de edición: instrucciones de cambio locales hasta conectar POST /runs/{id}/revise
+  // Notas de revisión que se envían a POST /runs/{id}/revise para regenerar la pieza
   const [revisionNotes, setRevisionNotes] = useState("");
   const [revisionByRunId, setRevisionByRunId] = useState({});
   const [revisionFeedback, setRevisionFeedback] = useState(null);
@@ -119,6 +122,33 @@ export default function App() {
       setSocialStatus(null);
     }
   };
+
+  const loadSocialAccounts = async () => {
+    try {
+      const data = await api("/auth/accounts");
+      setSocialAccounts(Array.isArray(data.accounts) ? data.accounts : []);
+    } catch {
+      setSocialAccounts([]);
+    }
+  };
+
+  // red_social del brief → provider de oauth_tokens
+  const providerForNetwork = (network) =>
+    ({ instagram: "meta", ig: "meta", facebook: "meta", linkedin: "linkedin" }[
+      (network || "").toLowerCase()
+    ] || null);
+
+  const accountsForNetwork = socialAccounts.filter(
+    (a) => a.provider === providerForNetwork(form.red_social)
+  );
+
+  // Preselección: única cuenta del proveedor → elegida automáticamente
+  useEffect(() => {
+    const stillValid = accountsForNetwork.some((a) => String(a.id) === socialAccountId);
+    if (!stillValid) {
+      setSocialAccountId(accountsForNetwork.length === 1 ? String(accountsForNetwork[0].id) : "");
+    }
+  }, [form.red_social, socialAccounts]);
 
   const loadImageProviders = async () => {
     try {
@@ -155,6 +185,7 @@ export default function App() {
   useEffect(() => {
     loadHistory();
     loadSocialStatus();
+    loadSocialAccounts();
     loadImageProviders();
     loadArchetypes();
   }, [apiKey]);
@@ -189,6 +220,7 @@ export default function App() {
           ? { visual_instructions: visualInstructions.trim() }
           : {}),
         ...(contentFormat === "user_clip_reel" ? { drive_folder_id: driveFolderId.trim() } : {}),
+        ...(socialAccountId ? { social_account_id: Number(socialAccountId) } : {}),
       };
       const run = await api(effectiveAsync ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -229,8 +261,8 @@ export default function App() {
     }
   };
 
-  /** Stub: captura instrucciones de edición sin llamar al pipeline todavía. */
-  const requestRevision = (runId, notes) => {
+  /** Regenera la pieza del run aplicando las notas del revisor (POST /runs/{id}/revise). */
+  const requestRevision = async (runId, notes) => {
     const trimmed = (notes || "").trim();
     if (!trimmed) {
       setRevisionFeedback({
@@ -240,16 +272,48 @@ export default function App() {
       });
       return;
     }
-    if (runId != null) {
-      setRevisionByRunId((prev) => ({ ...prev, [runId]: trimmed }));
-    } else {
-      setRevisionNotes(trimmed);
+    if (runId == null) {
+      setRevisionFeedback({
+        runId: null,
+        ok: false,
+        message: "No hay un run asociado a esta pieza todavía.",
+      });
+      return;
     }
-    setRevisionFeedback({
-      runId: runId ?? null,
-      ok: true,
-      message: "Instrucción guardada; conexión al pipeline pendiente.",
-    });
+    if (revisingRunId != null) return;
+
+    setRevisingRunId(runId);
+    setError(null);
+    setRevisionFeedback({ runId, ok: true, message: "Regenerando la pieza con tus notas…" });
+    try {
+      const response = await api(`/runs/${runId}/revise`, "POST", {
+        notes: trimmed,
+        revised_by: "human",
+      });
+      // Los reels se re-renderizan en la cola video_render: el resultado no viene en la respuesta.
+      if (response.status === "queued") {
+        setRevisionFeedback({
+          runId,
+          ok: true,
+          message: "Revisión encolada; el video se está re-renderizando (puede tardar minutos).",
+        });
+      } else {
+        const updated = await api(`/runs/${runId}`);
+        setResult({ run_id: updated.run_id, status: updated.status, result: updated.result });
+        setRevisionFeedback({
+          runId,
+          ok: true,
+          message: "Pieza regenerada; revísala y aprueba si te convence.",
+        });
+      }
+      setRevisionByRunId((prev) => ({ ...prev, [runId]: "" }));
+      if (runId === result?.run_id) setRevisionNotes("");
+      await loadHistory();
+    } catch (e) {
+      setRevisionFeedback({ runId, ok: false, message: e.message });
+    } finally {
+      setRevisingRunId(null);
+    }
   };
 
   // ------------------------------------------------------------------
@@ -281,7 +345,7 @@ export default function App() {
       </section>
 
       {/* Integraciones OAuth */}
-      <Integrations apiKey={apiKey} />
+      <Integrations apiKey={apiKey} onAccountsChanged={loadSocialAccounts} />
 
       {/* Estado redes (sin secretos) */}
       <section className="card">
@@ -309,6 +373,31 @@ export default function App() {
             <option value="user_clip_reel">Video con mis clips (Drive)</option>
           </select>
         </label>
+        <label>
+          Cuenta destino
+          <select
+            value={socialAccountId}
+            onChange={(e) => setSocialAccountId(e.target.value)}
+            disabled={accountsForNetwork.length === 0}
+          >
+            {accountsForNetwork.length === 0 ? (
+              <option value="">Sin cuentas conectadas para {form.red_social} — conecta en Integraciones</option>
+            ) : (
+              <>
+                <option value="">Automática (única cuenta del proveedor)</option>
+                {accountsForNetwork.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {a.account_name || a.account_id} ({a.provider})
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+        </label>
+        <p className="hint">
+          El run se publicará en esta cuenta al aprobarlo. Conecta más cuentas del mismo proveedor
+          desde Integraciones.
+        </p>
         <p className="hint">
           Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
           {(contentFormat === "reel" || contentFormat === "user_clip_reel") &&
@@ -525,19 +614,23 @@ export default function App() {
                 value={revisionNotes}
                 onChange={(e) => {
                   setRevisionNotes(e.target.value);
-                  if (revisionFeedback && revisionFeedback.runId == null) setRevisionFeedback(null);
+                  if (revisionFeedback && revisionFeedback.runId === result?.run_id) {
+                    setRevisionFeedback(null);
+                  }
                 }}
               />
             </label>
             <div className="actions" style={{ marginTop: "0.5rem" }}>
               <button
                 type="button"
+                disabled={revisingRunId != null}
                 onClick={() => requestRevision(result?.run_id ?? null, revisionNotes)}
               >
-                Solicitar cambios
+                {revisingRunId === result?.run_id ? <span className="spinner"></span> : null}
+                {revisingRunId === result?.run_id ? "Regenerando…" : "Solicitar cambios"}
               </button>
             </div>
-            {revisionFeedback && revisionFeedback.runId == null && (
+            {revisionFeedback && revisionFeedback.runId === result?.run_id && (
               <p
                 className="hint"
                 style={{ color: revisionFeedback.ok ? "#2f6f4e" : "#b00020", marginTop: "0.4rem" }}
@@ -598,10 +691,11 @@ export default function App() {
                   <div className="actions" style={{ marginTop: "0.35rem" }}>
                     <button
                       type="button"
-                      disabled={approvingRunId != null}
+                      disabled={approvingRunId != null || revisingRunId != null}
                       onClick={() => requestRevision(item.run_id, revisionByRunId[item.run_id] || "")}
                     >
-                      Solicitar cambios
+                      {revisingRunId === item.run_id ? <span className="spinner"></span> : null}
+                      {revisingRunId === item.run_id ? "Regenerando…" : "Solicitar cambios"}
                     </button>
                   </div>
                   {revisionFeedback?.runId === item.run_id && (

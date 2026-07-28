@@ -63,7 +63,14 @@ class VideoScript(BaseModel):
 class VideoScriptAgent:
     """Genera el guion de video (hook, escenas narradas, CTA) desde estrategia y copy aprobados (LLM o stub)."""
 
-    def run(self, brief: BriefInput, strategy: StrategyOutput, copy: CopyOutput) -> VideoScript:
+    def run(
+        self,
+        brief: BriefInput,
+        strategy: StrategyOutput,
+        copy: CopyOutput,
+        *,
+        revision_notes: str | None = None,
+    ) -> VideoScript:
         """Devuelve `VideoScript` desde el LLM configurado o `_stub` ante ausencia de LLM o error."""
         llm = get_llm()
         if llm is None:
@@ -80,6 +87,12 @@ class VideoScriptAgent:
             f"- Language: {brief.idioma}\n"
             f"- Scene arc required: Entretener → Informacion → Conexion"
         )
+        notes = (revision_notes or "").strip()
+        if notes:
+            prompt += (
+                f"\n- REVISION REQUESTED by the human reviewer (highest priority, "
+                f"apply it over the previous script): {notes}"
+            )
         try:
             data = llm.complete_json(_SYSTEM, prompt)
             return VideoScript(**data)

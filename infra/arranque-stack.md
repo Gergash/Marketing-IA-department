@@ -234,6 +234,7 @@ Si Shotstack responde `400`, el log de T4b incluye `body=...` con el detalle de 
 | Generar Reels (Shotstack + voz fal CDN) | T1, T2, T3, T4, **T4b**, T5 |
 | Reel con clips de Drive | T1, T2, T3, T4, **T4b**, T5, **T7** (+ ffmpeg + Google OAuth) |
 | Publicar en Instagram (imagen o reel) | + T6, T7 (ngrok + OAuth scopes IG) |
+| Multi-cuenta (Cliente A / Cliente B) | T3 + Integraciones (N cuentas) + selector **Cuenta destino** en el run; migración `0007` aplicada |
 | Prueba de fuego scheduler | T3 (+ seed script, sin Celery obligatorio) |
 
 Runbook scheduler: [`prueba-de-fuego-scheduler.md`](prueba-de-fuego-scheduler.md)

@@ -24,6 +24,7 @@ from gateway.app.schemas.contracts import (
     ImageProvidersResponse,
     JobStatusResponse,
     RejectRequest,
+    ReviseRequest,
     RunRequest,
     RunResponse,
     SocialPublishStatusResponse,
@@ -33,7 +34,9 @@ from gateway.app.services.pipeline_service import (
     approve_run,
     create_run,
     execute_pipeline,
+    prepare_revision,
     reject_run,
+    revise_run,
 )
 from gateway.app.services.scheduler_service import fire_campaign_by_id, sync_campaign_jobs
 from workers.celery_app import celery_app
@@ -207,6 +210,20 @@ def list_briefs(
     )
 
 
+def _run_params(payload: RunRequest) -> dict:
+    """Configuración visual del run que una revisión posterior debe poder reproducir."""
+    return {
+        "publish": payload.publish,
+        "image_provider": payload.image_provider,
+        "archetype_override": payload.archetype_override,
+        "user_asset_url": payload.user_asset_url,
+        "alter_image_with_ai": payload.alter_image_with_ai,
+        "visual_instructions": payload.visual_instructions,
+        "drive_folder_id": payload.drive_folder_id,
+        "social_account_id": payload.social_account_id,
+    }
+
+
 @router.post("/runs/sync", response_model=RunResponse)
 def run_pipeline_sync(
     payload: RunRequest,
@@ -229,6 +246,8 @@ def run_pipeline_sync(
         run_mode="sync",
         idempotency_key=payload.idempotency_key,
         content_format=payload.content_format,
+        params=_run_params(payload),
+        social_account_id=payload.social_account_id,
     )
     try:
         result = execute_pipeline(
@@ -268,6 +287,8 @@ def run_pipeline_async(
         run_mode="async",
         idempotency_key=payload.idempotency_key,
         content_format=payload.content_format,
+        params=_run_params(payload),
+        social_account_id=payload.social_account_id,
     )
     is_video = payload.content_format in ("reel", "user_clip_reel")
     task = execute_video_pipeline_task if is_video else execute_pipeline_task
@@ -353,6 +374,76 @@ def reject_run_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return RunResponse(run_id=run_id, status="rejected")
+
+
+@router.post("/runs/{run_id}/revise", response_model=RunResponse)
+def revise_run_endpoint(
+    run_id: int,
+    payload: ReviseRequest,
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> RunResponse:
+    """Regenera la pieza de un run pendiente aplicando las notas del revisor; vuelve a pending_approval."""
+    run = db.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+
+    content_format = getattr(run, "content_format", "feed") or "feed"
+    if content_format not in ("reel", "user_clip_reel"):
+        try:
+            result = revise_run(db, run_id, notes=payload.notes, revised_by=payload.revised_by)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        except Exception as exc:
+            # La versión anterior sigue en result_json y sigue siendo aprobable: devolver el run
+            # a pending_approval en vez de dejarlo 'failed' (que bloquearía aprobar y reintentar).
+            run.status = "pending_approval"
+            run.error_message = f"revision_failed: {exc}"
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+            ) from exc
+        return RunResponse(run_id=run_id, status="pending_approval", result=result)
+
+    # Los formatos de video tardan minutos: se re-renderizan en la cola dedicada, igual que el run original.
+    try:
+        params = prepare_revision(
+            db, run_id, notes=payload.notes, revised_by=payload.revised_by, next_status="queued"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    try:
+        execute_video_pipeline_task.apply_async(
+            args=[run_id, bool(params.get("publish", False)), True, None, params.get("image_provider")],
+            kwargs={
+                "archetype_override": params.get("archetype_override"),
+                "user_asset_url": params.get("user_asset_url"),
+                "alter_image_with_ai": bool(params.get("alter_image_with_ai", False)),
+                "visual_instructions": params.get("visual_instructions"),
+                "drive_folder_id": params.get("drive_folder_id"),
+                "revision_notes": payload.notes.strip(),
+            },
+            queue="video_render",
+        )
+    except (
+        redis.exceptions.ConnectionError,
+        kombu.exceptions.OperationalError,
+        OSError,
+        RuntimeError,
+    ) as exc:
+        run.status = "pending_approval"
+        run.error_message = f"celery_broker_unavailable: {exc}"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Redis no esta disponible (broker de Celery); la revision del video no se encolo. "
+                "Levanta Redis y el worker de la cola video_render."
+            ),
+        ) from exc
+
+    return RunResponse(run_id=run_id, status="queued")
 
 
 @router.get("/runs/{run_id}", response_model=JobStatusResponse)

@@ -49,6 +49,14 @@ def apply_lightweight_migrations(engine: Engine) -> None:
                     conn.execute(
                         text("ALTER TABLE agent_runs ADD COLUMN content_format VARCHAR(16) DEFAULT 'feed'")
                     )
+                if "run_params_json" not in cols_ar:
+                    conn.execute(text("ALTER TABLE agent_runs ADD COLUMN run_params_json TEXT"))
+                if "revision_notes" not in cols_ar:
+                    conn.execute(text("ALTER TABLE agent_runs ADD COLUMN revision_notes TEXT"))
+                if "revision_count" not in cols_ar:
+                    conn.execute(
+                        text("ALTER TABLE agent_runs ADD COLUMN revision_count INTEGER DEFAULT 0")
+                    )
             conn.execute(text(_CREATE_OAUTH_TOKENS_SQLITE))
         elif dialect == "postgresql":
             conn.execute(
@@ -59,6 +67,13 @@ def apply_lightweight_migrations(engine: Engine) -> None:
             conn.execute(
                 text(
                     "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS content_format VARCHAR(16) NOT NULL DEFAULT 'feed'"
+                )
+            )
+            conn.execute(text("ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS run_params_json TEXT"))
+            conn.execute(text("ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS revision_notes TEXT"))
+            conn.execute(
+                text(
+                    "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS revision_count INTEGER NOT NULL DEFAULT 0"
                 )
             )
             conn.execute(text(_CREATE_OAUTH_TOKENS_PG))

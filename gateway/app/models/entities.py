@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from gateway.app.db.session import Base
@@ -42,6 +42,14 @@ class AgentRun(Base):
     # Human-in-the-loop: quién y cuándo aprobó (o rechazó) el run
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Cuenta social destino (oauth_tokens.id). NULL = única cuenta del provider (legacy)
+    social_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # Parámetros del run original (arquetipo, foto, proveedor, carpeta Drive...): sin esto
+    # una revisión no puede re-ejecutar el pipeline con la misma configuración
+    run_params_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Notas de revisión acumuladas del dashboard y cuántas veces se regeneró la pieza
+    revision_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revision_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -96,16 +104,30 @@ class CampaignSchedule(Base):
 
 
 class OAuthToken(Base):
-    """Token OAuth 2.0 por tenant y proveedor (meta, linkedin)."""
+    """Cuenta social conectada: token OAuth 2.0 por tenant, proveedor y cuenta.
+
+    Multi-cuenta: un tenant puede tener N filas por proveedor (una por cuenta),
+    únicas por (tenant_id, provider, account_id).
+    """
 
     __tablename__ = "oauth_tokens"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "provider", "account_id", name="uq_oauth_tenant_provider_account"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    provider: Mapped[str] = mapped_column(String(32), index=True)  # 'meta' | 'linkedin'
+    provider: Mapped[str] = mapped_column(String(32), index=True)  # 'meta' | 'linkedin' | 'google'
     access_token: Mapped[str] = mapped_column(Text)
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     account_id: Mapped[str] = mapped_column(String(256))  # IG Business Account ID o URN de LinkedIn
+    # Identidad visible en el dashboard (selector de cuenta destino)
+    account_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    profile_picture_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Meta: Page de Facebook dueña de la cuenta IG (token de página va en access_token)
+    page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Desconexión lógica: False oculta la cuenta sin borrar historial
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

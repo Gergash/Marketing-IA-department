@@ -76,6 +76,7 @@ class ClipReelDesigner:
         run_id: int,
         drive_folder_id: str,
         video_provider: str | None = None,
+        revision_notes: str | None = None,
     ) -> VideoDesignOutput:
         """Ejecuta drive -> transcripcion -> seleccion -> [efecto opcional] -> Timeline -> render."""
         from gateway.app.core.settings import get_settings
@@ -87,7 +88,9 @@ class ClipReelDesigner:
         clip_url_by_id = {clip.clip_id: clip_public_url(clip.path) for clip in downloaded}
 
         transcripts = transcribe_clips(clip_paths, stt_provider=s.stt_provider)
-        segments: list[SelectedSegment] = self.editor_agent.run(transcripts, brief, strategy)
+        segments: list[SelectedSegment] = self.editor_agent.run(
+            transcripts, brief, strategy, revision_notes=revision_notes
+        )
 
         total_duration_s = sum(seg.end_s - seg.start_s for seg in segments)
         _validate_duration_band(total_duration_s)

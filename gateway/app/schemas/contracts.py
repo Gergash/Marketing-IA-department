@@ -58,6 +58,8 @@ class RunRequest(BaseModel):
     visual_instructions: str | None = None
     # Carpeta de Google Drive con los clips fuente — requerida cuando content_format=user_clip_reel
     drive_folder_id: str | None = None
+    # Cuenta social destino (id de GET /api/auth/accounts). None = única cuenta del provider (legacy)
+    social_account_id: int | None = None
 
     @model_validator(mode="after")
     def _require_drive_folder_for_user_clip_reel(self) -> "RunRequest":
@@ -131,6 +133,19 @@ class RejectRequest(BaseModel):
 
     reason: str = ""
     approved_by: str = "human"
+
+
+class ReviseRequest(BaseModel):
+    """Notas del revisor para regenerar la pieza de un run en `pending_approval`."""
+
+    notes: str = Field(min_length=3)
+    revised_by: str = "human"
+
+    @model_validator(mode="after")
+    def _reject_blank_notes(self) -> "ReviseRequest":
+        if not self.notes.strip():
+            raise ValueError("notes no puede ser solo espacios en blanco")
+        return self
 
 
 class CampaignScheduleCreate(BaseModel):

@@ -31,6 +31,7 @@ def execute_pipeline_task(
     alter_image_with_ai: bool = False,
     visual_instructions: str | None = None,
     drive_folder_id: str | None = None,
+    revision_notes: str | None = None,
 ) -> dict:
     """Tarea asíncrona: abre sesión BD y ejecuta `execute_pipeline` con los mismos flags que en la API."""
     with SessionLocal() as db:
@@ -47,6 +48,7 @@ def execute_pipeline_task(
             alter_image_with_ai=alter_image_with_ai,
             visual_instructions=visual_instructions,
             drive_folder_id=drive_folder_id,
+            revision_notes=revision_notes,
         )
         logger.info("execute_pipeline_task.done", run_id=run_id)
         return result
@@ -65,6 +67,7 @@ def execute_video_pipeline_task(
     alter_image_with_ai: bool = False,
     visual_instructions: str | None = None,
     drive_folder_id: str | None = None,
+    revision_notes: str | None = None,
 ) -> dict:
     """Tarea de reels en cola dedicada `video_render`: Task base plano (SIN autoretry_for).
 
@@ -86,6 +89,7 @@ def execute_video_pipeline_task(
             alter_image_with_ai=alter_image_with_ai,
             visual_instructions=visual_instructions,
             drive_folder_id=drive_folder_id,
+            revision_notes=revision_notes,
         )
         logger.info("execute_video_pipeline_task.done", run_id=run_id)
         return result

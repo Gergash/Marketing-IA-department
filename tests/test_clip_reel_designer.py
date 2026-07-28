@@ -48,8 +48,10 @@ class _FakeEditorAgent:
 
     def __init__(self, segments: list[SelectedSegment]) -> None:
         self._segments = segments
+        self.received_revision_notes: str | None = None
 
-    def run(self, transcripts, brief, strategy) -> list[SelectedSegment]:
+    def run(self, transcripts, brief, strategy, *, revision_notes=None) -> list[SelectedSegment]:
+        self.received_revision_notes = revision_notes
         return self._segments
 
 

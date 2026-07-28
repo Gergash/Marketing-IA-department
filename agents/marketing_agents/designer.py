@@ -21,6 +21,7 @@ class DesignerAgent:
         user_asset_url: str | None = None,
         alter_image_with_ai: bool = False,
         visual_instructions: str | None = None,
+        revision_notes: str | None = None,
     ) -> DesignOutput:
         """Selecciona layout, genera imagen dimensionada y aplica composición tipográfica."""
         from gateway.app.core.settings import get_settings
@@ -32,6 +33,13 @@ class DesignerAgent:
             else pick_archetype(brief, strategy)
         )
         prompt = build_flux_prompt(archetype, brief=brief, strategy=strategy, spec=spec)
+
+        notes = (revision_notes or "").strip()
+        if notes:
+            # Las correcciones del humano pesan más que el prompt base: van al final para
+            # que el modelo las lea como ajuste sobre lo ya descrito.
+            prompt = f"{prompt}\n\nRevision requested by the human reviewer: {notes}"
+            visual_instructions = f"{visual_instructions}. {notes}" if visual_instructions else notes
 
         used_provider = (image_provider or get_settings().image_provider).strip().lower()
         headline = copy.headline_for_image.strip() or strategy.hook or copy.copy_final[:100]

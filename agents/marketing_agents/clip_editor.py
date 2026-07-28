@@ -145,6 +145,8 @@ class ClipEditorAgent:
         transcripts: list[ClipTranscript],
         brief: BriefInput,
         strategy: StrategyOutput,
+        *,
+        revision_notes: str | None = None,
     ) -> list[SelectedSegment]:
         """Devuelve la lista ordenada de `SelectedSegment` seleccionada; propaga error de footage insuficiente."""
         llm = get_llm()
@@ -159,6 +161,12 @@ class ClipEditorAgent:
             f"- Transcripts (clip_id, words with start_s/end_s): "
             f"{[(t.clip_id, [w.model_dump() for w in t.words]) for t in transcripts]}"
         )
+        notes = (revision_notes or "").strip()
+        if notes:
+            prompt += (
+                f"\n- REVISION REQUESTED by the human reviewer (highest priority, "
+                f"re-pick the segments accordingly): {notes}"
+            )
         try:
             data = llm.complete_json(_SYSTEM, prompt)
             segments = [SelectedSegment(**seg) for seg in data["segments"]]

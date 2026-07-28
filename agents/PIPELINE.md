@@ -31,8 +31,8 @@ ContentStrategistAgent          ← lineal (LLM o stub; doctrina inbound inyecta
   └─ user_clip_reel ─────────► ClipReelDesigner     ← Drive → Whisper → Shotstack
   │
   ▼
-HITL (Aprobar / Rechazar; UI "Solicitar cambios" stub)
-  │
+HITL (Aprobar / Rechazar / Solicitar cambios → POST /runs/{id}/revise)
+  │  social_account_id del run → token+account_id de esa cuenta (multi-cuenta)
   ▼
 PublisherAgent (si QA aprobó) ← lineal (Go sidecar Meta/LinkedIn)
 ```
@@ -90,11 +90,13 @@ Controla cuántas rondas de copy como máximo se permiten antes de salir del gra
 - Render async vía Celery cola `video_render` (no usar `/runs/sync`).
 - Con fal.ai, fondos/voz se pasan a Shotstack como URLs `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) sigue siendo necesario para Meta y assets locales.
 - `result["design"]` incluye `video_url` (reels) o `image_url` (feed/story); misma clave `design` en ambos casos.
+- Al aprobar, publica a la cuenta fijada en `social_account_id` (multi-cuenta).
 
 ## Rama clips usuario (`content_format="user_clip_reel"`)
 
 - Async-only; requiere `drive_folder_id`. Orquestación en `ClipReelDesigner` (Drive → Whisper → hook-scored → captions → wan-effects opcional → Shotstack).
-- HITL: Aprobar/Rechazar; **Solicitar cambios** es stub de UI (sin `POST /runs/{id}/revise` aún).
+- HITL: Aprobar / Rechazar / **Solicitar cambios** (`POST /runs/{id}/revise` regenera con notas y vuelve a `pending_approval`; nunca publica).
+- Publicación: `run.social_account_id` elige la cuenta Meta/LinkedIn destino (`GET /api/auth/accounts`); NULL = cuenta activa más reciente del provider.
 
 ## Cuándo ampliar LangGraph
 

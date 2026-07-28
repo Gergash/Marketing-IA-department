@@ -47,7 +47,7 @@ a la comunidad del brief (`publico_objetivo`), no a audiencia genérica.
 | Voz (voiceover) | **fal.ai Kokoro Spanish** — principal en dev (reusa `FAL_API_KEY`); ElevenLabs / OpenAI TTS como alternativas |
 | Transcripción (clips usuario) | **Whisper** (`whisper-1`, timestamps por palabra) — principal; mock para tests |
 | Fuente de clips | Google Drive (OAuth `drive.readonly`) — carpeta privada del usuario |
-| Social | Meta/IG OAuth + Go publisher; LinkedIn; mocks |
+| Social | Meta/IG OAuth + Go publisher; LinkedIn; mocks — multi-cuenta (N cuentas por proveedor, selector por run) |
 | Async | Celery + Redis (worker default + worker dedicado `-Q video_render` para reels y user_clip_reel) |
 | Scheduler | APScheduler |
 | Frontend | React + Vite |
@@ -90,7 +90,7 @@ agents/marketing_agents/
 
 gateway/app/
   api/routes.py          — endpoints principales
-  api/auth_social.py     — OAuth Meta/LinkedIn
+  api/auth_social.py     — OAuth Meta/LinkedIn/Google; multi-cuenta (upsert por account_id) + /auth/accounts
   core/settings.py       — configuración (carga .env)
   core/auth.py           — dependencia require_auth usada por los endpoints
   core/logging.py        — configuración de logging
@@ -102,6 +102,11 @@ gateway/app/
   schemas/contracts.py   — Pydantic schemas entrada/salida
 
 workers/tasks.py        — tareas Celery
+
+skaffold.yaml           — build de las 3 imágenes + deploy vía overlays kustomize
+clouddeploy.yaml        — pipeline Cloud Deploy staging → prod (prod requiere aprobación)
+k8s/base/               — manifiestos comunes (api, worker, video-worker, go-publisher)
+k8s/overlays/{dev,staging,prod}/ — réplicas y APP_ENV/SHOTSTACK_ENV por entorno
 ```
 
 ---
@@ -170,6 +175,8 @@ GOOGLE_CLIENT_SECRET=...
 GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback/google
 LLM_PROVIDER=ollama
 OLLAMA_MODEL=llama3.1
+OLLAMA_KEEP_ALIVE=30m          # mantiene el modelo cargado entre runs (evita cold-start)
+LLM_TIMEOUT_SECONDS=300        # debe tolerar la carga inicial del modelo (~5GB)
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 REDIS_URL=redis://localhost:6379/0
 SOCIAL_PROVIDER=meta
@@ -193,7 +200,7 @@ Tras cambiar `.env` o código de video, **reinicia el worker** (Celery no recarg
 
 ---
 
-## Cómo levantar el stack (7 terminales)
+## Cómo levantar el stack (7-8 terminales)
 
 ```bash
 # 1 - Infra
@@ -215,7 +222,7 @@ python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
 cd frontend && npm run dev
 
 # 6 - Go publisher (solo al publicar)
-cd microservices/social-publisher-go && go run .
+cd microservices/social-publisher-go && go run ./cmd/server
 
 # 7 - ngrok (Shotstack + Meta; actualizar PUBLIC_IMAGE_BASE_URL y reiniciar Uvicorn + workers)
 ngrok http 8000
@@ -226,8 +233,11 @@ ngrok http 8000
 ## API endpoints relevantes
 
 - `POST /api/briefs/upload-asset` — subir foto del usuario (multipart)
-- `POST /api/runs/sync` / `/async` — ejecutar pipeline (`user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`, `content_format` incluye `reel` y `user_clip_reel`; ambos solo vía `/async`, 422 en `/sync`; `user_clip_reel` requiere `drive_folder_id`, 422 si falta)
+- `POST /api/runs/sync` / `/async` — ejecutar pipeline (`user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`, `content_format` incluye `reel` y `user_clip_reel`; ambos solo vía `/async`, 422 en `/sync`; `user_clip_reel` requiere `drive_folder_id`, 422 si falta; `social_account_id` opcional para cuenta destino multi-cuenta)
 - `POST /api/runs/{id}/approve` / `/reject` — aprobación humana
+- `POST /api/runs/{id}/revise` — regenera la pieza de un run `pending_approval` con notas del revisor (`notes`, `revised_by`); 409 si el run no está pendiente. Feed/story se regeneran inline; `reel`/`user_clip_reel` se encolan en `video_render` y responden `queued`
+- `GET /api/auth/accounts` — lista cuentas OAuth multi-cuenta (sin tokens)
+- `DELETE /api/auth/accounts/{id}` — desconexión lógica (`is_active=False`)
 - `POST /api/campaigns/{id}/fire` — disparar campaña
 - `GET /api/image/archetypes` — listar arquetipos disponibles
 - `GET /api/image/providers` — listar proveedores de imagen
@@ -263,6 +273,9 @@ Archivos clave:
 - `tests/test_video_timeline_clips.py` — contrato Timeline: overlays TitleAsset + clips video/captions
 - `tests/test_format_normalization.py` — normalización de `content_format` en requests
 - `tests/test_runs_api.py` — endpoints `/api/runs` (sync/async, validaciones 422)
+- `tests/test_llm_keep_alive.py` — `keep_alive` en el payload de Ollama y timeout tolerante a cold-start
+- `tests/test_revise_run.py` — `POST /runs/{id}/revise`: persistencia de params, re-ejecución con notas, acumulación de revisiones, ruteo de video a `video_render`
+- `tests/test_multi_account.py` — multi-cuenta: N filas por proveedor, callback que agrega sin pisar, `_resolve_publish_token` (validaciones + fallback), publish dirigido y regresión legacy
 - `tests/conftest.py` — fixtures compartidas de la suite
 
 ---
@@ -280,13 +293,14 @@ Archivos clave:
 - **Voz en dev:** `VOICE_PROVIDER=fal` (Kokoro Spanish) reusa `FAL_API_KEY`; no hace falta ElevenLabs para probar Reels
 - **ffmpeg es dependencia de sistema** (no Python) requerida solo para `user_clip_reel` — `transcription_providers.py` la invoca vía `subprocess` para extraer audio antes de transcribir con Whisper
 - **Google OAuth `drive.readonly` puede requerir verificación manual de la app** para usuarios externos a tu organización — en dev, agregar el email como "test user" en la pantalla de consentimiento evita el trámite
-- **Limitación restante — URLs de clips en wan-effects:** `clip_assets.py` sigue generando `http://localhost:8000/static/...`; Shotstack ya recibe URLs públicas vía `_publicize_edit`, pero fal.ai wan-effects (si `EFFECTS_ENABLED=true`) aún necesita ngrok activo para alcanzar el clip fuente a mitad de pipeline
+- **URLs de clips:** `clip_public_url()` usa `PUBLIC_IMAGE_BASE_URL` (no localhost hardcodeado) porque fal.ai wan-effects descarga el clip fuente a mitad de pipeline. Sigue haciendo falta ngrok corriendo para que esa URL sea alcanzable desde fuera; lo que ya no pasa es que apunte a localhost aunque el túnel esté activo
 - **Captions de `user_clip_reel` son por segmento, no por palabra** — granularidad más fina queda para v2
-- **LLM debe estar vivo Y caliente o el copy sale genérico:** `get_llm()` devuelve un `OllamaLLM` aunque Ollama esté apagado; si la llamada falla (server caído o cold-start > timeout 180s de `llm.py`), estratega y copywriter atrapan la excepción y caen a `_stub()` → texto de plantilla en la imagen **sin error visible al usuario**. Ollama descarga el modelo tras ~5 min inactivo, así que el cold-start reaparece. Mantener `ollama serve` corriendo y el modelo pre-cargado antes de generar. Fix propuesto (no aplicado): `keep_alive` + timeout de cold-start en `llm.py`
+- **LLM debe estar vivo o el copy sale genérico:** `get_llm()` devuelve un `OllamaLLM` aunque Ollama esté apagado; si la llamada falla, estratega y copywriter atrapan la excepción y caen a `_stub()` → texto de plantilla en la imagen **sin error visible al usuario**. Mitigado (2026-07-27): el payload lleva `keep_alive` (`OLLAMA_KEEP_ALIVE`, default `30m`) para que Ollama no descargue el modelo entre runs, y el timeout subió a `LLM_TIMEOUT_SECONDS` (default 300s) para tolerar la carga inicial de ~5GB. **El fallback silencioso sigue existiendo**: si Ollama está apagado, el copy sale genérico igual — mantener `ollama serve` corriendo
 - **Imagen fail-loudly:** fal.ai / SD ya no caen a placeholder silencioso; fallan con `RuntimeError(image_gen_failed:…)`. Placeholders solo con `IMAGE_PROVIDER=mock` o mocks de test
 - **Doctrina inbound:** `agents/marketing_agents/knowledge/inbound_marketing.py` se inyecta en `_SYSTEM` de estratega, copywriter y `video_script` (pirámide Entretener → Información → Conexión + `publico_objetivo`)
-- **Revisión HITL (parcial):** UI captura notas en `revisionByRunId`; backend `POST /runs/{id}/revise` **no** existe aún
+- **Revisión HITL (completa):** `POST /runs/{id}/revise` regenera la pieza con las notas del revisor. Requiere `AgentRun.run_params_json` (migración `0006`), que guarda la config del run original — sin eso la re-ejecución perdería arquetipo/foto/carpeta Drive. Las notas se propagan como `revision_notes` a Designer (prompt Flux + `visual_instructions`), VideoScriptAgent y ClipEditorAgent. Una revisión **nunca publica**: siempre vuelve a `pending_approval`
 - **Meta OAuth:** redirect URI debe ser path completo (`…/api/auth/callback/meta`); token sin scopes IG → Graph subcode 33 (re-autorizar desde Integraciones)
+- **Multi-cuenta social:** `oauth_tokens` es único por `(tenant, provider, account_id)` — el callback OAuth **agrega** cuentas, nunca pisa las anteriores (migración `0007`). Cada run puede fijar `social_account_id`; NULL = cuenta activa más reciente del provider (legacy). Meta guarda una fila por Fan Page con IG vinculado, con **Page token** propio por fila. Desconectar = `is_active=False` (lógico, conserva historial). El Go sidecar no resuelve cuentas: recibe token+account_id ya elegidos por el gateway
 
 ---
 
@@ -295,10 +309,12 @@ Archivos clave:
 1. Canva OAuth — placeholder, no implementado
 2. Canva/Figma MCP — plantillas de marca vía MCP
 3. Stable Diffusion local — alternativa conservada, no es camino principal; A1111 caído → error explícito (no mock)
-4. Video v2 (no implementado) — TikTok (solo Instagram Reels por ahora), música de fondo, captions por palabra (hoy por segmento) para `user_clip_reel`
-5. `POST /runs/{id}/revise` — regenerar piezas con notas del dashboard
+4. Video v2 (no implementado) — música de fondo, captions por palabra (hoy por segmento) para `user_clip_reel`
+5. TikTok (fase 2, diseñado sin código) — Login Kit (OAuth PKCE) como provider nuevo en `auth_social.py` + Content Posting API (`/v2/post/publish/video/init/` + upload chunked) en el Go sidecar; solo video. Bloqueo: auditoría de TikTok obligatoria para posts públicos (sin auditar: solo SELF_ONLY) — iniciar trámite antes de codificar
 6. Meta: re-OAuth con scopes IG cuando el token solo tenga `pages_*` / `public_profile`
-7. Ollama cold-start — `keep_alive` + timeout (propuesto, no aplicado)
+7. Revise v2 — historial de versiones por revisión (hoy `result_json` se sobrescribe; el asset previo queda en disco pero sin fila en `generated_assets` hasta aprobar)
+8. CI/CD — `skaffold.yaml` + `clouddeploy.yaml` + overlays kustomize existen y renderizan, pero **nunca se aplicaron contra un clúster real**: falta crear los GKE, reemplazar `PROJECT_ID`/`REGION` en `clouddeploy.yaml` y cablear los secretos vía Secret Manager
+9. Fallback silencioso del LLM — `keep_alive`/timeout ya aplicados, pero si Ollama está apagado los agentes siguen cayendo al stub sin avisar al usuario; falta propagar el error a la UI
 
 ---
 

@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # Ollama (IA local)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
+    # Mantiene el modelo cargado entre runs: sin esto Ollama lo descarga tras ~5 min
+    # inactivo y el cold-start vuelve a superar el timeout → agentes al stub
+    ollama_keep_alive: str = "30m"
+    # Timeout de la llamada al LLM; debe tolerar la carga inicial del modelo (~5GB)
+    llm_timeout_seconds: int = 300
 
     # Image generation — provider: stable_diffusion | comfyui | fal | openai | canva | mock
     image_provider: str = "stable_diffusion"

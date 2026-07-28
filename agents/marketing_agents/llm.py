@@ -10,10 +10,24 @@ from typing import Any
 class OllamaLLM:
     """Cliente LLM local vía API HTTP de Ollama (`/api/chat` con salida JSON)."""
 
-    def __init__(self, base_url: str, model: str = "llama3") -> None:
-        """Guarda URL base del servidor Ollama y nombre del modelo."""
+    def __init__(
+        self,
+        base_url: str,
+        model: str = "llama3",
+        *,
+        keep_alive: str = "30m",
+        timeout_seconds: int = 300,
+    ) -> None:
+        """Guarda URL base, modelo, ventana `keep_alive` y timeout tolerante a cold-start.
+
+        Ollama descarga el modelo tras ~5 min inactivo; sin `keep_alive` la primera llamada
+        de cada run vuelve a cargar ~5GB y supera el timeout, y los agentes caen al stub
+        (texto de plantilla) sin error visible para el usuario.
+        """
         self._base_url = base_url.rstrip("/")
         self._model = model
+        self._keep_alive = keep_alive
+        self._timeout_seconds = timeout_seconds
 
     def complete_json(self, system: str, user: str, *, max_tokens: int = 1024) -> dict[str, Any]:
         """Pide una respuesta JSON al modelo y la parsea como dict."""
@@ -30,9 +44,12 @@ class OllamaLLM:
             ],
             "format": "json",
             "stream": False,
+            "keep_alive": self._keep_alive,
             "options": {"num_predict": max_tokens},
         }
-        resp = httpx.post(f"{self._base_url}/api/chat", json=payload, timeout=180)
+        resp = httpx.post(
+            f"{self._base_url}/api/chat", json=payload, timeout=self._timeout_seconds
+        )
         resp.raise_for_status()
         content = resp.json()["message"]["content"]
         return _parse_json(content)
@@ -100,7 +117,12 @@ def get_llm() -> OllamaLLM | AnthropicLLM | OpenAILLM | None:
     from gateway.app.core.settings import get_settings
     s = get_settings()
     if s.llm_provider == "ollama":
-        return OllamaLLM(s.ollama_base_url, s.ollama_model)
+        return OllamaLLM(
+            s.ollama_base_url,
+            s.ollama_model,
+            keep_alive=s.ollama_keep_alive,
+            timeout_seconds=s.llm_timeout_seconds,
+        )
     if s.llm_provider == "anthropic" and s.anthropic_api_key:
         return AnthropicLLM(s.anthropic_api_key, s.llm_model)
     if s.llm_provider == "openai" and s.openai_api_key:

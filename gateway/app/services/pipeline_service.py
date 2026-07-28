@@ -114,6 +114,48 @@ _OAUTH_PROVIDER_MAP = {
 _NATIVE_PYTHON_PLATFORMS: frozenset[str] = frozenset({"linkedin"})
 
 
+def _resolve_publish_token(
+    db: Session,
+    run: AgentRun,
+    oauth_provider: str,
+) -> OAuthToken | None:
+    """Devuelve la cuenta social a usar para publicar este run.
+
+    Si `run.social_account_id` está seteado, esa cuenta exacta (validando tenant,
+    provider e is_active) — error claro si no coincide. Si es None, comportamiento
+    legacy: la única cuenta activa del provider (la más reciente si hay varias).
+    """
+    if run.social_account_id is not None:
+        row = db.get(OAuthToken, run.social_account_id)
+        if not row or row.tenant_id != run.tenant_id:
+            raise ValueError(
+                f"Cuenta social id={run.social_account_id} no existe para este tenant. "
+                "Selecciona una cuenta válida en el dashboard."
+            )
+        if not row.is_active:
+            raise ValueError(
+                f"La cuenta {row.account_name or row.account_id} ({row.provider}) está desconectada. "
+                "Reconéctala en Integraciones o elige otra cuenta."
+            )
+        if row.provider != oauth_provider:
+            raise ValueError(
+                f"La cuenta seleccionada es de '{row.provider}' pero el brief publica en "
+                f"'{oauth_provider}'. Elige una cuenta del proveedor correcto."
+            )
+        return row
+
+    return db.execute(
+        select(OAuthToken)
+        .where(
+            OAuthToken.tenant_id == run.tenant_id,
+            OAuthToken.provider == oauth_provider,
+            OAuthToken.is_active.is_(True),
+        )
+        .order_by(OAuthToken.updated_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def _publish_via_linkedin(
     db: Session,
     result: dict,
@@ -121,15 +163,10 @@ def _publish_via_linkedin(
     run: AgentRun,
     idempotency_key: str | None,
 ) -> str:
-    """Publicación nativa LinkedIn con imagen: lee token OAuth de DB y llama al provider Python."""
+    """Publicación nativa LinkedIn con imagen: usa la cuenta del run (o la única conectada)."""
     from agents.marketing_agents.social_providers import publish_post
 
-    token_row = db.execute(
-        select(OAuthToken).where(
-            OAuthToken.tenant_id == run.tenant_id,
-            OAuthToken.provider == "linkedin",
-        )
-    ).scalar_one_or_none()
+    token_row = _resolve_publish_token(db, run, "linkedin")
 
     if not token_row:
         raise ValueError(
@@ -189,12 +226,7 @@ def _publish_via_go(
     account_id = ""
 
     if oauth_provider:
-        token_row = db.execute(
-            select(OAuthToken).where(
-                OAuthToken.tenant_id == run.tenant_id,
-                OAuthToken.provider == oauth_provider,
-            )
-        ).scalar_one_or_none()
+        token_row = _resolve_publish_token(db, run, oauth_provider)
         if token_row:
             access_token = token_row.access_token
             account_id = token_row.account_id
@@ -260,8 +292,15 @@ def create_run(
     run_mode: str,
     idempotency_key: str | None,
     content_format: str = "feed",
+    params: dict | None = None,
+    social_account_id: int | None = None,
 ) -> AgentRun:
-    """Inserta un `AgentRun` en cola con modo sync/async, clave de idempotencia y formato feed/story."""
+    """Inserta un `AgentRun` en cola con modo sync/async, clave de idempotencia y formato feed/story.
+
+    `params` guarda la configuración visual del run (arquetipo, foto, proveedor, carpeta Drive)
+    para que una revisión posterior pueda regenerar la pieza con la misma configuración.
+    `social_account_id` fija la cuenta destino (oauth_tokens.id); None = única cuenta del provider.
+    """
     run = AgentRun(
         tenant_id=tenant_id,
         brief_id=brief_id,
@@ -269,6 +308,9 @@ def create_run(
         status="queued",
         idempotency_key=idempotency_key,
         content_format=_normalize_content_format(content_format),
+        run_params_json=json.dumps(params or {}, ensure_ascii=True),
+        revision_count=0,
+        social_account_id=social_account_id,
     )
     db.add(run)
     db.commit()
@@ -289,6 +331,7 @@ def execute_pipeline(
     alter_image_with_ai: bool = False,
     visual_instructions: str | None = None,
     drive_folder_id: str | None = None,
+    revision_notes: str | None = None,
 ) -> dict:
     """Orquesta el pipeline completo: deduplicación, agentes, aprobación humana opcional, persistencia y publicación."""
     run = db.get(AgentRun, run_id)
@@ -338,6 +381,7 @@ def execute_pipeline(
             tenant_id=run.tenant_id,
             run_id=run.id,
             drive_folder_id=drive_folder_id,
+            revision_notes=revision_notes,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
@@ -430,6 +474,63 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
         run.status = "pending_approval"
         db.commit()
         raise
+
+
+def prepare_revision(
+    db: Session,
+    run_id: int,
+    *,
+    notes: str,
+    revised_by: str = "human",
+    next_status: str = "running",
+) -> dict:
+    """Valida el run revisable, acumula la nota, incrementa el contador y devuelve los params originales.
+
+    Separado de `revise_run` porque los formatos de video no se regeneran inline: el endpoint
+    encola la tarea Celery con estos mismos params tras marcar la revisión.
+    """
+    run = db.get(AgentRun, run_id)
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+    if run.status != "pending_approval":
+        raise ValueError(f"Run {run_id} no está en estado pending_approval (actual: {run.status})")
+
+    clean = notes.strip()
+    if not clean:
+        raise ValueError("Las notas de revisión no pueden estar vacías")
+
+    params = json.loads(run.run_params_json) if run.run_params_json else {}
+
+    stamp = f"#{(run.revision_count or 0) + 1} ({revised_by}): {clean}"
+    run.revision_notes = f"{run.revision_notes}\n{stamp}" if run.revision_notes else stamp
+    run.revision_count = (run.revision_count or 0) + 1
+    run.status = next_status
+    db.add(run)
+    db.commit()
+    logger.info("pipeline.revision_requested", run_id=run_id, revision=run.revision_count)
+    return params
+
+
+def revise_run(db: Session, run_id: int, *, notes: str, revised_by: str = "human") -> dict:
+    """Regenera inline la pieza de un run en `pending_approval` aplicando las notas del revisor."""
+    params = prepare_revision(db, run_id, notes=notes, revised_by=revised_by)
+    return execute_pipeline(
+        db,
+        run_id,
+        publish=bool(params.get("publish", False)),
+        # Una revisión siempre vuelve a la cola humana: nunca publica sin nueva aprobación.
+        requires_approval=True,
+        # La key original ya identifica la versión anterior; reutilizarla dispararía la
+        # deduplicación contra el run previo en vez de regenerar.
+        idempotency_key=None,
+        image_provider=params.get("image_provider"),
+        archetype_override=params.get("archetype_override"),
+        user_asset_url=params.get("user_asset_url"),
+        alter_image_with_ai=bool(params.get("alter_image_with_ai", False)),
+        visual_instructions=params.get("visual_instructions"),
+        drive_folder_id=params.get("drive_folder_id"),
+        revision_notes=notes.strip(),
+    )
 
 
 def reject_run(db: Session, run_id: int, *, reason: str = "", approved_by: str = "human") -> None:

@@ -45,6 +45,7 @@ class MarketingPipeline:
         tenant_id: str | None = None,
         run_id: int | None = None,
         drive_folder_id: str | None = None,
+        revision_notes: str | None = None,
     ) -> dict:
         """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable."""
         strategy = self.strategist.run(brief)
@@ -68,6 +69,7 @@ class MarketingPipeline:
                 tenant_id=tenant_id,
                 run_id=run_id,
                 drive_folder_id=drive_folder_id,
+                revision_notes=revision_notes,
             )
         elif content_format == "reel":
             # Branch de video generado: guion -> fondos fal.ai -> voz off -> Timeline -> render (Shotstack).
@@ -76,6 +78,7 @@ class MarketingPipeline:
                 copy,
                 strategy,
                 image_provider=image_provider,
+                revision_notes=revision_notes,
             )
         else:
             design = self.designer.run(
@@ -88,6 +91,7 @@ class MarketingPipeline:
                 user_asset_url=user_asset_url,
                 alter_image_with_ai=alter_image_with_ai,
                 visual_instructions=visual_instructions,
+                revision_notes=revision_notes,
             )
 
         publish_result = None

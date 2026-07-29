@@ -5,6 +5,7 @@ from __future__ import annotations
 import structlog
 from pydantic import BaseModel, Field
 
+from .knowledge import inbound_system_addendum
 from .llm import get_llm
 from .schemas import BriefInput, CopyOutput, StrategyOutput
 
@@ -14,8 +15,10 @@ logger = structlog.get_logger(__name__)
 _WORDS_PER_SECOND = 2.5
 
 _SYSTEM = """\
-You are an expert short-form vertical video scriptwriter for Instagram Reels.
-Given an approved content strategy and post copy, produce a 3-5 scene video script for narration + on-screen text.
+You are an expert short-form vertical video scriptwriter for Instagram Reels,
+grounded in inbound marketing. Given an approved content strategy and post copy,
+produce a 3-5 scene video script for narration + on-screen text that reaches the
+named community using Entretener → Informacion → Conexion.
 
 Return ONLY valid JSON with exactly these fields:
 {
@@ -35,8 +38,9 @@ Rules:
 - Produce between 3 and 5 scenes total; the LAST scene MUST be the CTA scene (its narration is the closing CTA).
 - Target a TOTAL narration length matching a 15-30 second reel (~2.5 spoken words per second).
 - Write in the language specified by 'idioma'.
-- Never include emojis unless the tone explicitly calls for them.\
-"""
+- Never include emojis unless the tone explicitly calls for them.
+- Scene 1 entertains (stop-scroll); middle scenes inform the target audience; last scene connects (community CTA).
+""" + inbound_system_addendum(role="video_script")
 
 
 class ScriptScene(BaseModel):
@@ -59,7 +63,14 @@ class VideoScript(BaseModel):
 class VideoScriptAgent:
     """Genera el guion de video (hook, escenas narradas, CTA) desde estrategia y copy aprobados (LLM o stub)."""
 
-    def run(self, brief: BriefInput, strategy: StrategyOutput, copy: CopyOutput) -> VideoScript:
+    def run(
+        self,
+        brief: BriefInput,
+        strategy: StrategyOutput,
+        copy: CopyOutput,
+        *,
+        revision_notes: str | None = None,
+    ) -> VideoScript:
         """Devuelve `VideoScript` desde el LLM configurado o `_stub` ante ausencia de LLM o error."""
         llm = get_llm()
         if llm is None:
@@ -67,14 +78,21 @@ class VideoScriptAgent:
             return self._stub(brief, strategy, copy)
         prompt = (
             f"- Topic (tema): {brief.tema}\n"
-            f"- Target audience: {brief.publico_objetivo}\n"
+            f"- Target audience / community to reach: {brief.publico_objetivo}\n"
             f"- Platform: {brief.red_social}\n"
             f"- Strategy hook: {strategy.hook}\n"
             f"- Core message: {strategy.mensaje_base}\n"
             f"- Approved copy: {copy.copy_final}\n"
             f"- CTA: {copy.cta}\n"
-            f"- Language: {brief.idioma}"
+            f"- Language: {brief.idioma}\n"
+            f"- Scene arc required: Entretener → Informacion → Conexion"
         )
+        notes = (revision_notes or "").strip()
+        if notes:
+            prompt += (
+                f"\n- REVISION REQUESTED by the human reviewer (highest priority, "
+                f"apply it over the previous script): {notes}"
+            )
         try:
             data = llm.complete_json(_SYSTEM, prompt)
             return VideoScript(**data)

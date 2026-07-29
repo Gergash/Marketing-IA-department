@@ -8,6 +8,10 @@ def test_normalize_content_format_accepts_reel() -> None:
     assert _normalize_content_format("reel") == "reel"
 
 
+def test_normalize_content_format_accepts_user_clip_reel() -> None:
+    assert _normalize_content_format("user_clip_reel") == "user_clip_reel"
+
+
 def test_normalize_content_format_still_accepts_feed_and_story() -> None:
     assert _normalize_content_format("feed") == "feed"
     assert _normalize_content_format("story") == "story"
@@ -20,6 +24,12 @@ def test_normalize_content_format_unknown_value_coerces_to_feed() -> None:
 
 def test_resolve_image_spec_reel_is_vertical_9_16() -> None:
     spec = resolve_image_spec("instagram", "reel")
+    assert spec.width == 1080
+    assert spec.height == 1920
+
+
+def test_resolve_image_spec_user_clip_reel_is_vertical_9_16_not_feed() -> None:
+    spec = resolve_image_spec("instagram", "user_clip_reel")
     assert spec.width == 1080
     assert spec.height == 1920
 

@@ -30,11 +30,12 @@ class VideoDesignerAgent:
         image_provider: str | None = None,
         voice_provider: str | None = None,
         video_provider: str | None = None,
+        revision_notes: str | None = None,
     ) -> VideoDesignOutput:
         """Ejecuta guion -> fondos -> voz off -> Timeline -> render; devuelve `VideoDesignOutput`."""
         from gateway.app.core.settings import get_settings
 
-        script = self.script_agent.run(brief, strategy, copy)
+        script = self.script_agent.run(brief, strategy, copy, revision_notes=revision_notes)
 
         scenes: list[Scene] = []
         for scene in script.scenes:

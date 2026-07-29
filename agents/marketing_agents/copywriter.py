@@ -2,14 +2,16 @@
 
 import structlog
 
+from .knowledge import inbound_system_addendum
 from .llm import get_llm
 from .schemas import CopyOutput, StrategyOutput
 
 logger = structlog.get_logger(__name__)
 
 _SYSTEM = """\
-You are a professional social media copywriter.
-Given a content strategy, write compelling post copy ready to publish.
+You are a professional social media copywriter using inbound marketing principles.
+Given a content strategy, write compelling post copy ready to publish that reaches
+the intended community and moves Entretener → Informacion → Conexion.
 
 Return ONLY valid JSON with exactly these fields:
 {
@@ -28,8 +30,9 @@ Rules:
 - Instagram / Facebook: up to 2200 chars for copy_final, line breaks + emojis OK.
 - X/Twitter: copy_final 280 chars max.
 - TikTok: short, energetic, copy_final 150 chars.
-- Always close copy_final with the CTA embedded naturally, not as a separate paragraph.\
-"""
+- Always close copy_final with the CTA embedded naturally, not as a separate paragraph.
+- CTA must invite CONEXION (comment, save, DM, join community), not only hard sell.
+""" + inbound_system_addendum(role="copywriter")
 
 
 class CopywriterAgent:
@@ -50,7 +53,8 @@ class CopywriterAgent:
             f"- Post type: {strategy.tipo_post}\n"
             f"- Hook: {strategy.hook}\n"
             f"- Core message: {strategy.mensaje_base}\n"
-            f"- Suggested hashtags: {', '.join(strategy.hashtags)}"
+            f"- Suggested hashtags: {', '.join(strategy.hashtags)}\n"
+            f"- Structure copy_final as: Entretener → Informacion → Conexion"
         )
         if qa_feedback:
             prompt += (
@@ -82,7 +86,7 @@ class CopywriterAgent:
         copy_text = (
             f"{strategy.hook}\n\n"
             f"{strategy.mensaje_base}\n"
-            "Con un flujo de agentes puedes pasar de idea a post en minutos."
+            "¿Te pasa lo mismo en tu comunidad? Cuéntanos en comentarios."
         )
         if qa_feedback:
             lowered_fb = " ".join(qa_feedback).lower()
@@ -97,6 +101,6 @@ class CopywriterAgent:
             headline_for_image=strategy.hook[:100],
             subline_for_image=strategy.mensaje_base[:80] if strategy.mensaje_base else "",
             hashtags=strategy.hashtags + ["#Growth", "#SocialMedia"],
-            cta="Escribe 'MVP' y te compartimos una demo.",
+            cta="Comenta y conectemos.",
         )
         return self._ensure_overlay_fields(out, strategy)

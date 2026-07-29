@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: video-worker
+  namespace: marketing-depa
+spec:
+  # Renders de Shotstack cuestan dinero real: escalar horizontalmente multiplica
+  # el gasto sin acelerar un render individual. Subir solo con demanda concurrente real.
+  replicas: 1
+  selector:
+    matchLabels: { app: video-worker }
+  template:
+    metadata:
+      labels: { app: video-worker }
+    spec:
+      containers:
+        - name: video-worker
+          image: marketing-depa/worker:latest
+          # Cola dedicada: los reels tardan minutos y no deben bloquear feed/story.
+          command:
+            - "python"
+            - "-m"
+            - "celery"
+            - "-A"
+            - "workers.celery_app.celery_app"
+            - "worker"
+            - "-l"
+            - "info"
+            - "-Q"
+            - "video_render"
+          envFrom:
+            - configMapRef: { name: marketing-config }
+            - secretRef: { name: marketing-secrets }
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "celery", "-A", "workers.celery_app.celery_app", "inspect", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 30

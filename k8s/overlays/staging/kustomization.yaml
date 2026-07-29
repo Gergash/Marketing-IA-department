@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - target: { kind: ConfigMap, name: marketing-config }
+    patch: |
+      - op: replace
+        path: /data/APP_ENV
+        value: staging
+      - op: add
+        path: /data/SHOTSTACK_ENV
+        value: stage
+      - op: add
+        path: /data/PROMETHEUS_ENABLED
+        value: "true"
+  - target: { kind: Deployment, name: api }
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1

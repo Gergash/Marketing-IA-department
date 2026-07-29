@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # Ollama (IA local)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
+    # Mantiene el modelo cargado entre runs: sin esto Ollama lo descarga tras ~5 min
+    # inactivo y el cold-start vuelve a superar el timeout → agentes al stub
+    ollama_keep_alive: str = "30m"
+    # Timeout de la llamada al LLM; debe tolerar la carga inicial del modelo (~5GB)
+    llm_timeout_seconds: int = 300
 
     # Image generation — provider: stable_diffusion | comfyui | fal | openai | canva | mock
     image_provider: str = "stable_diffusion"
@@ -44,12 +49,22 @@ class Settings(BaseSettings):
     fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
     fal_img2img_strength: float = 0.72
 
-    # Voiceover generation — provider: elevenlabs | openai | mock
+    # Voiceover generation — provider: elevenlabs | openai | fal | mock
     voice_provider: str = "elevenlabs"
     voice_language: str = "es"
     elevenlabs_api_key: str = ""
     # Voz multilingüe por defecto (funciona en español con el modelo eleven_multilingual_v2)
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    # fal.ai TTS (reusa fal_api_key) — modelo nativo en español; voces: ef_dora | em_alex | em_santa
+    fal_tts_model: str = "fal-ai/kokoro/spanish"
+    fal_tts_voice: str = "ef_dora"
+
+    # Transcripción de audio (clips de usuario) — provider: whisper | mock
+    stt_provider: str = "whisper"
+
+    # Efecto visual generativo opcional sobre el segmento hook de user_clip_reel — fal.ai wan-effects
+    effects_enabled: bool = False
+    fal_effects_model: str = "fal-ai/wan-effects"
 
     # Video rendering (Reels) — provider: shotstack | json2video | mock
     video_provider: str = "shotstack"
@@ -85,6 +100,11 @@ class Settings(BaseSettings):
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8000/api/auth/callback/linkedin"
+
+    # OAuth 2.0 — Google Drive (fuente de clips de video del usuario)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/auth/callback/google"
 
     # URL pública base para imágenes — Meta exige HTTPS accesible públicamente (ej. ngrok en dev)
     public_image_base_url: str = "http://localhost:8000"

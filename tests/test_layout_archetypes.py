@@ -67,3 +67,27 @@ def test_build_flux_prompt_no_text_in_image() -> None:
     prompt = build_flux_prompt(archetype, brief=brief, strategy=strategy, spec=resolve_image_spec("instagram", "feed"))
     assert "no text" in prompt.lower()
     assert archetype.id in ARCHETYPES
+
+
+def test_iot_theme_gets_camera_metaphor_not_generic_ai() -> None:
+    from agents.marketing_agents.layout_archetypes import _visual_metaphor_hint
+
+    brief = BriefInput(
+        tema="IoT y camaras de seguridad con IA",
+        publico_objetivo="Gobiernos",
+        red_social="instagram",
+        objetivo="Reconocimiento",
+        tono_marca="profesional",
+    )
+    strategy = StrategyOutput(tipo_post="educativo", hook="h", mensaje_base="m", hashtags=[])
+    metaphor = _visual_metaphor_hint(brief, strategy)
+    assert "camera" in metaphor.lower() or "iot" in metaphor.lower()
+    assert "human plus AI collaboration" not in metaphor
+    prompt = build_flux_prompt(
+        pick_archetype(brief, strategy),
+        brief=brief,
+        strategy=strategy,
+        spec=resolve_image_spec("instagram", "feed"),
+    )
+    assert "IoT y camaras de seguridad con IA" in prompt
+    assert "camera" in prompt.lower() or "iot" in prompt.lower()

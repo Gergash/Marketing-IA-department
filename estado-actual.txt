@@ -1,12 +1,113 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-07-04  
-Último commit local en `main`: `test(video): limpiar cache de get_settings entre tests`  
-**Nota:** `main` está **9 commits por delante** de `origin/main` (rama Video-as-Code / Reels aún no pusheada).
+Actualizado: 2026-07-27
+Último foco: saldar deuda técnica acumulada (cold-start Ollama, URLs de clips, CI/CD).
 
 ---
 
 ### Cronología reciente
+
+#### 2026-07-27 — Deuda técnica saldada: Ollama, clips y CI/CD
+
+| Entrega | Detalle |
+|---------|---------|
+| **Cold-start Ollama** | `OllamaLLM` acepta `keep_alive` (`OLLAMA_KEEP_ALIVE`, default `30m`) y `timeout_seconds` (`LLM_TIMEOUT_SECONDS`, default 300s, antes 180 fijos). Evita que Ollama descargue el modelo entre runs y que la carga inicial de ~5GB agote el timeout |
+| **URLs de clips** | `clip_public_url()` usa `PUBLIC_IMAGE_BASE_URL` en vez de `http://localhost:8000` hardcodeado — fal.ai wan-effects descarga el clip fuente a mitad de pipeline y con localhost fallaba siempre |
+| **CI/CD** | `skaffold.yaml` (3 imágenes, tag por commit, `--default-repo` para no hardcodear el registry) + `clouddeploy.yaml` (staging → prod, prod con `requireApproval`) + overlays kustomize `dev`/`staging`/`prod` |
+| **Deployment faltante** | `k8s/base/video-worker-deployment.yaml` — la cola `video_render` es obligatoria para reels y no tenía manifiesto; sin él los reels quedaban encolados para siempre en el clúster |
+| **Bug de imagen** | `Dockerfile.worker` no instalaba `ffmpeg`, dependencia de sistema de `user_clip_reel`: en Kubernetes la transcripción habría fallado |
+| **Tests** | `tests/test_llm_keep_alive.py` (5) + 2 nuevos en `test_clip_assets.py` → **160 passing**; los 3 overlays verificados con `kubectl kustomize` |
+
+#### 2026-07-27 — Multi-cuenta social con selector por run
+
+| Entrega | Detalle |
+|---------|---------|
+| **Modelo** | `oauth_tokens` acepta N cuentas por proveedor: `account_name`, `profile_picture_url`, `page_id`, `is_active` + unicidad `(tenant_id, provider, account_id)`; `agent_runs.social_account_id` fija la cuenta destino (migración Alembic `0007`) |
+| **OAuth callback** | Upsert por `(tenant, provider, account_id)`: conectar una cuenta nueva **no** pisa las anteriores; reconectar refresca token. Meta guarda **una fila por Fan Page con IG vinculado** (username, foto y Page token por fila); LinkedIn trae nombre+foto vía OpenID userinfo |
+| **API** | `GET /api/auth/accounts` (selector) y `DELETE /api/auth/accounts/{id}` (desconexión lógica); `RunRequest.social_account_id` viaja por `create_run` y `_run_params` |
+| **Publicación dirigida** | `_resolve_publish_token`: cuenta exacta del run (valida tenant/provider/is_active con errores claros) o fallback legacy (cuenta activa más reciente del provider si `social_account_id` es NULL) |
+| **Frontend** | Selector **Cuenta destino** en el formulario (filtrado por `red_social`, preselección si hay una sola); Integraciones lista cuentas con avatar + Desconectar + "Conectar otra cuenta" |
+| **Go sidecar** | Sin cambios funcionales: ya era stateless (`access_token`+`account_id` por request); solo el gateway decide qué fila enviar |
+| **Tests** | `tests/test_multi_account.py` (14 tests: multi-fila, callback multi-página, publish dirigido, regresión legacy) — suites afectadas verdes (47 passed) |
+
+#### 2026-07-26 — Revisión de piezas: de stub a flujo real
+
+| Entrega | Detalle |
+|---------|---------|
+| **Endpoint** | `POST /runs/{id}/revise` (`notes`, `revised_by`) — 404 fuera del tenant, 409 si el run no está en `pending_approval` |
+| **Persistencia** | `AgentRun.run_params_json` + `revision_notes` + `revision_count` (migración Alembic `0006`); sin los params guardados la re-ejecución perdía arquetipo/foto/proveedor/carpeta Drive |
+| **Propagación** | `revision_notes` viaja pipeline → Designer (prompt Flux + `visual_instructions`), VideoScriptAgent y ClipEditorAgent |
+| **Ruteo** | Feed/story se regeneran inline; `reel`/`user_clip_reel` se encolan en `video_render` y responden `queued` |
+| **Garantía HITL** | Una revisión nunca publica: `requires_approval=True` forzado e `idempotency_key=None` (evita que la deduplicación devuelva la versión anterior) |
+| **Frontend** | `requestRevision` deja de ser stub: llama al endpoint, refresca el resultado y muestra estado "Regenerando…" |
+| **Tests** | `tests/test_revise_run.py` (15 tests, incluye fallo de regeneración que devuelve el run a `pending_approval`) |
+
+#### 2026-07-25 — Doctrina inbound + caja de modificaciones (UI stub)
+
+| Entrega | Detalle |
+|---------|---------|
+| **Knowledge inbound** | `agents/marketing_agents/knowledge/inbound_marketing.py` — Atraer→Convertir→Cerrar→Deleitar; pirámide **Entretener→Informacion→Conexion**; fuentes HubSpot/Cyberclick/Postedin/EUDE/NothingAD/RD Station |
+| **Inyección en prompts** | `inbound_system_addendum` en Strategist, Copywriter y VideoScriptAgent (todos los formatos heredan el marco) |
+| **UI revisión** | Textarea + **Solicitar cambios** en Resultado e Historial `pending_approval` (`App.jsx`); stub local en ese momento — cableado end-to-end el 2026-07-26 |
+| **Tests** | `tests/test_inbound_knowledge.py` (+ pipeline) verdes |
+
+#### 2026-07-22 — Imagen: sin mock silencioso + metáforas IoT
+
+| Entrega | Detalle |
+|---------|---------|
+| **fal/SD** | Fallos levantan `RuntimeError(image_gen_failed:...)` en lugar de Pillow mock disfrazado de éxito |
+| **Metáforas** | IoT/cámaras/seguridad priorizan escena de vigilancia/analytics (antes diluía el match genérico `"ia" in tema`) |
+| **Verificación** | fal.ai Flux responde OK con el prompt actual; mocks previos con SD = A1111 apagado en `:7860` |
+
+#### 2026-07-16..19 — Shotstack estable (Reels) + fal CDN + Meta OAuth
+
+| Entrega | Detalle |
+|---------|---------|
+| **Payload Shotstack** | Overlays = clips `TitleAsset`; `output.resolution=1080` + `aspectRatio=9:16` (sin `custom`/`size`) |
+| **URLs** | `_publicize_edit` reescribe localhost→ngrok; **fondos/voz fal** van a Shotstack como `fal.media` (run 36 render OK ~200s) |
+| **Voz** | `VOICE_PROVIDER=fal` (Kokoro Spanish); Celery `video_render` con tasks registradas + timeout 20 min |
+| **Meta publish** | Fallo recurrente `GraphMethodException` subcode 33: token OAuth sin `instagram_basic`/`instagram_content_publish` — reautorizar desde Integraciones; redirect URI debe ser **URL completa** `/api/auth/callback/meta` |
+| **ngrok** | Plan Free rota dominio si no se usa `--url=...`; actualizar `.env` + Meta Developers al cambiar |
+
+#### 2026-07-23 — Diagnóstico: texto genérico en imágenes (LLM → stub)
+
+| Hallazgo | Detalle |
+|----------|---------|
+| **Síntoma** | El texto de overlay en las imágenes salía genérico (plantillas), no ideado a partir de los parámetros del brief |
+| **Causa raíz** | Los agentes caían al `_stub()` determinista. `get_llm()` (`llm.py:98`) devuelve un `OllamaLLM` **aunque Ollama esté apagado**; cada llamada lanza excepción → `strategist`/`copywriter` la atrapan → stub → texto de plantilla |
+| **Capa 2 (cold-start)** | Aun con Ollama encendido, la **primera** llamada carga el modelo (~4.9 GB) y supera el timeout httpx de 180s (`llm.py:35`) → `strategist.llm_error='timed out'` → stub. El `mensaje_base` genérico del stub se propaga al subline de la imagen |
+| **Verificación** | Con el modelo **caliente**, el estratega responde en ~21s y genera texto específico y creativo usando los parámetros del brief (público, tono, objetivo). Config `.env` correcta (`OLLAMA_MODEL=llama3.1`) — no había mismatch de modelo |
+| **Agravante** | Ollama descarga el modelo tras ~5 min inactivo → el cold-start (y el timeout) **reaparece** en la primera generación tras inactividad o reinicio |
+| **Mitigación operativa** | Mantener `ollama serve` corriendo y el modelo pre-cargado/caliente antes de generar. Requisito real, no opcional: sin LLM vivo y caliente, el copy sale genérico sin error visible al usuario |
+| **Fix de código propuesto (no aplicado)** | En `llm.py`: agregar `keep_alive` al payload de Ollama (evita descarga entre llamadas/runs) + subir el timeout de cold-start (~300s). Pendiente de decisión |
+
+#### 2026-07-16 — Fix render Shotstack + voz fal (Reels) [detalle técnico]
+
+| Entrega | Detalle |
+|---------|---------|
+| **Payload Shotstack** | `to_shotstack_edit()` ya no emite `title_asset` (inválido → HTTP 400). Overlays = clips `TitleAsset` en pista superior; media abajo; captions encima |
+| **URLs públicas** | `video_providers._publicize_edit` reescribe `localhost` → `PUBLIC_IMAGE_BASE_URL` (ngrok) en clips + soundtrack **antes** del POST a Shotstack |
+| **Errores visibles** | submit/poll incluyen el body JSON de Shotstack en el log (`body=...`) |
+| **Voz en .env** | `VOICE_PROVIDER=fal` + Kokoro Spanish (reusa `FAL_API_KEY`); `SHOTSTACK_ENV=stage` con key sandbox |
+| **Layouts PIL** | fondos de CTA/texto ajustados con `textbbox` / `multiline_textbbox` (sin distorsión) |
+| **UI** | spinner de carga en sync/async y upload de imagen base |
+| **Tests** | timeline/clips/providers actualizados → 24 tests de video verdes |
+
+#### 2026-07-05 — Reel con clips del usuario (Fase E)
+
+| Entrega | Detalle |
+|---------|---------|
+| **OAuth Google Drive** | `drive_source.py` — listar/descargar clips de una carpeta privada (`drive.readonly`), filename sanitizado + prefijado por id |
+| **Transcripción** | `transcription_providers.py` — Whisper (`whisper-1`, timestamps por palabra), chunking >25MB con offset-correction |
+| **Selección de segmentos** | `clip_assets.py` + `clip_editor.py` — `ClipEditorAgent` hook-scored, banda 6-60s, stub determinístico si falla LLM |
+| **Orquestación** | `clip_reel_designer.py` — Drive → transcripción → selección → efecto opcional (fal wan-effects) → Timeline (video + captions) → render Shotstack |
+| **Timeline** | `video_timeline.py` extendido: `Scene.asset_type`/`trim_in`/`trim_out`, `captions` track, narración condicional (solo escenas de imagen) |
+| **API/BD** | `content_format=user_clip_reel`, `drive_folder_id` obligatorio (422 si falta o si se usa `/runs/sync`); sin migración (columna `String(16)` ya soporta) |
+| **Go publisher** | Branch REELS ampliado a `user_clip_reel` (mismo timeout 300s que `reel`) |
+| **Frontend** | Opción "Video con mis clips (Drive)" + input de `drive_folder_id` condicional |
+| **Tests** | +46 tests de clips/drive/transcripción/editor/reel-designer/contratos → **114 passing** |
+
+Commits (orden cronológico): `f8c820e` … `81670ba` (11 commits en local, incluye fix de trim post-efecto).
 
 #### 2026-07-03 — Imagen + higiene documental
 
@@ -24,8 +125,8 @@ Commit de referencia: `40904e2` — `feat(design): foto de usuario como capa bas
 | Entrega | Detalle |
 |---------|---------|
 | **Contrato Timeline** | `video_timeline.py` — JSON provider-neutral + `to_shotstack_edit()` |
-| **Voz** | `voice_providers.py` — ElevenLabs / OpenAI TTS / mock (español por defecto) |
-| **Render** | `video_providers.py` — Shotstack block-and-poll + mock → `static/videos/` |
+| **Voz** | `voice_providers.py` — ElevenLabs / OpenAI TTS / mock (español; fal TTS añadido después, ver 2026-07-16) |
+| **Render** | `video_providers.py` — Shotstack block-and-poll + mock → `static/videos/` (publicize URLs: ver 2026-07-16) |
 | **Agentes** | `video_script.py`, `video_designer.py` — guion 3-5 escenas, fal stills + Ken Burns |
 | **Pipeline** | `content_format=reel` — rama paralela post copy/QA; async-only |
 | **Infra async** | Cola Celery `video_render`, `execute_video_pipeline_task` (sin autoretry) |
@@ -71,13 +172,14 @@ Go sidecar social-publisher (:8088) → Meta Graph API / LinkedIn UGC API
 | LLM | Ollama / Anthropic / OpenAI + stub mock | ✅ Configurable vía `.env` |
 | Imágenes | **fal.ai (Flux Pro)**, SD (A1111), DALL·E, mock | ✅ fal como principal en dev |
 | Imágenes usuario | Design-as-Code (Pillow) + fal img2img opcional | ✅ Operativo |
-| Social | Meta/IG, LinkedIn nativo, mock + Go | ✅ OAuth Meta + LinkedIn |
+| Social | Meta/IG, LinkedIn nativo, mock + Go | ✅ OAuth multi-cuenta (N por proveedor) + LinkedIn |
 | Async | Celery + Redis | ✅ Operativo |
 | Scheduler | APScheduler + `POST /api/campaigns/{id}/fire` | ✅ Prueba de fuego completada |
-| Human-in-the-loop | `pending_approval` → approve/reject | ✅ Activo |
+| Human-in-the-loop | `pending_approval` → approve/reject/revise | ✅ Activo (revise regenera con notas) |
 | Infra | Docker Compose (Postgres/Redis), k8s base | ✅ Dev listo; k8s esqueleto |
 | Métricas | Prometheus | ✅ Compatible (FastAPI 0.115 + instrumentator 7.x); off en dev por defecto |
-| Video (Reels) | Shotstack + ElevenLabs/OpenAI TTS | ✅ Operativo (async-only, worker Celery dedicado) |
+| Video (Reels) | Shotstack (`stage`/`v1`) + fal TTS (Kokoro) / ElevenLabs / OpenAI | ✅ Operativo (async-only; payload overlays + publicize URLs) |
+| Reel con clips del usuario | Drive OAuth + Whisper + `ClipEditorAgent` + Shotstack | ✅ Operativo (async-only, requiere `ffmpeg` en el host) |
 
 ---
 
@@ -179,20 +281,22 @@ FAL_IMG2IMG_STRENGTH=0.72
 Strategist → Copywriter/QA → VideoScriptAgent (guion 3-5 escenas)
         → VideoDesignerAgent:
               escenas: fal.ai still (1080×1920) + Ken Burns
-              voz: ElevenLabs/OpenAI TTS (español, banda 15-30s)
+              voz: fal.ai Kokoro Spanish (principal en dev) / ElevenLabs / OpenAI TTS (banda 15-30s)
               → Timeline (JSON provider-neutral) → render_video() (Shotstack block-and-poll)
+                 · overlays = clips TitleAsset (pista superior); media abajo
+                 · src localhost → PUBLIC_IMAGE_BASE_URL antes del submit
         → HITL (pending_approval, igual que imagen)
         → Go sidecar (media_type=REELS, video_url) → Meta Graph API
 ```
 
-**Módulos nuevos en** `agents/marketing_agents/`:
+**Módulos en** `agents/marketing_agents/`:
 
 | Archivo | Rol |
 |---------|-----|
 | `video_script.py` | `VideoScriptAgent` — guion 3-5 escenas + hook + CTA, banda 15-30s por conteo de palabras |
-| `video_timeline.py` | Contrato Pydantic `Timeline`/`Scene`/`VoiceoverTrack` + `to_shotstack_edit()` (único lugar donde se filtra el JSON de Shotstack) |
-| `voice_providers.py` | `synthesize_voice()` — ElevenLabs (principal) / OpenAI TTS (alt) / mock; español por defecto |
-| `video_providers.py` | `render_video()` — Shotstack (submit → poll → descarga MP4) / JSON2Video (documentado, no implementado) / mock |
+| `video_timeline.py` | Contrato Pydantic `Timeline`/`Scene`/`VoiceoverTrack` + `to_shotstack_edit()` (pistas captions→títulos→media; sin `title_asset`) |
+| `voice_providers.py` | `synthesize_voice()` — fal TTS (principal en `.env` de dev) / ElevenLabs / OpenAI / mock; español por defecto |
+| `video_providers.py` | `render_video()` — Shotstack (publicize URLs → submit → poll → descarga MP4) / mock; body de error HTTP en logs |
 | `video_designer.py` | `VideoDesignerAgent` — orquesta escenas + voz + timeline + render, devuelve `VideoDesignOutput` |
 
 **Dimensiones:** 1080×1920 (9:16), 30 fps, MP4 — mismo spec 9:16 que stories (`resolve_image_spec` acepta `"reel"`).
@@ -203,7 +307,7 @@ Strategist → Copywriter/QA → VideoScriptAgent (guion 3-5 escenas)
 python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
 ```
 
-La tarea (`execute_video_pipeline_task`) usa el `celery.Task` base plano — **sin** `autoretry_for` — para no re-renderizar video ante fallos transitorios (costo + duplicados).
+La tarea (`execute_video_pipeline_task`) usa el `celery.Task` base plano — **sin** `autoretry_for` — para no re-renderizar video ante fallos transitorios (costo + duplicados). Timeout ~20 min vía `task_annotations` en `celery_app.py`.
 
 **Persistencia:** `GeneratedAsset.video_url` (columna nullable, migración Alembic `0005`); `result["design"]` sigue siendo la misma clave para imagen y reel (`video_url` seteado + `image_url` `None` en reels).
 
@@ -211,21 +315,73 @@ La tarea (`execute_video_pipeline_task`) usa el `celery.Task` base plano — **s
 
 ```env
 VIDEO_PROVIDER=shotstack
-SHOTSTACK_API_KEY=...
+SHOTSTACK_API_KEY=...          # sandbox → SHOTSTACK_ENV=stage (watermark); prod → v1
 SHOTSTACK_ENV=stage
 VIDEO_MAX_WAIT_SECONDS=600
 VIDEO_FPS=30
-VOICE_PROVIDER=elevenlabs
+VOICE_PROVIDER=fal             # reusa FAL_API_KEY
 VOICE_LANGUAGE=es
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+FAL_TTS_MODEL=fal-ai/kokoro/spanish
+FAL_TTS_VOICE=ef_dora
+PUBLIC_IMAGE_BASE_URL=https://TU-NGROK   # Meta + assets locales; reel fal → Shotstack vía fal.media
 ```
 
 **Pendiente v2 (no implementado, fuera de alcance v1):**
 
-1. **TikTok** — v1 publica Reels solo en Instagram vía el sidecar Go existente.
+1. **TikTok** — fase 2 documentada (Login Kit + Content Posting en Go; requiere auditoría de app). v1 solo Instagram Reels.
 2. **Música de fondo** — v1 solo usa voz en off; sin pista musical ni mezcla de audio.
-3. **Clips de video del usuario** — v1 genera fondos únicamente con fal.ai stills + efecto Ken Burns; no admite subir clips propios (a diferencia de `user_assets.py` para fotos en imagen estática).
+
+**Nota:** "clips de video del usuario" ya no es pendiente — implementado en Fase E (`content_format=user_clip_reel`, ver sección siguiente).
+
+---
+
+### Reel con clips del usuario (Fase E)
+
+**Trigger:** nuevo valor de `content_format`: `"user_clip_reel"` (async-only, igual que `"reel"`). Requiere `drive_folder_id` en el request (422 si falta o si se usa `/runs/sync`).
+
+**Pipeline (rama hermana de `reel`, mismo brief→estrategia→copy/QA):**
+
+```
+Strategist → Copywriter/QA → ClipReelDesigner:
+    drive_source.list_and_download_clips(drive_folder_id)  [OAuth Google, drive.readonly]
+        → transcription_providers.transcribe_clips()        [ffmpeg extrae audio → Whisper word-ts]
+        → ClipEditorAgent.run()                              [selección hook-scored, banda 6-60s]
+        → [fal.ai wan-effects opcional sobre el segmento hook, EFFECTS_ENABLED]
+        → Timeline (Scene asset_type="video" + captions) → render_video() (Shotstack)
+    → HITL (pending_approval, igual que imagen/reel)
+    → Go sidecar (media_type=REELS, mismo branch que "reel") → Meta Graph API
+```
+
+**Módulos nuevos en** `agents/marketing_agents/`:
+
+| Archivo | Rol |
+|---------|-----|
+| `drive_source.py` | OAuth Google Drive (`auth_social.py` provider `"google"`) — listar/descargar clips de una carpeta; filename sanitizado (`Path(...).name`) + prefijado por id (evita path traversal y sobrescritura por duplicados) |
+| `transcription_providers.py` | `transcribe_clips()` — Whisper (`whisper-1`, timestamps por palabra) vía `subprocess`(ffmpeg) + chunking >25MB con offset-correction; `mock` para tests |
+| `clip_assets.py` | `clip_public_url()` — mapea path local de clip descargado a URL servida (mismo patrón que `user_assets.py`) |
+| `clip_editor.py` | `ClipEditorAgent` — LLM (JSON de segmentos) con fallback determinístico a stub; heurísticas de hook (brevedad, pregunta/número/revelación, ritmo); banda de duración total 6-60s (`_MIN_CLIP_S`/`_MAX_CLIP_S`), nunca la banda 15-30s de `reel` |
+| `clip_reel_designer.py` | `ClipReelDesigner` — orquesta drive → transcripción → selección → efecto opcional → `Timeline` → render; **importante:** si el efecto wan reemplaza el video del segmento hook, `trim_in`/`trim_out` se resetean a `0`/`duration_s` (el output del efecto YA es el segmento recortado, no el clip fuente completo) |
+
+**`video_timeline.py` extendido:** `Scene.asset_type: Literal["image","video"]="image"`, `Scene.trim_in`/`trim_out` (solo aplica a `"video"`), nueva clase `Caption` y `Timeline.captions` (pista overlay de títulos en `to_shotstack_edit`, encima de media); la validación de narración (`headline`/`subline` obligatorios) ahora solo exige texto en escenas `"image"` — las de `"video"` no la requieren. Los textos de overlay son clips `asset.type=title` (estilo Shotstack `minimal`/`subtitle`), no una propiedad `title_asset`.
+
+**Variables `.env` nuevas (ver `.env.example`):**
+
+```env
+STT_PROVIDER=whisper
+EFFECTS_ENABLED=false
+FAL_EFFECTS_MODEL=fal-ai/wan-effects
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback/google
+```
+
+**Dependencia de sistema NUEVA:** `ffmpeg` debe estar instalado y en el `PATH` (usado vía `subprocess` para extraer audio antes de transcribir). No es necesario para `feed`/`story`/`reel` generado.
+
+**URLs públicas:** `video_providers._publicize_edit` reescribe `localhost` → `PUBLIC_IMAGE_BASE_URL` en el JSON enviado a Shotstack (clips + soundtrack). `clip_assets.py` sigue generando URLs locales; si `EFFECTS_ENABLED=true`, fal.ai wan-effects aún necesita ngrok activo a mitad de pipeline. La publicación Meta también normaliza en `_publish_via_go`.
+
+**Google OAuth:** el scope `drive.readonly` puede requerir verificación manual de la app por parte de Google para usuarios externos a tu organización (proceso de días/semanas). En dev, agregar el email como "test user" en la pantalla de consentimiento OAuth (modo "Testing") evita el trámite.
+
+**Captions:** se generan **por segmento** (un cue de subtítulo por segmento seleccionado), no por palabra — granularidad más fina queda para v2.
 
 ---
 
@@ -239,13 +395,17 @@ Rutas en `gateway/app/api/routes.py`:
 - `GET /social/publish-status`
 - `POST /api/briefs/upload-asset` — subida de foto del usuario
 - `POST/GET /briefs`
-- `POST /runs/sync`, `/runs/async` — aceptan `image_provider`, `content_format` (`feed`/`story`/`reel`), `archetype_override`, `user_asset_url`, `alter_image_with_ai`, `visual_instructions`; `content_format=reel` solo vía `/runs/async` (422 en `/sync`)
+- `POST /runs/sync`, `/runs/async` — aceptan `image_provider`, `content_format` (`feed`/`story`/`reel`/`user_clip_reel`), `archetype_override`, `user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `drive_folder_id`, `social_account_id` (cuenta destino; NULL = legacy); `content_format=reel|user_clip_reel` solo vía `/runs/async` (422 en `/sync`)
 - `GET /runs`, `/runs/{id}`
 - `POST /runs/{id}/approve`, `/reject`
+- `POST /runs/{id}/revise` — regenera la pieza de un run `pending_approval` con `notes` del revisor (409 si no está pendiente). Feed/story inline; `reel`/`user_clip_reel` se encolan en `video_render` (respuesta `queued`). Nunca publica: vuelve a `pending_approval`
 - `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
-- OAuth Meta / LinkedIn (`gateway/app/api/auth_social.py`)
+- OAuth Meta / LinkedIn / Google (`gateway/app/api/auth_social.py`)
+- `GET /api/auth/status` — proveedores conectados (sin tokens)
+- `GET /api/auth/accounts` — lista multi-cuenta (`id`, `provider`, `account_id`, `account_name`, `profile_picture_url`)
+- `DELETE /api/auth/accounts/{id}` — desconexión lógica (`is_active=False`)
 
-**Persistencia:** briefs, runs (`status`, `content_format`, aprobación), assets generados, campañas programadas, tokens OAuth.
+**Persistencia:** briefs, runs (`status`, `content_format`, `social_account_id`, aprobación, `run_params_json`/`revision_*`), assets generados, campañas programadas, `oauth_tokens` multi-cuenta (migración `0007`).
 
 **Estáticos:** `static/uploads/` (fotos originales), `static/images/` (composiciones), `static/videos/` (MP4 renderizados).
 
@@ -271,7 +431,7 @@ Rutas en `gateway/app/api/routes.py`:
 
 ---
 
-### Tests (68 passing)
+### Tests (160 passing — suite completa verificada 2026-07-27)
 
 | Archivo | Qué cubre |
 |---------|-----------|
@@ -282,13 +442,24 @@ Rutas en `gateway/app/api/routes.py`:
 | `test_design_layouts.py` | Composición PIL: 4 layouts, fallback, dimensiones |
 | `test_user_assets.py` | Fit de foto usuario + overlay sin fal |
 | `test_linkedin_native.py` | Flujo LinkedIn con imagen (mock) |
-| `test_video_timeline.py` | Contrato `Timeline`/`Scene`, `to_shotstack_edit()`, clamp de duración |
-| `test_voice_providers.py` | `synthesize_voice` (mock/ElevenLabs/OpenAI, default español) |
-| `test_video_providers.py` | `render_video` (mock/Shotstack poll, fallo y timeout distintos) |
+| `test_video_timeline.py` | Contrato `Timeline`/`Scene`, `to_shotstack_edit()` (overlays TitleAsset), clamp de duración |
+| `test_voice_providers.py` | `synthesize_voice` (mock/ElevenLabs/OpenAI/fal, default español) |
+| `test_video_providers.py` | `render_video` (mock/Shotstack poll, publicize URLs, body de error 400) |
 | `test_video_designer.py` | `VideoDesignerAgent.run` end-to-end mockeado |
 | `test_video_pipeline.py` | `MarketingPipeline.run(content_format="reel")` end-to-end + regresión feed |
 | `test_runs_api.py` | Reel 422 en `/sync`, ruteo async a cola `video_render` |
 | `test_pipeline_service_video.py` | `_media_url` y persistencia de `video_url` |
+| `test_drive_source.py` | OAuth Google Drive: listar/descargar, sanitización de nombre, duplicados |
+| `test_transcription_providers.py` | Whisper mockeado, chunking >25MB con offset-correction |
+| `test_clip_editor.py` / `test_clip_assets.py` | `ClipEditorAgent` hook-scored banda 6-60s, stub determinístico, `clip_public_url` |
+| `test_clip_reel_designer.py` | `ClipReelDesigner` end-to-end mockeado, wan-effects éxito/degradación, reset de trim tras efecto, captions multi-segmento |
+| `test_contracts_user_clip_reel.py` | `RunRequest` con `drive_folder_id` obligatorio, límite de columna `content_format` |
+| `test_video_timeline_clips.py` | Overlays TitleAsset + clips video/captions (sin `title_asset`) |
+| `test_format_normalization.py` (extendido) | `user_clip_reel` sobrevive normalización + `resolve_image_spec` |
+| `test_inbound_knowledge.py` | Doctrina inbound inyectada en `_SYSTEM` de estratega/copywriter/video_script |
+| `conftest.py` | Fixtures compartidas (limpieza de cache de `get_settings`, sesión DB) |
+| `test_revise_run.py` | `POST /runs/{id}/revise`: params persistidos, re-ejecución con notas, revisiones acumuladas, ruteo de video a `video_render`, 404/409 |
+| `test_multi_account.py` | Multi-cuenta: N filas por proveedor, callback Meta multi-página, `_resolve_publish_token`, publish dirigido, regresión legacy |
 
 ```bash
 python -m pytest tests/ -q
@@ -358,15 +529,21 @@ REDIS_URL=redis://localhost:6379/0
 
 SOCIAL_PROVIDER=meta
 GO_PUBLISHER_URL=http://localhost:8088
-PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # obligatorio al publicar en IG
+PUBLIC_IMAGE_BASE_URL=https://TU-URL-NGROK   # Meta + locales; reel fal render vía fal.media
 
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
 
 VIDEO_PROVIDER=shotstack
 SHOTSTACK_API_KEY=...
-VOICE_PROVIDER=elevenlabs
-ELEVENLABS_API_KEY=...
+SHOTSTACK_ENV=stage
+VOICE_PROVIDER=fal
+FAL_TTS_MODEL=fal-ai/kokoro/spanish
+FAL_TTS_VOICE=ef_dora
+
+STT_PROVIDER=whisper                 # user_clip_reel — requiere ffmpeg en el host
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 
 PROMETHEUS_ENABLED=false   # true en producción
 ```
@@ -390,6 +567,9 @@ PROMETHEUS_ENABLED=false   # true en producción
 | 9 LinkedIn nativo con imagen | ✅ |
 | 10 Canva/Figma MCP (plantillas de marca) | ⬜ Pendiente |
 | 11 Video-as-Code (Reels: script + escenas fal.ai + voz + Shotstack) | ✅ |
+| 12 Reel con clips del usuario (Drive OAuth + Whisper + selección hook-scored) | ✅ |
+| 13 Revisión HITL (`POST /runs/{id}/revise`) | ✅ |
+| 14 Multi-cuenta social (selector por run, migración `0007`) | ✅ |
 
 ---
 
@@ -399,7 +579,7 @@ PROMETHEUS_ENABLED=false   # true en producción
 |-------|--------|-------|
 | Limpieza Upload-Post en docs | ✅ Hecho | Sin referencias en README, `.env.example`, k8s secrets |
 | Prometheus + FastAPI | ✅ Resuelto | `PROMETHEUS_ENABLED=true` expone `/metrics`; instrumentator 7.1.0 + FastAPI 0.115.6 probados |
-| Skaffold / Google Cloud Deploy | ⬜ No iniciado | Existe `k8s/base/` + Dockerfiles; falta pipeline CI/CD, imágenes en registry, perfiles staging/prod |
+| Skaffold / Google Cloud Deploy | 🟡 Escrito, sin estrenar | `skaffold.yaml` + `clouddeploy.yaml` + overlays `dev`/`staging`/`prod` renderizan con `kubectl kustomize`; falta aplicarlos contra GKE reales y cablear Secret Manager |
 
 ---
 
@@ -408,11 +588,17 @@ PROMETHEUS_ENABLED=false   # true en producción
 1. **Canva OAuth** — placeholder en `image_providers.py`, no implementado.
 2. **Canva/Figma MCP** — inserción de foto del cliente en plantillas pre-aprobadas de marca (arquitectura definida, sin código).
 3. **Observabilidad en prod** — activar `PROMETHEUS_ENABLED=true` en despliegue + scrape Grafana/Cloud Monitoring (código listo; falta wiring infra).
-4. **CI/CD K8s** — Skaffold o Cloud Deploy para promover `api` / `worker` / `go-publisher` entre entornos (esqueleto K8s insuficiente solo).
-5. **Video v2** — TikTok (Reels v1 solo publica en Instagram), música de fondo, clips de video del usuario (v1 solo genera fondos con fal.ai stills + Ken Burns, sin subir clips propios).
+4. **CI/CD K8s** — ⚠️ parcial: `skaffold.yaml`, `clouddeploy.yaml` y overlays kustomize existen y renderizan localmente, pero **nunca se aplicaron contra un clúster real**. Falta crear los GKE de staging/prod, reemplazar `PROJECT_ID`/`REGION` en `clouddeploy.yaml` y cablear secretos por Secret Manager.
+5. **Video v2** — música de fondo, captions por palabra (hoy por segmento) para `user_clip_reel`.
+5b (TikTok). **Fase 2, diseñado sin código** — Login Kit (OAuth 2.0 + PKCE) como provider nuevo en `auth_social.py` (encaja en el modelo multi-cuenta) + Content Posting API (`/v2/post/publish/video/init/` + upload chunked) como rama nueva en el Go sidecar. Solo video (`reel`/`user_clip_reel`). **Bloqueo real:** TikTok exige auditoría de la app para publicar contenido público; sin auditar solo permite posts privados (`SELF_ONLY`). Iniciar el trámite antes de codificar.
+6. ~~**URLs públicas en wan-effects**~~ — ✅ resuelto 2026-07-27: `clip_public_url()` usa `PUBLIC_IMAGE_BASE_URL`. Sigue haciendo falta ngrok corriendo para que la URL sea alcanzable; lo que ya no pasa es que apunte a localhost con el túnel activo.
+7. **LLM stub silencioso** — ⚠️ parcialmente resuelto 2026-07-27: `keep_alive` (`OLLAMA_KEEP_ALIVE=30m`) + `LLM_TIMEOUT_SECONDS=300` eliminan el cold-start recurrente. **Pero el fallback sigue siendo silencioso**: con Ollama apagado, estratega/copywriter caen al `_stub()` y el texto sale genérico sin error visible. Falta propagar `llm_error` a la UI.
+8. ~~**Revisión de piezas (backend)**~~ — ✅ resuelto 2026-07-26: `POST /runs/{id}/revise` regenera la pieza con las notas. Queda para v2 el historial de versiones (hoy `result_json` se sobrescribe).
+9. **Meta OAuth Instagram** — reautorizar con scopes `instagram_basic` + `instagram_content_publish`; Valid OAuth Redirect URI = URL **completa** `…/api/auth/callback/meta`. Preferir ngrok con dominio fijo (`--url=…`) para no romper `.env`/Meta cada reinicio.
+10. **Imagen fal: fallos ya no son mock** — aplicado; SD sin A1111 en `:7860` ahora falla explícito (elegir fal en dashboard si no hay Forge).
 
 ---
 
 ### Resumen
 
-MVP **end-to-end funcional**: genera copy con QA, produce imágenes editoriales con fal.ai/Flux (o usa la foto del usuario como capa base sin destruirla), aplica layouts tipo agencia con Pillow, permite alteración img2img bajo indicaciones del usuario con aprobación humana, publica en Instagram y LinkedIn vía Go + OAuth nativo, y genera Reels programáticos (guion → escenas fal.ai + voz ElevenLabs → render Shotstack) publicados de forma async con aprobación humana idéntica al flujo de imagen.
+MVP **end-to-end funcional**: genera copy con QA bajo doctrina inbound (Entretener→Informacion→Conexion; comunidad del brief), produce imágenes editoriales con fal.ai/Flux (o usa la foto del usuario como capa base sin destruirla), aplica layouts tipo agencia con Pillow, permite alteración img2img bajo indicaciones del usuario con aprobación humana, publica en Instagram y LinkedIn vía Go + OAuth nativo **multi-cuenta** (selector de cuenta destino por run; requiere token Meta con permisos IG), genera Reels programáticos (guion → escenas fal.ai + voz fal → render Shotstack; assets fal vía CDN `fal.media`), y arma Reels a partir de clips propios del usuario (Drive → Whisper → selección → captions → efecto opcional → mismo render/publicación). HITL con Aprobar/Rechazar y **Solicitar cambios**, que regenera la pieza con las notas del revisor vía `POST /runs/{id}/revise` y la devuelve a `pending_approval`. TikTok queda como fase 2 (Login Kit + Content Posting; auditoría de app).

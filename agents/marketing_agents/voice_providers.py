@@ -1,4 +1,4 @@
-"""Generación de voz en off (voiceover): ElevenLabs (principal), OpenAI TTS (alternativa), mock.
+"""Generación de voz en off (voiceover): ElevenLabs (principal), OpenAI TTS y fal.ai (alternativas), mock.
 
 Español es el idioma por defecto de narración (`settings.voice_language = "es"`).
 A diferencia de `image_providers.generate_image` (que cae a un placeholder), un fallo real
@@ -48,6 +48,11 @@ def synthesize_voice(
     if provider == "openai" and not s.openai_api_key:
         logger.error("voice.openai_missing_key")
         raise RuntimeError("voice_synth_failed:openai: missing API key")
+    if provider == "fal" and s.fal_api_key:
+        return _fal_tts(text, s.fal_api_key, model=s.fal_tts_model, voice=s.fal_tts_voice)
+    if provider == "fal" and not s.fal_api_key:
+        logger.error("voice.fal_missing_key")
+        raise RuntimeError("voice_synth_failed:fal: missing API key")
     return _mock(text)
 
 
@@ -95,6 +100,46 @@ def _openai_tts(text: str, api_key: str) -> tuple[str, float]:
     except Exception as exc:
         logger.error("voice.openai_error", error=str(exc))
         raise RuntimeError(f"voice_synth_failed:openai: {exc}") from exc
+
+
+def _fal_tts(text: str, api_key: str, *, model: str, voice: str) -> tuple[str, float]:
+    """Genera voz vía fal.ai (Kokoro Spanish u otro modelo TTS), reusando la misma FAL_API_KEY de imágenes."""
+    import os
+
+    import httpx
+
+    os.environ.setdefault("FAL_KEY", api_key)
+
+    try:
+        import fal_client  # pip install fal-client
+    except ImportError:
+        logger.error("voice.fal_missing_sdk", hint="pip install fal-client")
+        raise RuntimeError("voice_synth_failed:fal: fal_client not installed")
+
+    try:
+        result = fal_client.run(
+            model,
+            arguments={"prompt": text, "voice": voice},
+        )
+        audio_url: str = result["audio"]["url"]
+        content_type = result["audio"].get("content_type", "")
+        ext = "wav" if "wav" in content_type else "mp3"
+        resp = httpx.get(audio_url, timeout=60, follow_redirects=True)
+        resp.raise_for_status()
+        duration = _estimate_duration_seconds(text)
+        # Copia local para debug/dashboard; Shotstack usa la CDN de fal (sin ngrok).
+        saved_url = _save_audio(resp.content, prefix="fal", ext=ext)
+        logger.info(
+            "voice.fal_generated",
+            model=model,
+            url=saved_url,
+            cdn_url=audio_url[:80],
+            duration_s=duration,
+        )
+        return audio_url, duration
+    except Exception as exc:
+        logger.error("voice.fal_error", error=str(exc))
+        raise RuntimeError(f"voice_synth_failed:fal: {exc}") from exc
 
 
 def _mock(text: str) -> tuple[str, float]:

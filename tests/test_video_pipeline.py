@@ -63,3 +63,56 @@ def test_feed_run_unchanged_image_shape_regression() -> None:
     assert design.get("image_width") == 1080
     assert design.get("image_height") == 1350
     assert "video_url" not in design
+
+
+def test_user_clip_reel_skips_image_publisher_and_routes_to_go(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gate WARNING #1: content_format="user_clip_reel" NO debe pasar por PublisherAgent (guard widen)."""
+    from agents.marketing_agents.schemas import VideoDesignOutput
+
+    pipeline = MarketingPipeline()
+
+    def _fake_clip_reel_run(brief, copy, strategy, **kwargs):
+        return VideoDesignOutput(
+            image_url=None,
+            video_url="http://localhost:8000/static/videos/clipreel.mp4",
+            video_prompt=strategy.hook,
+            video_provider="shotstack",
+            voice_provider="",
+            width=1080,
+            height=1920,
+            duration_s=20.0,
+            scene_count=2,
+            layout_archetype="typographic_poster",
+        )
+
+    monkeypatch.setattr(pipeline.clip_reel_designer, "run", _fake_clip_reel_run)
+
+    publisher_calls = {"count": 0}
+    monkeypatch.setattr(pipeline.publisher, "run", lambda *a, **kw: publisher_calls.__setitem__("count", publisher_calls["count"] + 1))
+
+    result = pipeline.run(
+        _brief(),
+        publish=True,
+        content_format="user_clip_reel",
+        db=None,
+        tenant_id="demo-tenant",
+        run_id=1,
+        drive_folder_id="folder123",
+    )
+
+    assert result["design"]["video_url"] == "http://localhost:8000/static/videos/clipreel.mp4"
+    assert result["publish_result"] is None
+    assert publisher_calls["count"] == 0  # guard widen: nunca pasa por el PublisherAgent de imagen
+
+
+def test_reel_still_skips_image_publisher_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regresion del guard widen: content_format="reel" sigue sin pasar por PublisherAgent."""
+    pipeline = MarketingPipeline()
+
+    publisher_calls = {"count": 0}
+    monkeypatch.setattr(pipeline.publisher, "run", lambda *a, **kw: publisher_calls.__setitem__("count", publisher_calls["count"] + 1))
+
+    result = pipeline.run(_brief(), publish=True, content_format="reel")
+
+    assert result["publish_result"] is None
+    assert publisher_calls["count"] == 0

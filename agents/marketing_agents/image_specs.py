@@ -43,11 +43,14 @@ _DEFAULT_REEL = ImageSpec(1080, 1920, "default reel 9:16")
 
 
 def resolve_image_spec(red_social: str, content_format: str = "feed") -> ImageSpec:
-    """Resuelve width×height según plataforma y tipo feed/story/reel."""
+    """Resuelve width×height según plataforma y tipo feed/story/reel/user_clip_reel."""
     platform = (red_social or "instagram").strip().lower()
     fmt = (content_format or "feed").strip().lower()
-    if fmt not in ("feed", "story", "reel"):
+    if fmt not in ("feed", "story", "reel", "user_clip_reel"):
         fmt = "feed"
+    # user_clip_reel no tiene entradas por plataforma en _SPECS: siempre resuelve al default 9:16 del reel.
+    if fmt == "user_clip_reel":
+        return _DEFAULT_REEL
     default = _DEFAULT_REEL if fmt == "reel" else _DEFAULT
     return _SPECS.get((platform, fmt), default)
 

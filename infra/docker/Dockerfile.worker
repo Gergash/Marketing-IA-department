@@ -1,5 +1,10 @@
 FROM python:3.10-slim
 WORKDIR /app
+# ffmpeg es dependencia de sistema (no pip) de user_clip_reel: transcription_providers
+# lo invoca por subprocess para extraer el audio antes de transcribir con Whisper.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY gateway ./gateway

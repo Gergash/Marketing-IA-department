@@ -56,32 +56,35 @@ def test_to_shotstack_edit_maps_scenes_to_clips_and_sums_durations() -> None:
     )
     edit = to_shotstack_edit(timeline)
 
-    assert edit["output"]["resolution"] or edit["output"]["size"]
+    assert edit["output"]["resolution"] == "1080"
     assert edit["output"]["aspectRatio"] == "9:16"
+    assert "size" not in edit["output"]
     assert edit["output"]["fps"] == 30
     assert edit["output"]["format"] == "mp4"
 
     tracks = edit["timeline"]["tracks"]
-    # al menos un track de video (clips de escena) y un track/soundtrack de audio
-    video_track = tracks[0]
-    clips = video_track["clips"]
-    assert len(clips) == 3
+    # títulos (arriba) + media; soundtrack va aparte en timeline.soundtrack
+    assert len(tracks) == 2
+    media_clips = tracks[-1]["clips"]
+    assert len(media_clips) == 3
+    assert all(c["asset"]["type"] == "image" for c in media_clips)
 
-    total_length = sum(c["length"] for c in clips)
+    total_length = sum(c["length"] for c in media_clips)
     assert total_length == pytest.approx(12.0)
 
     # start acumulativo
-    assert clips[0]["start"] == pytest.approx(0.0)
-    assert clips[1]["start"] == pytest.approx(4.0)
-    assert clips[2]["start"] == pytest.approx(9.0)
+    assert media_clips[0]["start"] == pytest.approx(0.0)
+    assert media_clips[1]["start"] == pytest.approx(4.0)
+    assert media_clips[2]["start"] == pytest.approx(9.0)
 
-    assert "soundtrack" in edit["timeline"] or any("audio" in t for t in tracks)
+    assert "soundtrack" in edit["timeline"]
+    assert tracks[0]["clips"][0]["asset"]["type"] == "title"
 
 
 def test_to_shotstack_edit_without_voiceover_still_maps_clips() -> None:
     timeline = Timeline(scenes=[_scene(duration_s=4.0), _scene(duration_s=5.0)])
     edit = to_shotstack_edit(timeline)
-    clips = edit["timeline"]["tracks"][0]["clips"]
+    clips = edit["timeline"]["tracks"][-1]["clips"]
     assert len(clips) == 2
 
 
@@ -104,7 +107,7 @@ def test_duration_clamp_trims_when_voiceover_exceeds_30s() -> None:
         voiceover=VoiceoverTrack(audio_url="http://localhost:8000/static/audio/vo1.mp3", duration_s=36.0),
     )
     edit = to_shotstack_edit(timeline)
-    clips = edit["timeline"]["tracks"][0]["clips"]
+    clips = edit["timeline"]["tracks"][-1]["clips"]
     total_length = sum(c["length"] for c in clips)
     assert total_length <= 30.0
 
@@ -132,7 +135,7 @@ def test_duration_clamp_holds_minimums_when_voiceover_under_15s() -> None:
         voiceover=VoiceoverTrack(audio_url="http://localhost:8000/static/audio/vo1.mp3", duration_s=10.0),
     )
     edit = to_shotstack_edit(timeline)
-    clips = edit["timeline"]["tracks"][0]["clips"]
+    clips = edit["timeline"]["tracks"][-1]["clips"]
     total_length = sum(c["length"] for c in clips)
     # no se estira para llenar; mantiene duraciones mínimas de escena (no colapsa a 10s)
     assert total_length == pytest.approx(12.0)

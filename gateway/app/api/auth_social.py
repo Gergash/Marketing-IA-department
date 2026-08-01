@@ -108,7 +108,13 @@ def oauth_callback(
 
     tenant_id = _pending_states.pop(state, None)
     if not tenant_id:
-        raise HTTPException(status_code=400, detail="State inválido o expirado. Inicia el flujo desde /api/auth/login/{provider}.")
+        # Siempre volver al frontend: un 400 JSON en la pestaña de Meta/ngrok
+        # deja al usuario sin retorno al dashboard.
+        return _oauth_frontend_redirect(
+            provider,
+            oauth="error",
+            message="State inválido o expirado. Vuelve a pulsar Conectar desde Integraciones.",
+        )
 
     s = get_settings()
 
@@ -133,6 +139,14 @@ def oauth_callback(
         db.commit()
     except HTTPException as exc:
         return _oauth_frontend_redirect(provider, oauth="error", message=str(exc.detail))
+    except Exception as exc:
+        # Errores de DB/red no deben dejar al usuario en una página JSON de ngrok.
+        db.rollback()
+        return _oauth_frontend_redirect(
+            provider,
+            oauth="error",
+            message=f"No se pudo guardar la cuenta {provider}: {exc}",
+        )
 
     account_id = ",".join(a["account_id"] for a in accounts)
     return _oauth_frontend_redirect(

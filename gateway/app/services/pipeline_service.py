@@ -363,6 +363,9 @@ def execute_pipeline(
     pipeline = MarketingPipeline()
     brief_in = _brief_input(brief)
     content_format = _normalize_content_format(getattr(run, "content_format", None))
+    stored_params = json.loads(run.run_params_json) if run.run_params_json else {}
+    link_url = (stored_params.get("link_url") or "").strip() or None
+    cta_on_image = bool(stored_params.get("cta_on_image", False))
 
     if requires_approval:
         # Human-in-the-loop: generar estrategia + copy + diseño + QA,
@@ -382,6 +385,8 @@ def execute_pipeline(
             run_id=run.id,
             drive_folder_id=drive_folder_id,
             revision_notes=revision_notes,
+            link_url=link_url,
+            cta_on_image=cta_on_image,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
         run.status = "pending_approval"
@@ -406,6 +411,8 @@ def execute_pipeline(
         tenant_id=run.tenant_id,
         run_id=run.id,
         drive_folder_id=drive_folder_id,
+        link_url=link_url,
+        cta_on_image=cta_on_image,
     )
 
     if publish and result.get("quality", {}).get("approved", False):

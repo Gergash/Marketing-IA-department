@@ -106,5 +106,36 @@ def test_layout_preserves_aspect_ratio_story() -> None:
         headline="Historia",
         subline="Story test",
         cta=None,
+        content_format="story",
     )
     _assert_valid_png(result, W, H)
+
+
+@pytest.mark.parametrize("archetype", ALL_ARCHETYPES, ids=[a.id for a in ALL_ARCHETYPES])
+def test_story_layout_centers_overlay(archetype: LayoutArchetype) -> None:
+    """En story, el overlay altera el centro de la imagen (no solo el tercio inferior izquierdo)."""
+    W, H = 540, 960
+    base_color = (90, 100, 110)
+    result = apply_design_layout(
+        _make_png(W, H, base_color),
+        archetype,
+        headline="Texto central",
+        subline="Más centrado",
+        cta="Ver más",
+        content_format="story",
+    )
+    img = Image.open(io.BytesIO(result)).convert("RGB")
+    center = img.getpixel((W // 2, H // 2))
+    # El centro debe diferir del fondo plano por viñeta/texto
+    assert center != base_color
+
+    feed = apply_design_layout(
+        _make_png(W, H, base_color),
+        archetype,
+        headline="Texto feed",
+        subline="Abajo",
+        cta="Ver más",
+        content_format="feed",
+    )
+    assert result != feed
+

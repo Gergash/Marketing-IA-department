@@ -91,6 +91,8 @@ export default function App() {
   const [userAssetUrl, setUserAssetUrl] = useState("");
   const [userAssetName, setUserAssetName] = useState("");
   const [driveFolderId, setDriveFolderId] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [ctaOnImage, setCtaOnImage] = useState(false);
   const [alterImageWithAi, setAlterImageWithAi] = useState(false);
   const [visualInstructions, setVisualInstructions] = useState("");
   const [loading, setLoading] = useState(false);
@@ -137,6 +139,15 @@ export default function App() {
     ({ instagram: "meta", ig: "meta", facebook: "meta", linkedin: "linkedin" }[
       (network || "").toLowerCase()
     ] || null);
+
+  const providerShortLabel = (provider) =>
+    ({ meta: "IG", linkedin: "LinkedIn", google: "Drive" }[provider] || provider);
+
+  /** Etiqueta legible: "Negocio 1 — IG", "Mi página — LinkedIn" */
+  const formatAccountLabel = (account) => {
+    const name = account.account_name || account.account_id || `Cuenta #${account.id}`;
+    return `${name} — ${providerShortLabel(account.provider)}`;
+  };
 
   const accountsForNetwork = socialAccounts.filter(
     (a) => a.provider === providerForNetwork(form.red_social)
@@ -202,8 +213,17 @@ export default function App() {
     // y tardan minutos: no admiten /runs/sync (422).
     const isVideoFormat = contentFormat === "reel" || contentFormat === "user_clip_reel";
     const effectiveAsync = isVideoFormat ? true : asyncMode;
-    setLoading(true);
     setError(null);
+
+    // Con cuentas conectadas para la red del brief, hay que elegir una antes del POST
+    if (accountsForNetwork.length > 0 && !socialAccountId) {
+      setError(
+        `Elige la cuenta destino (${providerShortLabel(providerForNetwork(form.red_social)) || form.red_social}) antes de ejecutar el run.`
+      );
+      return;
+    }
+
+    setLoading(true);
     try {
       const brief = await api("/briefs", "POST", form);
       const runReq = {
@@ -221,6 +241,8 @@ export default function App() {
           : {}),
         ...(contentFormat === "user_clip_reel" ? { drive_folder_id: driveFolderId.trim() } : {}),
         ...(socialAccountId ? { social_account_id: Number(socialAccountId) } : {}),
+        ...(linkUrl.trim() ? { link_url: linkUrl.trim() } : {}),
+        ...(ctaOnImage ? { cta_on_image: true } : {}),
       };
       const run = await api(effectiveAsync ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -373,32 +395,8 @@ export default function App() {
             <option value="user_clip_reel">Video con mis clips (Drive)</option>
           </select>
         </label>
-        <label>
-          Cuenta destino
-          <select
-            value={socialAccountId}
-            onChange={(e) => setSocialAccountId(e.target.value)}
-            disabled={accountsForNetwork.length === 0}
-          >
-            {accountsForNetwork.length === 0 ? (
-              <option value="">Sin cuentas conectadas para {form.red_social} — conecta en Integraciones</option>
-            ) : (
-              <>
-                <option value="">Automática (única cuenta del proveedor)</option>
-                {accountsForNetwork.map((a) => (
-                  <option key={a.id} value={String(a.id)}>
-                    {a.account_name || a.account_id} ({a.provider})
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
-        </label>
         <p className="hint">
-          El run se publicará en esta cuenta al aprobarlo. Conecta más cuentas del mismo proveedor
-          desde Integraciones.
-        </p>
-        <p className="hint">
+          La cuenta destino se elige en el brief (debajo), justo antes de Sync/Async.
           Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
           {(contentFormat === "reel" || contentFormat === "user_clip_reel") &&
             " Los reels son async-only: se envían siempre con \"Enviar Async\"."}
@@ -535,6 +533,67 @@ export default function App() {
             />
           </label>
         ))}
+
+        <label>
+          Cuenta destino
+          <select
+            value={socialAccountId}
+            onChange={(e) => setSocialAccountId(e.target.value)}
+            disabled={loading || uploading || accountsForNetwork.length === 0}
+            required={accountsForNetwork.length > 0}
+          >
+            {accountsForNetwork.length === 0 ? (
+              <option value="">
+                Sin cuentas para {form.red_social} — conecta en Integraciones
+              </option>
+            ) : (
+              <>
+                <option value="">
+                  {accountsForNetwork.length === 1
+                    ? "Elige la cuenta…"
+                    : `Elige a cuál de las ${accountsForNetwork.length} cuentas publicar…`}
+                </option>
+                {accountsForNetwork.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {formatAccountLabel(a)}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+        </label>
+        <p className="hint">
+          Filtrado por <code>red_social</code> del brief (Instagram/Facebook → Meta/IG,
+          LinkedIn → LinkedIn). Al aprobar, se publica en esta cuenta.
+          {(() => {
+            const selected = accountsForNetwork.find((a) => String(a.id) === socialAccountId);
+            return selected ? ` Seleccionada: ${formatAccountLabel(selected)}.` : "";
+          })()}
+        </p>
+
+        <label>
+          Enlace en la descripción (opcional)
+          <input
+            type="url"
+            placeholder="https://… (se agrega al caption junto con hashtags)"
+            value={linkUrl}
+            disabled={loading || uploading}
+            onChange={(e) => setLinkUrl(e.target.value)}
+          />
+        </label>
+        <p className="hint">
+          Links y hashtags van en la descripción del post, no como botón en la imagen.
+        </p>
+        <label style={{ display: "block", marginTop: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={ctaOnImage}
+            disabled={loading || uploading}
+            onChange={(e) => setCtaOnImage(e.target.checked)}
+          />
+          {" "}Remarcar CTA en la imagen (solo si hay info importante que destacar; no es el estándar)
+        </label>
+
         <div className="actions">
           <button disabled={loading || uploading} onClick={() => createAndRun(false)}>
             {loading && contentFormat !== "reel" ? <span className="spinner"></span> : null}

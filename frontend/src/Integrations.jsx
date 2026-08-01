@@ -27,6 +27,7 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -49,8 +50,10 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
     const oauth = params.get("oauth");
     if (oauth === "success") {
       setError(null);
+      setSuccessMsg(`Cuenta ${params.get("provider") || ""} conectada correctamente.`);
       load();
     } else if (oauth === "error") {
+      setSuccessMsg(null);
       setError(params.get("message") || "Error al conectar la red social");
     }
     if (oauth) {
@@ -85,6 +88,7 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
       </p>
 
       {error && <p style={{ color: "red", fontSize: "0.85rem" }}>{error}</p>}
+      {successMsg && <p style={{ color: "#3c3", fontSize: "0.85rem" }}>{successMsg}</p>}
 
       <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         <button

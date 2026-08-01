@@ -22,6 +22,7 @@ class DesignerAgent:
         alter_image_with_ai: bool = False,
         visual_instructions: str | None = None,
         revision_notes: str | None = None,
+        cta_on_image: bool = False,
     ) -> DesignOutput:
         """Selecciona layout, genera imagen dimensionada y aplica composición tipográfica."""
         from gateway.app.core.settings import get_settings
@@ -44,6 +45,8 @@ class DesignerAgent:
         used_provider = (image_provider or get_settings().image_provider).strip().lower()
         headline = copy.headline_for_image.strip() or strategy.hook or copy.copy_final[:100]
         subline = copy.subline_for_image.strip() or None
+        # El CTA en imagen NO es estándar: solo si el run pide remarcar info importante.
+        overlay_cta = copy.cta if cta_on_image and (copy.cta or "").strip() else None
 
         if user_asset_url and user_asset_url.strip():
             url, width, height, design_source = compose_from_user_asset(
@@ -51,9 +54,10 @@ class DesignerAgent:
                 spec=spec,
                 overlay_text=headline,
                 overlay_subline=subline,
-                overlay_cta=copy.cta,
+                overlay_cta=overlay_cta,
                 red_social=brief.red_social,
                 layout_archetype=archetype.id,
+                content_format=content_format,
                 alter_with_ai=alter_image_with_ai,
                 visual_instructions=visual_instructions,
                 image_provider=used_provider,
@@ -65,7 +69,7 @@ class DesignerAgent:
                 prompt,
                 overlay_text=headline,
                 overlay_subline=subline,
-                overlay_cta=copy.cta,
+                overlay_cta=overlay_cta,
                 image_provider=used_provider,
                 red_social=brief.red_social,
                 content_format=content_format,

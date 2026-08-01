@@ -50,6 +50,7 @@ def generate_image(
             overlay_cta=overlay_cta,
             red_social=red_social,
             layout_archetype=layout_archetype,
+            content_format=content_format,
         )
         return url, spec.width, spec.height
     if provider == "fal" and s.fal_api_key:
@@ -63,6 +64,7 @@ def generate_image(
             overlay_cta=overlay_cta,
             red_social=red_social,
             layout_archetype=layout_archetype,
+            content_format=content_format,
         )
         return url, spec.width, spec.height
     if provider == "fal" and not s.fal_api_key:
@@ -89,14 +91,20 @@ def _stable_diffusion(
     overlay_cta: str | None = None,
     red_social: str = "instagram",
     layout_archetype: str = "typographic_poster",
+    content_format: str = "feed",
 ) -> str:
     """POST a txt2img de A1111/Forge, decodifica PNG, superpone texto y guarda en `/static/images/`."""
     import httpx
 
+    space_hint = (
+        "negative space in the center for centered typography overlay."
+        if (content_format or "").lower() == "story"
+        else "negative space at bottom for text overlay."
+    )
     payload: dict = {
         "prompt": (
             f"{prompt[:400]}. No text, no letters, no watermark, clean composition, "
-            "negative space at bottom for text overlay."
+            f"{space_hint}"
         ),
         "negative_prompt": "text, letters, words, watermark, signature, blurry, low quality, deformed, ugly",
         "width": spec.width,
@@ -128,6 +136,7 @@ def _stable_diffusion(
                 overlay_cta,
                 layout_archetype=layout_archetype,
                 font_seed=red_social,
+                content_format=content_format,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -154,6 +163,7 @@ def _apply_layout_overlay(
     *,
     layout_archetype: str,
     font_seed: str,
+    content_format: str = "feed",
 ) -> bytes:
     """Aplica composición editorial según arquetipo (poster, minimal, infográfico, hero)."""
     archetype = _ARCHETYPE_MAP.get(layout_archetype, _ARCHETYPE_MAP["typographic_poster"])
@@ -164,6 +174,7 @@ def _apply_layout_overlay(
         subline,
         cta,
         font_seed=font_seed,
+        content_format=content_format,
     )
 
 
@@ -178,6 +189,7 @@ def _fal(
     overlay_cta: str | None = None,
     red_social: str = "instagram",
     layout_archetype: str = "typographic_poster",
+    content_format: str = "feed",
 ) -> str:
     """Genera imagen con fal.ai (Flux pro u otros modelos) y la guarda en static/images/."""
     import os
@@ -192,9 +204,14 @@ def _fal(
         logger.error("image.fal_missing_sdk", hint="pip install fal-client")
         raise RuntimeError("image_gen_failed:fal: fal_client not installed") from None
 
+    space_hint = (
+        "Leave clean negative space in the center for centered typography."
+        if (content_format or "").lower() == "story"
+        else "Clean composition with negative space for typography overlay."
+    )
     visual_prompt = (
         f"{prompt[:1800]}. No text, no letters, no watermark. "
-        f"Aspect ratio {spec.label}. Clean composition with negative space for typography overlay."
+        f"Aspect ratio {spec.label}. {space_hint}"
     )
     try:
         result = fal_client.run(
@@ -232,6 +249,7 @@ def _fal(
                 overlay_cta,
                 layout_archetype=layout_archetype,
                 font_seed=red_social,
+                content_format=content_format,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -324,6 +342,7 @@ def compose_from_user_asset(
     overlay_cta: str | None = None,
     red_social: str = "instagram",
     layout_archetype: str = "typographic_poster",
+    content_format: str = "feed",
     alter_with_ai: bool = False,
     visual_instructions: str | None = None,
     image_provider: str | None = None,
@@ -370,6 +389,7 @@ def compose_from_user_asset(
             overlay_cta,
             layout_archetype=layout_archetype,
             font_seed=red_social,
+            content_format=content_format,
         )
 
     prefix = "user_img2img" if design_source == "user_img2img" else "user_overlay"

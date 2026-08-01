@@ -60,6 +60,10 @@ class RunRequest(BaseModel):
     drive_folder_id: str | None = None
     # Cuenta social destino (id de GET /api/auth/accounts). None = única cuenta del provider (legacy)
     social_account_id: int | None = None
+    # Enlace a adjuntar en la descripción del post (no se pinta en la imagen)
+    link_url: str | None = None
+    # Si True, pinta el CTA como pastilla en la imagen (solo para remarcar info importante)
+    cta_on_image: bool = False
 
     @model_validator(mode="after")
     def _require_drive_folder_for_user_clip_reel(self) -> "RunRequest":
@@ -67,6 +71,13 @@ class RunRequest(BaseModel):
             raise ValueError(
                 "content_format='user_clip_reel' requiere drive_folder_id (carpeta de Google Drive con los clips)"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _normalize_link_url(self) -> "RunRequest":
+        if self.link_url is not None:
+            cleaned = self.link_url.strip()
+            self.link_url = cleaned or None
         return self
 
 

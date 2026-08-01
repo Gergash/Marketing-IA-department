@@ -221,6 +221,8 @@ def _run_params(payload: RunRequest) -> dict:
         "visual_instructions": payload.visual_instructions,
         "drive_folder_id": payload.drive_folder_id,
         "social_account_id": payload.social_account_id,
+        "link_url": payload.link_url,
+        "cta_on_image": payload.cta_on_image,
     }
 
 

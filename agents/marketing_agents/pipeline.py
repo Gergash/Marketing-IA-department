@@ -1,5 +1,6 @@
 """Pipeline principal: orquestación lineal + subgrafo LangGraph copy/QA."""
 
+from .caption import build_publish_caption
 from .clip_reel_designer import ClipReelDesigner
 from .copywriter import CopywriterAgent
 from .designer import DesignerAgent
@@ -46,6 +47,8 @@ class MarketingPipeline:
         run_id: int | None = None,
         drive_folder_id: str | None = None,
         revision_notes: str | None = None,
+        link_url: str | None = None,
+        cta_on_image: bool = False,
     ) -> dict:
         """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable."""
         strategy = self.strategist.run(brief)
@@ -58,6 +61,13 @@ class MarketingPipeline:
         copy = gout["copy"]
         quality = gout["quality"]
         copy_qa_trace = list(gout.get("events", []))
+
+        # Descripción publicable: cuerpo + link opcional + hashtags (nunca como botón en imagen).
+        copy.copy_final = build_publish_caption(
+            copy.copy_final,
+            copy.hashtags,
+            link_url=link_url,
+        )
 
         if content_format == "user_clip_reel":
             # Branch de clips del usuario: Drive -> transcripcion -> seleccion hook-scored -> Timeline -> render.
@@ -92,6 +102,7 @@ class MarketingPipeline:
                 alter_image_with_ai=alter_image_with_ai,
                 visual_instructions=visual_instructions,
                 revision_notes=revision_notes,
+                cta_on_image=cta_on_image,
             )
 
         publish_result = None

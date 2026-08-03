@@ -139,3 +139,30 @@ def test_story_layout_centers_overlay(archetype: LayoutArchetype) -> None:
     )
     assert result != feed
 
+
+def test_brand_campaign_piece_layout_with_logo() -> None:
+    """Layout de campaña con marca: PNG válido + logo top-center opcional."""
+    import tempfile
+    from pathlib import Path
+
+    W, H = 400, 500
+    logo = Image.new("RGBA", (80, 40), (201, 162, 39, 255))
+    with tempfile.TemporaryDirectory() as tmp:
+        logo_path = str(Path(tmp) / "logo.png")
+        logo.save(logo_path)
+        archetype = _ARCHETYPE_MAP["brand_campaign_piece"]
+        result = apply_design_layout(
+            _make_png(W, H, (40, 30, 25)),
+            archetype,
+            headline="Celebra Amor y Amistad",
+            subline="Reserva tu mesa en Tres Amores",
+            cta="Cupos limitados · Escríbenos por DM",
+            logo_path=logo_path,
+            tagline="Donde cada encuentro se convierte en un recuerdo.",
+        )
+        _assert_valid_png(result, W, H)
+        # El logo dorado debe teñir la banda superior-central
+        out = Image.open(io.BytesIO(result)).convert("RGB")
+        top_center = out.getpixel((W // 2, int(H * 0.06)))
+        assert top_center[0] > 100  # canal R del dorado/logo
+

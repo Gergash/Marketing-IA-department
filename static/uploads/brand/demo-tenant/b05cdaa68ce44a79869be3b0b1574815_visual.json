@@ -1,0 +1,10 @@
+{
+  "palette_hex": [],
+  "logo_filenames": [],
+  "logo_urls": [],
+  "pages_scanned": 0,
+  "embedded_images": 0,
+  "notes": [
+    "raster_failed:Falta pymupdf para rasterizar PDF. Instala con: pip install pymupdf"
+  ]
+}

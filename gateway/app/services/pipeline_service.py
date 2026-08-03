@@ -24,6 +24,9 @@ logger = structlog.get_logger(__name__)
 
 def _brief_input(brief: Brief) -> BriefInput:
     """Convierte la entidad ORM `Brief` al DTO `BriefInput` del pipeline de agentes."""
+    from agents.marketing_agents.brand_manual import load_brand_text, load_brand_visual_assets
+
+    assets = load_brand_visual_assets(brief.tenant_id)
     return BriefInput(
         tema=brief.tema,
         publico_objetivo=brief.publico_objetivo,
@@ -31,6 +34,11 @@ def _brief_input(brief: Brief) -> BriefInput:
         objetivo=brief.objetivo,
         tono_marca=brief.tono_marca,
         idioma=brief.idioma,
+        brand_context=load_brand_text(brief.tenant_id),
+        brand_palette=list(assets.get("palette_hex") or []),
+        brand_logo_urls=list(assets.get("logo_urls") or []),
+        brand_logo_paths=list(assets.get("logo_paths") or []),
+        tenant_id=brief.tenant_id or "",
     )
 
 
@@ -231,6 +239,20 @@ def _publish_via_go(
             access_token = token_row.access_token
             account_id = token_row.account_id
 
+    # Si publicamos a la IG configurada en .env, preferir el Page token del System User
+    # (scopes completos, sin caducidad) — el OAuth de usuario a veces falla en media_publish Reels (code 1).
+    env_ig = (settings.instagram_business_account_id or "").strip()
+    env_tok = (settings.meta_page_access_token or "").strip()
+    if env_ig and env_tok and (not account_id or account_id == env_ig):
+        if access_token != env_tok:
+            logger.info(
+                "go_publisher.using_env_page_token",
+                account_id=env_ig,
+                reason="META_PAGE_ACCESS_TOKEN matches INSTAGRAM_BUSINESS_ACCOUNT_ID",
+            )
+        access_token = env_tok
+        account_id = env_ig
+
     if not access_token:
         logger.warning(
             "go_publisher.no_oauth_token",
@@ -259,14 +281,15 @@ def _publish_via_go(
         }
         if content_format in ("reel", "user_clip_reel"):
             payload["video_url"] = media_url
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=360) as client:
             published = client.post(f"{settings.go_publisher_url}/publish", json=payload)
         if published.is_success:
             result["publish_result"] = published.json()
             logger.info("go_publisher.ok", platform=brief.red_social)
             return "success"
-        logger.warning("go_publisher.non_2xx", status=published.status_code, body=published.text[:200])
-        run.error_message = f"go_publisher_http_{published.status_code}"
+        body_snip = (published.text or "")[:800]
+        logger.warning("go_publisher.non_2xx", status=published.status_code, body=body_snip[:200])
+        run.error_message = f"go_publisher_http_{published.status_code}: {body_snip}"
         return "failed"
     except Exception as exc:  # noqa: BLE001
         run.error_message = f"go_publisher_error: {exc}"
@@ -457,14 +480,19 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
         go_outcome = _publish_run(db, result, brief, run, run.idempotency_key)
 
         if go_outcome == "unavailable" and not result.get("publish_result"):
+            detail = (run.error_message or "").strip()
             raise ValueError(
                 "No se pudo publicar. Para LinkedIn: verifica que la cuenta esté conectada en Integraciones. "
                 "Para Meta/IG: verifica que el sidecar Go (:8088) esté activo."
+                + (f" Detalle: {detail}" if detail else "")
             )
         if go_outcome == "failed" and not result.get("publish_result"):
+            detail = (run.error_message or "").strip()
             raise ValueError(
-                "La API nativa rechazó la publicación. "
-                "Espera unos segundos y pulsa Aprobar una sola vez."
+                "La API nativa (Meta/LinkedIn) rechazó la publicación. "
+                "Revisa scopes del token OAuth de la cuenta elegida (no el System User del .env) "
+                "y pulsa Aprobar una sola vez."
+                + (f" Detalle Graph/Go: {detail}" if detail else "")
             )
 
         if not result.get("publish_result"):

@@ -34,6 +34,8 @@ func buildMediaParams(req PublishRequest) (url.Values, time.Duration) {
 	case isReelFormat(req.ContentFormat):
 		mediaParams.Set("video_url", req.VideoURL)
 		mediaParams.Set("media_type", "REELS")
+		// Reels deben poder aparecer en el feed; sin esto Meta a veces falla en media_publish (code 1).
+		mediaParams.Set("share_to_feed", "true")
 		caption := req.Copy
 		if len(caption) > 2200 {
 			caption = caption[:2200]
@@ -68,22 +70,47 @@ func PublishMeta(req PublishRequest) (PublishResponse, error) {
 		return PublishResponse{}, fmt.Errorf("meta media_wait: %w", err)
 	}
 
-	mediaID, err := graphAPIPost(
-		fmt.Sprintf("%s/%s/media_publish", metaGraphBase, igID),
-		url.Values{
-			"creation_id":  {containerID},
-			"access_token": {token},
-		},
-	)
-	if err != nil {
-		return PublishResponse{}, fmt.Errorf("meta media_publish: %w", err)
+	// media_publish a veces responde OAuthException code 1 de forma transitoria justo tras FINISHED.
+	var mediaID string
+	var pubErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt*5) * time.Second)
+		}
+		mediaID, pubErr = graphAPIPost(
+			fmt.Sprintf("%s/%s/media_publish", metaGraphBase, igID),
+			url.Values{
+				"creation_id":  {containerID},
+				"access_token": {token},
+			},
+		)
+		if pubErr == nil {
+			break
+		}
+		if !isTransientMetaPublishError(pubErr) {
+			break
+		}
+	}
+	if pubErr != nil {
+		return PublishResponse{}, fmt.Errorf("meta media_publish: %w", pubErr)
 	}
 
 	return PublishResponse{
 		Status:         "published",
-		PublicationURL: fmt.Sprintf("https://www.instagram.com/p/%s/", mediaID),
+		PublicationURL: fmt.Sprintf("https://www.instagram.com/reel/%s/", mediaID),
 		PlatformPostID: mediaID,
 	}, nil
+}
+
+func isTransientMetaPublishError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, `"code":1`) ||
+		strings.Contains(msg, `"code":2`) ||
+		strings.Contains(msg, "unknown error") ||
+		strings.Contains(msg, "unexpected error")
 }
 
 // mediaContainerTimeout es la espera máxima para contenedores de imagen/story.
@@ -98,7 +125,7 @@ func waitForMediaContainer(containerID, token string, timeout time.Duration) err
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		statusURL := fmt.Sprintf(
-			"%s/%s?fields=status_code&access_token=%s",
+			"%s/%s?fields=status_code,status&access_token=%s",
 			metaGraphBase, containerID, url.QueryEscape(token),
 		)
 		resp, err := HTTPClient.Get(statusURL)
@@ -112,13 +139,20 @@ func waitForMediaContainer(containerID, token string, timeout time.Duration) err
 		}
 		var data struct {
 			StatusCode string `json:"status_code"`
+			Status     string `json:"status"`
 		}
 		if json.Unmarshal(rb, &data) == nil {
 			switch strings.ToUpper(data.StatusCode) {
 			case "FINISHED":
+				// Breve margen: publicar en el instante exacto del FINISHED a veces dispara code 1.
+				time.Sleep(3 * time.Second)
 				return nil
 			case "ERROR":
-				return fmt.Errorf("contenedor en ERROR: %s", string(rb))
+				detail := data.Status
+				if detail == "" {
+					detail = string(rb)
+				}
+				return fmt.Errorf("contenedor en ERROR: %s", detail)
 			}
 		}
 		time.Sleep(2 * time.Second)

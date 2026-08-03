@@ -10,6 +10,13 @@ class BriefInput(BaseModel):
     objetivo: str
     tono_marca: str = "profesional y cercano"
     idioma: str = "es"
+    # Extracto del manual de marca (PDF) — no se persiste en la tabla briefs
+    brand_context: str = ""
+    # Escaneo visual del PDF (paleta + logos) — no se persiste en briefs
+    brand_palette: list[str] = Field(default_factory=list)
+    brand_logo_urls: list[str] = Field(default_factory=list)
+    brand_logo_paths: list[str] = Field(default_factory=list)
+    tenant_id: str = ""
 
 
 class StrategyOutput(BaseModel):

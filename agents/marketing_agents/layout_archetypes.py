@@ -1,14 +1,19 @@
-"""Arquetipos de layout editorial para posts de redes (referencia: Mattelsa, RADAR, YaComercio)."""
+"""Arquetipos de layout editorial para posts de redes.
+
+Referencias: pieza de campaña con manual de marca (Tres Amores / full-bleed),
+Mattelsa, RADAR, YaComercio.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from .image_specs import ImageSpec
-from .schemas import BriefInput, CopyOutput, StrategyOutput
+from .schemas import BriefInput, StrategyOutput
 
 # IDs estables usados en prompts, overlay y API
 ARCHETYPES = (
+    "brand_campaign_piece",
     "typographic_poster",
     "minimal_conceptual",
     "editorial_infographic",
@@ -30,6 +35,24 @@ class LayoutArchetype:
 
 
 _ARCHETYPE_MAP: dict[str, LayoutArchetype] = {
+    # Pieza canónica con manual de marca (ref: docs/references/brand-campaign-piece-tres-amores.png)
+    "brand_campaign_piece": LayoutArchetype(
+        id="brand_campaign_piece",
+        label="Campaña con marca",
+        flux_style=(
+            "premium full-bleed product photography for social campaign, shallow depth of field, "
+            "warm atmospheric bokeh, real product or place as the dominant visual plane, "
+            "upscale restaurant/retail/hospitality advertising quality, no graphic templates"
+        ),
+        flux_composition=(
+            "one edge-to-edge photographic composition: hero product/scene fills the frame, "
+            "soft vignette, leave clear top-center band for logo mark, mid-upper zone for "
+            "headline overlay, lower third quieter for CTA — no cards, no collages, no inset panels"
+        ),
+        primary_hex="#FFFFFF",
+        secondary_hex="#F5E6C8",
+        accent_hex="#C9A227",
+    ),
     "typographic_poster": LayoutArchetype(
         id="typographic_poster",
         label="Poster tipográfico",
@@ -41,9 +64,9 @@ _ARCHETYPE_MAP: dict[str, LayoutArchetype] = {
             "large negative space in lower 40% for typography overlay, subject or abstract "
             "visual in upper area, asymmetric layout"
         ),
-        primary_hex="#FFE500",
-        secondary_hex="#FFFFFF",
-        accent_hex="#FFE500",
+        primary_hex="#F8FAFC",
+        secondary_hex="#E2E8F0",
+        accent_hex="#0F766E",
     ),
     "minimal_conceptual": LayoutArchetype(
         id="minimal_conceptual",
@@ -99,10 +122,16 @@ def get_archetype(archetype_id: str) -> LayoutArchetype | None:
 
 
 def pick_archetype(brief: BriefInput, strategy: StrategyOutput) -> LayoutArchetype:
-    """Elige arquetipo según tipo de post, objetivo y plataforma."""
+    """Elige arquetipo. Con manual de marca → pieza de campaña full-bleed (logo/foto/CTA)."""
     tipo = (strategy.tipo_post or "").lower()
     objetivo = (brief.objetivo or "").lower()
     tema = (brief.tema or "").lower()
+    brand = (getattr(brief, "brand_context", "") or "").strip()
+
+    # Si hay manual de marca, la pieza objetivo es siempre tipo campaña fotográfica
+    # (logo arriba, foto producto edge-to-edge, tipografía centrada, CTA abajo).
+    if len(brand) >= 40:
+        return _ARCHETYPE_MAP["brand_campaign_piece"]
 
     if tipo == "educativo" or "branding" in objetivo or "automatiz" in tema:
         return _ARCHETYPE_MAP["editorial_infographic"]
@@ -121,19 +150,51 @@ def build_flux_prompt(
     brief: BriefInput,
     strategy: StrategyOutput,
     spec: ImageSpec,
+    brand_block: str = "",
 ) -> str:
-    """Prompt visual enriquecido para Flux — fondo sin texto, composición editorial."""
+    """Prompt visual enriquecido — brand manual primero si existe."""
     metaphor = _visual_metaphor_hint(brief, strategy)
-    return (
+    cues_has = False
+    try:
+        from .brand_visual import parse_brand_visual_cues
+
+        cues_has = parse_brand_visual_cues(getattr(brief, "brand_context", "") or "").has_signal
+    except Exception:
+        cues_has = False
+    priority = brand_block
+    if not priority:
+        from .brand_visual import brand_priority_prompt_block, parse_brand_visual_cues
+
+        cues = parse_brand_visual_cues(getattr(brief, "brand_context", "") or "")
+        cues_has = cues.has_signal
+        priority = brand_priority_prompt_block(cues, getattr(brief, "brand_context", "") or "")
+    base = (
         f"Social media {spec.label} design background for {brief.red_social}. "
         f"Topic: {brief.tema}. Audience: {brief.publico_objetivo}. "
         f"Brand tone: {brief.tono_marca}. Post type: {strategy.tipo_post}. "
         f"Visual metaphor: {metaphor}. "
         f"Style: {archetype.flux_style}. "
         f"Composition: {archetype.flux_composition}. "
-        f"Color direction: accent {archetype.accent_hex}, high-end agency quality. "
+        f"Color direction: primary {archetype.primary_hex}, accent {archetype.accent_hex}, "
+        f"high-end agency quality tailored to this client. "
         "Absolutely no text, no letters, no logos, no watermark in the generated image."
     )
+    if priority:
+        if archetype.id == "brand_campaign_piece":
+            return (
+                f"{priority} {base} Composition must match a brand-manual campaign piece: "
+                "full-bleed real photography of the client's product/place/atmosphere, "
+                "logo reserved at top-center, centered expressive headline, short supporting line, "
+                "single CTA near the bottom — no cards, no dashboards, no collages."
+            )
+        return f"{priority} {base}"
+    # Sin manual: evitar el look genérico amarillo/blanco como default implícito
+    if archetype.id == "typographic_poster" and not cues_has:
+        return (
+            f"{base} Prefer rich, distinctive photography or illustration — "
+            "avoid generic yellow-and-white template aesthetics."
+        )
+    return base
 
 
 def _visual_metaphor_hint(brief: BriefInput, strategy: StrategyOutput) -> str:

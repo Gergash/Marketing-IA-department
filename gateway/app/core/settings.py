@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Timeout de la llamada al LLM; debe tolerar la carga inicial del modelo (~5GB)
     llm_timeout_seconds: int = 300
 
-    # Image generation — provider: stable_diffusion | comfyui | fal | openai | canva | mock
+    # Image generation — provider: stable_diffusion | comfyui | fal | venice | openai | canva | mock
     image_provider: str = "stable_diffusion"
     stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
     # Nombre exacto del checkpoint en Automatic1111 (como en el desplegable), p. ej. archivo .safetensors
@@ -48,6 +48,30 @@ class Settings(BaseSettings):
     # Modelo img2img cuando el usuario sube foto y pide alteración con IA
     fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
     fal_img2img_strength: float = 0.72
+    # Venice.ai — IMAGE_PROVIDER=venice | VIDEO_SCENE_PROVIDER=venice
+    # Key: https://venice.ai/token — base real: https://api.venice.ai/api/v1
+    venice_api_key: str = ""
+    venice_api_base: str = "https://api.venice.ai/api/v1"
+    # Imagen: venice-sd35 (pixel ≤1280) | nano-banana-pro / nano-banana-2 (aspect+resolution)
+    venice_image_model: str = "venice-sd35"
+    venice_image_style_preset: str = ""
+    # Solo modelos resolution-tier (Nano Banana / GPT Image): 1K | 2K | 4K
+    venice_image_resolution: str = "2K"
+    # Animación de escenas de Reel (still → MP4) vía /video/queue
+    # still = solo imagen (Ken Burns en Shotstack) | venice = image-to-video por escena
+    video_scene_provider: str = "still"
+    venice_video_model: str = "wan-2.5-preview-image-to-video"
+    venice_video_duration: str = "5s"  # 5s | 10s
+    venice_video_resolution: str = "720p"  # 480p | 720p | 1080p
+
+    # OCR local para manuales de marca escaneados — provider: none | paddle
+    # Flujo: pypdf primero; si hay poco texto → PaddleOCR (GPU/CPU)
+    ocr_provider: str = "paddle"
+    ocr_lang: str = "es"
+    ocr_use_gpu: bool = True
+    ocr_min_text_chars: int = 40
+    ocr_max_pages: int = 40
+    ocr_dpi: int = 200
 
     # Voiceover generation — provider: elevenlabs | openai | fal | mock
     voice_provider: str = "elevenlabs"

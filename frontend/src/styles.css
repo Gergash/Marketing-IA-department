@@ -129,3 +129,122 @@ select {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+textarea {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  font: inherit;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.brand-preview {
+  white-space: pre-wrap;
+  max-height: 6rem;
+  overflow: auto;
+  background: #f8fafc;
+  padding: 0.5rem;
+  border-radius: 6px;
+}
+
+.advisor-bubble {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.advisor-fab {
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.35);
+}
+
+.advisor-panel {
+  width: min(360px, calc(100vw - 2rem));
+  max-height: min(520px, calc(100vh - 6rem));
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.advisor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  background: #f0fdfa;
+  border-bottom: 1px solid #ccfbf1;
+}
+
+.advisor-close {
+  background: transparent;
+  color: #115e59;
+  font-size: 1.35rem;
+  line-height: 1;
+  padding: 0.1rem 0.45rem;
+}
+
+.advisor-messages {
+  flex: 1;
+  overflow: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  background: #f8fafc;
+}
+
+.advisor-msg {
+  max-width: 92%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.advisor-msg-assistant {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+}
+
+.advisor-msg-user {
+  align-self: flex-end;
+  background: #0f766e;
+  color: #fff;
+}
+
+.advisor-composer {
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.65rem;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.advisor-composer textarea {
+  margin: 0;
+  flex: 1;
+}
+
+.advisor-composer button {
+  align-self: flex-end;
+  background: #0f766e;
+}

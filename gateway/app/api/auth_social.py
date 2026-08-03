@@ -39,7 +39,7 @@ def oauth_login(
     if provider == "meta":
         if not s.meta_client_id:
             raise HTTPException(status_code=400, detail="META_CLIENT_ID no configurado en .env")
-        scopes = "pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement"
+        scopes = "pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts"
         auth_url = (
             f"https://www.facebook.com/dialog/oauth"
             f"?client_id={s.meta_client_id}"

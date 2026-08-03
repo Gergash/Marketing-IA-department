@@ -1,4 +1,4 @@
-"""Generación de imágenes: Stable Diffusion (A1111), fal.ai, DALL·E, Canva placeholder y dummy."""
+"""Generación de imágenes: Stable Diffusion (A1111), fal.ai, Venice.ai, DALL·E, Canva placeholder y dummy."""
 
 from __future__ import annotations
 
@@ -31,6 +31,10 @@ def generate_image(
     red_social: str = "instagram",
     content_format: str = "feed",
     layout_archetype: str = "typographic_poster",
+    brand_archetype=None,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> tuple[str, int, int]:
     """Return (image URL, width, height) for the given prompt."""
     from gateway.app.core.settings import get_settings
@@ -38,6 +42,12 @@ def generate_image(
     s = get_settings()
     provider = (image_provider or s.image_provider).strip().lower()
     spec = resolve_image_spec(red_social, content_format)
+    overlay_extras = {
+        "brand_archetype": brand_archetype,
+        "preferred_font_paths": preferred_font_paths,
+        "logo_path": logo_path,
+        "tagline": tagline,
+    }
 
     if provider == "stable_diffusion":
         url = _stable_diffusion(
@@ -51,6 +61,7 @@ def generate_image(
             red_social=red_social,
             layout_archetype=layout_archetype,
             content_format=content_format,
+            **overlay_extras,
         )
         return url, spec.width, spec.height
     if provider == "fal" and s.fal_api_key:
@@ -65,11 +76,33 @@ def generate_image(
             red_social=red_social,
             layout_archetype=layout_archetype,
             content_format=content_format,
+            **overlay_extras,
         )
         return url, spec.width, spec.height
     if provider == "fal" and not s.fal_api_key:
         logger.error("image.fal_missing_key")
         raise RuntimeError("image_gen_failed:fal: missing API key")
+    if provider == "venice" and s.venice_api_key:
+        url = _venice(
+            prompt,
+            s.venice_api_key,
+            s.venice_api_base,
+            s.venice_image_model,
+            style_preset=(s.venice_image_style_preset or "").strip() or None,
+            resolution=(s.venice_image_resolution or "2K").strip() or "2K",
+            spec=spec,
+            overlay_text=overlay_text,
+            overlay_subline=overlay_subline,
+            overlay_cta=overlay_cta,
+            red_social=red_social,
+            layout_archetype=layout_archetype,
+            content_format=content_format,
+            **overlay_extras,
+        )
+        return url, spec.width, spec.height
+    if provider == "venice" and not s.venice_api_key:
+        logger.error("image.venice_missing_key")
+        raise RuntimeError("image_gen_failed:venice: missing API key")
     if provider == "openai" and s.openai_api_key:
         url = _dalle(prompt, s.openai_api_key)
         return url, spec.width, spec.height
@@ -92,6 +125,10 @@ def _stable_diffusion(
     red_social: str = "instagram",
     layout_archetype: str = "typographic_poster",
     content_format: str = "feed",
+    brand_archetype=None,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> str:
     """POST a txt2img de A1111/Forge, decodifica PNG, superpone texto y guarda en `/static/images/`."""
     import httpx
@@ -137,6 +174,10 @@ def _stable_diffusion(
                 layout_archetype=layout_archetype,
                 font_seed=red_social,
                 content_format=content_format,
+                brand_archetype=brand_archetype,
+                preferred_font_paths=preferred_font_paths,
+                logo_path=logo_path,
+                tagline=tagline,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -164,9 +205,15 @@ def _apply_layout_overlay(
     layout_archetype: str,
     font_seed: str,
     content_format: str = "feed",
+    brand_archetype=None,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> bytes:
-    """Aplica composición editorial según arquetipo (poster, minimal, infográfico, hero)."""
-    archetype = _ARCHETYPE_MAP.get(layout_archetype, _ARCHETYPE_MAP["typographic_poster"])
+    """Aplica composición editorial según arquetipo (poster, campaña marca, hero…)."""
+    archetype = brand_archetype or _ARCHETYPE_MAP.get(
+        layout_archetype, _ARCHETYPE_MAP["typographic_poster"]
+    )
     return apply_design_layout(
         raw,
         archetype,
@@ -175,6 +222,9 @@ def _apply_layout_overlay(
         cta,
         font_seed=font_seed,
         content_format=content_format,
+        preferred_font_paths=preferred_font_paths,
+        logo_path=logo_path,
+        tagline=tagline,
     )
 
 
@@ -190,6 +240,10 @@ def _fal(
     red_social: str = "instagram",
     layout_archetype: str = "typographic_poster",
     content_format: str = "feed",
+    brand_archetype=None,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> str:
     """Genera imagen con fal.ai (Flux pro u otros modelos) y la guarda en static/images/."""
     import os
@@ -250,6 +304,10 @@ def _fal(
                 layout_archetype=layout_archetype,
                 font_seed=red_social,
                 content_format=content_format,
+                brand_archetype=brand_archetype,
+                preferred_font_paths=preferred_font_paths,
+                logo_path=logo_path,
+                tagline=tagline,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -266,6 +324,93 @@ def _fal(
     except Exception as exc:
         logger.error("image.fal_download_error", error=str(exc))
         raise RuntimeError(f"image_gen_failed:fal:download: {exc}") from exc
+
+
+def _venice(
+    prompt: str,
+    api_key: str,
+    base_url: str,
+    model: str,
+    *,
+    style_preset: str | None,
+    resolution: str | None = None,
+    spec,
+    overlay_text: str | None = None,
+    overlay_subline: str | None = None,
+    overlay_cta: str | None = None,
+    red_social: str = "instagram",
+    layout_archetype: str = "typographic_poster",
+    content_format: str = "feed",
+    brand_archetype=None,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
+) -> str:
+    """Genera imagen con Venice.ai (/image/generate) y la guarda en static/images/."""
+    from .user_assets import fit_image_to_spec
+    from .venice_client import generate_image_bytes, prompt_limit_for_model, truncate_prompt
+
+    space_hint = (
+        "Leave clean negative space in the center for centered typography."
+        if (content_format or "").lower() == "story"
+        else "Clean composition with negative space for typography overlay."
+    )
+    # Prompt acotado al límite del modelo (sd35=1500; nano-banana≈7500).
+    limit = prompt_limit_for_model(model)
+    reserve = len(space_hint) + len(spec.label) + 80
+    body_budget = max(200, limit - reserve)
+    visual_prompt = truncate_prompt(
+        f"{prompt[:body_budget]}. No text, no letters, no watermark. "
+        f"Aspect ratio {spec.label}. {space_hint}",
+        model,
+    )
+    try:
+        raw = generate_image_bytes(
+            visual_prompt,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            width=spec.width,
+            height=spec.height,
+            style_preset=style_preset,
+            resolution=resolution,
+            fmt="png",
+        )
+    except Exception as exc:
+        logger.error("image.venice_api_error", error=str(exc), prompt_preview=visual_prompt[:160])
+        raise RuntimeError(f"image_gen_failed:venice: {exc}") from exc
+
+    try:
+        raw = fit_image_to_spec(raw, spec)
+    except Exception as exc:
+        logger.warning("image.venice_fit_skipped", error=str(exc))
+
+    if overlay_text:
+        raw = _apply_layout_overlay(
+            raw,
+            overlay_text,
+            overlay_subline,
+            overlay_cta,
+            layout_archetype=layout_archetype,
+            font_seed=red_social,
+            content_format=content_format,
+            brand_archetype=brand_archetype,
+            preferred_font_paths=preferred_font_paths,
+            logo_path=logo_path,
+            tagline=tagline,
+        )
+
+    _STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"venice_{uuid.uuid4().hex}.png"
+    (_STATIC_DIR / filename).write_bytes(raw)
+    local_url = f"http://localhost:8000/static/images/{filename}"
+    logger.info(
+        "image.venice_generated",
+        url=local_url,
+        model=model,
+        size=f"{spec.width}x{spec.height}",
+    )
+    return local_url
 
 
 def _dalle(prompt: str, api_key: str) -> str:
@@ -346,6 +491,10 @@ def compose_from_user_asset(
     alter_with_ai: bool = False,
     visual_instructions: str | None = None,
     image_provider: str | None = None,
+    brand_archetype=None,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> tuple[str, int, int, str]:
     """
     Design-as-Code: foto del usuario como capa base + overlay Pillow.
@@ -390,6 +539,10 @@ def compose_from_user_asset(
             layout_archetype=layout_archetype,
             font_seed=red_social,
             content_format=content_format,
+            brand_archetype=brand_archetype,
+            preferred_font_paths=preferred_font_paths,
+            logo_path=logo_path,
+            tagline=tagline,
         )
 
     prefix = "user_img2img" if design_source == "user_img2img" else "user_overlay"

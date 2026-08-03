@@ -2,6 +2,7 @@
 
 import structlog
 
+from .brand_manual import brand_prompt_block, brand_system_addendum
 from .knowledge import inbound_system_addendum
 from .llm import get_llm
 from .schemas import CopyOutput, StrategyOutput
@@ -46,6 +47,7 @@ class CopywriterAgent:
         strategy: StrategyOutput,
         *,
         qa_feedback: list[str] | None = None,
+        brand_context: str = "",
     ) -> CopyOutput:
         """Produce `CopyOutput` vía LLM configurado o `_stub` si no hay LLM o falla la llamada."""
         llm = get_llm()
@@ -58,6 +60,7 @@ class CopywriterAgent:
             f"- Core message: {strategy.mensaje_base}\n"
             f"- Suggested hashtags: {', '.join(strategy.hashtags)}\n"
             f"- Structure copy_final as: Entretener → Informacion → Conexion"
+            + brand_prompt_block(brand_context)
         )
         if qa_feedback:
             prompt += (
@@ -65,8 +68,9 @@ class CopywriterAgent:
                 "Revise the copy to fully address every point below (same JSON output shape):\n"
                 + "\n".join(f"- {r}" for r in qa_feedback)
             )
+        system = _SYSTEM + brand_system_addendum(brand_context)
         try:
-            data = llm.complete_json(_SYSTEM, prompt)
+            data = llm.complete_json(system, prompt)
             out = CopyOutput(**data)
             return self._ensure_overlay_fields(out, strategy)
         except Exception as exc:

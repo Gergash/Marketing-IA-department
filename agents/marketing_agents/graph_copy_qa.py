@@ -40,7 +40,11 @@ def build_copy_qa_graph(
         q_prev = state.get("quality")
         feedback = q_prev.reasons if q_prev is not None and not q_prev.approved else None
         prev = state.get("attempt", 0)
-        copy = copywriter.run(state["strategy"], qa_feedback=feedback)
+        copy = copywriter.run(
+            state["strategy"],
+            qa_feedback=feedback,
+            brand_context=getattr(state["brief"], "brand_context", "") or "",
+        )
         evt = {
             "node": "copywriter",
             "round": prev + 1,

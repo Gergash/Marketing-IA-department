@@ -54,6 +54,26 @@ class OllamaLLM:
         content = resp.json()["message"]["content"]
         return _parse_json(content)
 
+    def complete_text(self, system: str, user: str, *, max_tokens: int = 1024) -> str:
+        """Respuesta de texto libre (chat asesor)."""
+        import httpx
+
+        payload = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "stream": False,
+            "keep_alive": self._keep_alive,
+            "options": {"num_predict": max_tokens},
+        }
+        resp = httpx.post(
+            f"{self._base_url}/api/chat", json=payload, timeout=self._timeout_seconds
+        )
+        resp.raise_for_status()
+        return str(resp.json()["message"]["content"] or "").strip()
+
 
 class AnthropicLLM:
     """Cliente Messages API de Anthropic con respuesta forzada a JSON parseable."""
@@ -81,6 +101,16 @@ class AnthropicLLM:
         )
         return _parse_json(msg.content[0].text)
 
+    def complete_text(self, system: str, user: str, *, max_tokens: int = 1024) -> str:
+        """Respuesta de texto libre (chat asesor)."""
+        msg = self._client.messages.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user}],
+        )
+        return str(msg.content[0].text or "").strip()
+
 
 class OpenAILLM:
     """Cliente Chat Completions de OpenAI con `response_format` json_object."""
@@ -103,6 +133,18 @@ class OpenAILLM:
             ],
         )
         return _parse_json(resp.choices[0].message.content)
+
+    def complete_text(self, system: str, user: str, *, max_tokens: int = 1024) -> str:
+        """Respuesta de texto libre (chat asesor)."""
+        resp = self._client.chat.completions.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return str(resp.choices[0].message.content or "").strip()
 
 
 def _parse_json(text: str) -> dict[str, Any]:

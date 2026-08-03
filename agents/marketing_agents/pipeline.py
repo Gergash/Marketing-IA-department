@@ -103,6 +103,7 @@ class MarketingPipeline:
                 visual_instructions=visual_instructions,
                 revision_notes=revision_notes,
                 cta_on_image=cta_on_image,
+                tenant_id=tenant_id,
             )
 
         publish_result = None

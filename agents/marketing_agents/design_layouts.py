@@ -10,8 +10,16 @@ from .layout_archetypes import LayoutArchetype, hex_to_rgb
 from .overlay_text import build_overlay_lines, pick_font_pair, wrap_for_width
 
 
-def _load_fonts(seed: str, title_size: int, body_size: int) -> tuple:
-    (title_path, ts), (body_path, bs) = pick_font_pair(seed, body_size)
+def _load_fonts(
+    seed: str,
+    title_size: int,
+    body_size: int,
+    *,
+    preferred_font_paths: list[str] | None = None,
+) -> tuple:
+    (title_path, ts), (body_path, bs) = pick_font_pair(
+        seed, body_size, preferred_font_paths=preferred_font_paths
+    )
     try:
         return (
             ImageFont.truetype(title_path, size=ts),
@@ -32,21 +40,31 @@ def apply_design_layout(
     *,
     font_seed: str = "instagram",
     content_format: str = "feed",
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> bytes:
     """Aplica overlay editorial según arquetipo (feed) o composición centrada (story)."""
     headline_line, subline_line = build_overlay_lines(headline=headline, subline=subline)
+    kwargs = {
+        "font_seed": font_seed,
+        "preferred_font_paths": preferred_font_paths,
+        "logo_path": logo_path,
+        "tagline": tagline,
+    }
     if (content_format or "").strip().lower() == "story":
         return _layout_story_centered(
-            img_bytes, archetype, headline_line, subline_line, cta, font_seed=font_seed
+            img_bytes, archetype, headline_line, subline_line, cta, **kwargs
         )
     handlers = {
+        "brand_campaign_piece": _layout_brand_campaign_piece,
         "typographic_poster": _layout_typographic_poster,
         "minimal_conceptual": _layout_minimal_conceptual,
         "editorial_infographic": _layout_editorial_infographic,
         "cinematic_hero": _layout_cinematic_hero,
     }
     handler = handlers.get(archetype.id, _layout_typographic_poster)
-    return handler(img_bytes, archetype, headline_line, subline_line, cta, font_seed=font_seed)
+    return handler(img_bytes, archetype, headline_line, subline_line, cta, **kwargs)
 
 
 def _multiline_size(draw: ImageDraw.ImageDraw, text: str, font) -> tuple[int, int]:
@@ -81,6 +99,9 @@ def _layout_story_centered(
     cta: str | None,
     *,
     font_seed: str,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> bytes:
     """Historias 9:16: tipografía y CTA centrados en el eje visual (no pegados abajo/izquierda)."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -110,7 +131,9 @@ def _layout_story_centered(
     # Stories son altas: tipografía un poco más grande y márgenes laterales generosos
     title_size = max(28, min(56, w // 12))
     body_size = max(18, title_size - 10)
-    font_title, font_body, font_cta = _load_fonts(font_seed, title_size, body_size)
+    font_title, font_body, font_cta = _load_fonts(
+        font_seed, title_size, body_size, preferred_font_paths=preferred_font_paths
+    )
 
     margin_x = int(w * 0.12)
     text_width = w - margin_x * 2
@@ -167,7 +190,7 @@ def _layout_story_centered(
             center=True,
         )
 
-    return _composite(img, overlay)
+    return _composite(img, overlay, logo_path=logo_path)
 
 
 def _layout_typographic_poster(
@@ -178,6 +201,9 @@ def _layout_typographic_poster(
     cta: str | None,
     *,
     font_seed: str,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> bytes:
     """Estilo Mattelsa/RADAR: headline grande en tercio inferior, alto contraste."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -194,7 +220,9 @@ def _layout_typographic_poster(
         draw.line([(0, h - bar_h + i), (w, h - bar_h + i)], fill=(0, 0, 0, alpha))
 
     title_size = max(22, min(48, w // 16))
-    font_title, font_body, font_cta = _load_fonts(font_seed, title_size, title_size - 6)
+    font_title, font_body, font_cta = _load_fonts(
+        font_seed, title_size, title_size - 6, preferred_font_paths=preferred_font_paths
+    )
 
     y = h - bar_h + int(bar_h * 0.12)
     wrapped = wrap_for_width(headline.upper(), w - 48, font_size=title_size)
@@ -210,7 +238,7 @@ def _layout_typographic_poster(
     if cta:
         _draw_cta_pill(draw, cta, w, h, font_cta, accent=primary)
 
-    return _composite(img, overlay)
+    return _composite(img, overlay, logo_path=logo_path)
 
 
 def _layout_minimal_conceptual(
@@ -221,6 +249,9 @@ def _layout_minimal_conceptual(
     cta: str | None,
     *,
     font_seed: str,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> bytes:
     """Estilo YaComercio: headline arriba, acento en línea, mucho aire."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -232,7 +263,9 @@ def _layout_minimal_conceptual(
     w, h = img.size
 
     title_size = max(20, min(40, w // 18))
-    font_title, font_body, font_cta = _load_fonts(font_seed, title_size, title_size - 4)
+    font_title, font_body, font_cta = _load_fonts(
+        font_seed, title_size, title_size - 4, preferred_font_paths=preferred_font_paths
+    )
 
     y = int(h * 0.06)
     wrapped = wrap_for_width(headline, w - 56, font_size=title_size)
@@ -248,7 +281,7 @@ def _layout_minimal_conceptual(
     if cta:
         _draw_cta_pill(draw, cta, w, h, font_cta, accent=accent, y_offset=int(h * 0.88))
 
-    return _composite(img, overlay)
+    return _composite(img, overlay, logo_path=logo_path)
 
 
 def _layout_editorial_infographic(
@@ -259,6 +292,9 @@ def _layout_editorial_infographic(
     cta: str | None,
     *,
     font_seed: str,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> bytes:
     """Estilo PowerUps/RADAR infográfico: barra inferior + acento lime."""
     accent = hex_to_rgb(archetype.accent_hex)
@@ -272,7 +308,9 @@ def _layout_editorial_infographic(
     draw.rectangle([(0, h - bar_h), (w, h)], fill=(10, 10, 20, 210))
 
     title_size = max(18, min(36, w // 20))
-    font_title, font_body, font_cta = _load_fonts(font_seed, title_size, title_size - 4)
+    font_title, font_body, font_cta = _load_fonts(
+        font_seed, title_size, title_size - 4, preferred_font_paths=preferred_font_paths
+    )
 
     y = h - bar_h + 20
     wrapped = wrap_for_width(headline, w - 60, font_size=title_size)
@@ -292,7 +330,7 @@ def _layout_editorial_infographic(
     if cta:
         _draw_cta_pill(draw, cta, w, h, font_cta, accent=accent)
 
-    return _composite(img, overlay)
+    return _composite(img, overlay, logo_path=logo_path)
 
 
 def _layout_cinematic_hero(
@@ -303,6 +341,9 @@ def _layout_cinematic_hero(
     cta: str | None,
     *,
     font_seed: str,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
 ) -> bytes:
     """Estilo RADAR cinematográfico: gradiente inferior + texto en tercio bajo."""
     accent = hex_to_rgb(archetype.accent_hex)
@@ -318,7 +359,9 @@ def _layout_cinematic_hero(
         draw.line([(0, h - grad_h + i), (w, h - grad_h + i)], fill=(0, 0, 0, alpha))
 
     title_size = max(20, min(42, w // 17))
-    font_title, font_body, font_cta = _load_fonts(font_seed, title_size, title_size - 5)
+    font_title, font_body, font_cta = _load_fonts(
+        font_seed, title_size, title_size - 5, preferred_font_paths=preferred_font_paths
+    )
 
     y = h - grad_h + int(grad_h * 0.15)
     wrapped = wrap_for_width(headline, w - 48, font_size=title_size)
@@ -335,7 +378,161 @@ def _layout_cinematic_hero(
     if cta:
         _draw_cta_pill(draw, cta, w, h, font_cta, accent=accent)
 
+    return _composite(img, overlay, logo_path=logo_path)
+
+
+def _layout_brand_campaign_piece(
+    img_bytes: bytes,
+    archetype: LayoutArchetype,
+    headline: str,
+    subline: str | None,
+    cta: str | None,
+    *,
+    font_seed: str,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
+) -> bytes:
+    """
+    Pieza canónica con manual de marca (ref. Tres Amores):
+    foto full-bleed + logo top-center + headline script centrado + cuerpo + CTA + eslogan.
+    Una sola composición; sin cards ni barras opacas tipo dashboard.
+    """
+    primary = hex_to_rgb(archetype.primary_hex)
+    secondary = hex_to_rgb(archetype.secondary_hex)
+    accent = hex_to_rgb(archetype.accent_hex)
+
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    w, h = img.size
+
+    # Viñeta suave (legibilidad) — no tapa el producto
+    for i in range(h):
+        if i < int(h * 0.22):
+            t = 1.0 - (i / max(1, int(h * 0.22)))
+            alpha = int(95 * t)
+        elif i > int(h * 0.62):
+            t = (i - int(h * 0.62)) / max(1, h - int(h * 0.62))
+            alpha = int(140 * t)
+        else:
+            alpha = 35
+        if alpha:
+            draw.line([(0, i), (w, i)], fill=(0, 0, 0, alpha))
+
+    # Marco fino de acento de marca
+    inset = max(8, w // 80)
+    stroke = max(2, w // 400)
+    draw.rectangle(
+        [(inset, inset), (w - inset - 1, h - inset - 1)],
+        outline=accent + (200,),
+        width=stroke,
+    )
+
+    # Logo oficial arriba-centro (marca primero)
+    logo_bottom = int(h * 0.04)
+    if logo_path:
+        logo_bottom = _paste_logo_top_center(img, logo_path, max_h=int(h * 0.11))
+
+    title_size = max(28, min(58, w // 11))
+    body_size = max(16, title_size - 16)
+    font_title, font_body, font_cta = _load_fonts(
+        font_seed, title_size, body_size, preferred_font_paths=preferred_font_paths
+    )
+    # Preferir una fuente más expresiva para el headline si hay paths de marca
+    if preferred_font_paths:
+        try:
+            font_title = ImageFont.truetype(preferred_font_paths[0], size=title_size)
+        except Exception:
+            pass
+
+    margin_x = int(w * 0.10)
+    text_w = w - margin_x * 2
+    wrapped = wrap_for_width(headline, text_w, font_size=title_size)
+    wrapped_sub = wrap_for_width(subline, text_w, font_size=body_size) if subline else None
+
+    y = max(logo_bottom + int(h * 0.02), int(h * 0.14))
+    y += _draw_centered_text(
+        draw,
+        wrapped,
+        y=y,
+        canvas_w=w,
+        font=font_title,
+        fill=primary + (255,),
+        shadow=(0, 0, 0, 160),
+    )
+
+    # Flourishes de acento bajo el headline
+    accent_w = int(w * 0.22)
+    ax0 = (w - accent_w) // 2
+    y += 10
+    draw.line([(ax0, y), (ax0 + accent_w, y)], fill=accent + (220,), width=2)
+    y += 14
+
+    if wrapped_sub:
+        y += _draw_centered_text(
+            draw,
+            wrapped_sub,
+            y=y,
+            canvas_w=w,
+            font=font_body,
+            fill=secondary + (245,),
+            shadow=(0, 0, 0, 100),
+        )
+
+    if cta:
+        cta_y = int(h * 0.78)
+        _draw_cta_pill(
+            draw,
+            cta,
+            w,
+            h,
+            font_cta,
+            accent=accent,
+            y_offset=cta_y,
+            center=True,
+            bordered=True,
+            border_color=secondary,
+        )
+
+    if tagline:
+        tag_font = font_cta
+        try:
+            if preferred_font_paths and len(preferred_font_paths) > 1:
+                tag_font = ImageFont.truetype(
+                    preferred_font_paths[1], size=max(14, body_size - 2)
+                )
+        except Exception:
+            pass
+        tag_wrapped = wrap_for_width(tagline, int(w * 0.8), font_size=max(14, body_size - 2))
+        _draw_centered_text(
+            draw,
+            tag_wrapped,
+            y=int(h * 0.90),
+            canvas_w=w,
+            font=tag_font,
+            fill=accent + (240,),
+        )
+
     return _composite(img, overlay)
+
+
+def _paste_logo_top_center(base: Image.Image, logo_path: str, *, max_h: int) -> int:
+    """Pega el logo del manual arriba-centro; devuelve Y inferior del logo en el canvas."""
+    try:
+        logo = Image.open(logo_path).convert("RGBA")
+    except Exception:
+        return int(base.height * 0.04)
+    lw, lh = logo.size
+    if lh <= 0 or lw <= 0:
+        return int(base.height * 0.04)
+    scale = min(max_h / lh, (base.width * 0.42) / lw)
+    nw, nh = max(1, int(lw * scale)), max(1, int(lh * scale))
+    logo = logo.resize((nw, nh), Image.Resampling.LANCZOS)
+    x = (base.width - nw) // 2
+    y = max(12, int(base.height * 0.035))
+    base.alpha_composite(logo, (x, y))
+    return y + nh
 
 
 def _draw_cta_pill(
@@ -348,6 +545,8 @@ def _draw_cta_pill(
     accent: tuple[int, int, int],
     y_offset: int | None = None,
     center: bool = False,
+    bordered: bool = False,
+    border_color: tuple[int, int, int] | None = None,
 ) -> None:
     cta_label = f" {cta[:45]} "
     bbox = draw.textbbox((0, 0), cta_label, font=font)
@@ -365,9 +564,17 @@ def _draw_cta_pill(
 
     draw.rounded_rectangle(
         [(cta_x, cta_y), (cta_x + pill_w, cta_y + pill_h)],
-        radius=8,
+        radius=10,
         fill=accent + (230,),
     )
+    if bordered:
+        edge = border_color or (255, 255, 255)
+        draw.rounded_rectangle(
+            [(cta_x, cta_y), (cta_x + pill_w, cta_y + pill_h)],
+            radius=10,
+            outline=edge + (220,),
+            width=2,
+        )
 
     text_draw_x = cta_x + pad_x - bbox[0]
     text_draw_y = cta_y + pad_y - bbox[1]
@@ -375,8 +582,44 @@ def _draw_cta_pill(
     draw.text((text_draw_x, text_draw_y), cta_label, font=font, fill=(255, 255, 255, 255))
 
 
-def _composite(img: Image.Image, overlay: Image.Image) -> bytes:
-    composite = Image.alpha_composite(img, overlay).convert("RGB")
+def _paste_brand_logo(
+    base: Image.Image,
+    logo_path: str | None,
+    *,
+    margin: int = 36,
+    max_width_ratio: float = 0.22,
+) -> Image.Image:
+    """Pega el logo del manual (esquina superior derecha) si existe."""
+    if not logo_path:
+        return base
+    from pathlib import Path
+
+    path = Path(logo_path)
+    if not path.is_file():
+        return base
+    try:
+        logo = Image.open(path).convert("RGBA")
+    except Exception:
+        return base
+    w, h = base.size
+    max_w = max(48, int(w * max_width_ratio))
+    scale = min(1.0, max_w / max(logo.width, 1))
+    if scale < 1.0:
+        logo = logo.resize(
+            (max(1, int(logo.width * scale)), max(1, int(logo.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    x = w - logo.width - margin
+    y = margin
+    canvas = base.convert("RGBA")
+    canvas.alpha_composite(logo, (x, y))
+    return canvas
+
+
+def _composite(img: Image.Image, overlay: Image.Image, *, logo_path: str | None = None) -> bytes:
+    composite = Image.alpha_composite(img, overlay)
+    # Solo esquina si el layout no pegó el logo antes (p.ej. brand_campaign lo pone arriba-centro)
+    composite = _paste_brand_logo(composite, logo_path)
     buf = io.BytesIO()
-    composite.save(buf, format="PNG")
+    composite.convert("RGB").save(buf, format="PNG")
     return buf.getvalue()

@@ -2,6 +2,7 @@
 
 import structlog
 
+from .brand_manual import brand_prompt_block, brand_system_addendum
 from .knowledge import inbound_system_addendum
 from .llm import get_llm
 from .schemas import BriefInput, StrategyOutput
@@ -39,16 +40,18 @@ class ContentStrategistAgent:
             logger.warning("strategist.using_stub", reason="no_llm_configured")
             return self._stub(brief)
         prompt = (
-            f"- Topic (tema): {brief.tema}\n"
+            f"- Product/event description (tema): {brief.tema}\n"
             f"- Target audience / community to reach: {brief.publico_objetivo}\n"
             f"- Platform: {brief.red_social}\n"
             f"- Goal: {brief.objetivo}\n"
             f"- Brand tone: {brief.tono_marca}\n"
             f"- Language: {brief.idioma}\n"
             f"- Inbound intent stack (required): entretener → informacion → conexion"
+            + brand_prompt_block(brief.brand_context)
         )
+        system = _SYSTEM + brand_system_addendum(brief.brand_context)
         try:
-            data = llm.complete_json(_SYSTEM, prompt)
+            data = llm.complete_json(system, prompt)
             return StrategyOutput(**data)
         except Exception as exc:
             logger.error("strategist.llm_error", error=str(exc))

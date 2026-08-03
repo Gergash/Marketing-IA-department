@@ -47,10 +47,14 @@ class RunRequest(BaseModel):
     # linkedin suele publicar como post de feed
     content_format: Literal["feed", "story", "reel", "user_clip_reel"] = "feed"
     # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
-    image_provider: Literal["stable_diffusion", "fal"] | None = None
+    image_provider: Literal["stable_diffusion", "fal", "venice"] | None = None
     # Override manual del arquetipo visual (si None, el agente lo elige automáticamente)
     archetype_override: Literal[
-        "typographic_poster", "minimal_conceptual", "editorial_infographic", "cinematic_hero"
+        "brand_campaign_piece",
+        "typographic_poster",
+        "minimal_conceptual",
+        "editorial_infographic",
+        "cinematic_hero",
     ] | None = None
     # Foto del usuario (URL de POST /api/briefs/upload-asset)
     user_asset_url: str | None = None
@@ -88,6 +92,35 @@ class UploadAssetResponse(BaseModel):
     filename: str
     content_type: str
     size_bytes: int
+
+
+class BrandManualResponse(BaseModel):
+    """Manual de marca PDF cargado, texto OCR y escaneo visual (paleta + logos)."""
+
+    id: str
+    url: str
+    original_filename: str
+    char_count: int
+    text_preview: str = ""
+    extraction_method: str = ""
+    palette_hex: list[str] = Field(default_factory=list)
+    logo_urls: list[str] = Field(default_factory=list)
+    pages_scanned: int = 0
+    embedded_images: int = 0
+
+
+class AdvisorChatRequest(BaseModel):
+    """Mensaje al asesor creativo (burbuja)."""
+
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[dict[str, str]] = Field(default_factory=list)
+    brief_context: dict | None = None
+
+
+class AdvisorChatResponse(BaseModel):
+    """Respuesta del asesor creativo."""
+
+    reply: str
 
 
 class ImageProvidersResponse(BaseModel):

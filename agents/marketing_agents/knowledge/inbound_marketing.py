@@ -102,6 +102,11 @@ def inbound_system_addendum(*, role: str = "strategist") -> str:
             "informan al publico_objetivo; última escena conecta (CTA de comunidad/relación). "
             "visual_prompt sin texto; narración natural en el idioma del brief."
         ),
+        "advisor": (
+            "Como asesor creativo: recomienda formato, ángulo, hook y CTA antes de generar. "
+            "Equilibra diseño, producción y marketing inbound; prioriza la comunidad nombrada "
+            "y el manual de marca si está disponible."
+        ),
     }.get(role, "")
 
     return f"{INBOUND_DOCTRINE}\n### Enfoque para este agente\n{role_focus}\n"

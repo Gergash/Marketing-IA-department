@@ -49,11 +49,24 @@ _FONT_PAIRS: list[tuple[tuple[str, int], tuple[str, int]]] = [
     (("C:/Windows/Fonts/calibrib.ttf", 0), ("C:/Windows/Fonts/calibri.ttf", 0)),
     (("C:/Windows/Fonts/georgiab.ttf", 0), ("C:/Windows/Fonts/georgia.ttf", 0)),
     (("C:/Windows/Fonts/arialbd.ttf", 0), ("C:/Windows/Fonts/arial.ttf", 0)),
+    (("C:/Windows/Fonts/impact.ttf", 0), ("C:/Windows/Fonts/arial.ttf", 0)),
+    (("C:/Windows/Fonts/verdana.ttf", 0), ("C:/Windows/Fonts/verdanab.ttf", 0)),
+    (("C:/Windows/Fonts/tahoma.ttf", 0), ("C:/Windows/Fonts/tahomabd.ttf", 0)),
 ]
 
 
-def pick_font_pair(seed: str, base_size: int) -> tuple[tuple[str, int], tuple[str, int]]:
-    """Elige par de fuentes determinista según seed (p. ej. red_social)."""
+def pick_font_pair(
+    seed: str,
+    base_size: int,
+    *,
+    preferred_font_paths: list[str] | None = None,
+) -> tuple[tuple[str, int], tuple[str, int]]:
+    """Elige par de fuentes: preferencia del manual de marca > seed de plataforma."""
+    paths = [p for p in (preferred_font_paths or []) if p]
+    if paths:
+        title = paths[0]
+        body = paths[1] if len(paths) > 1 else paths[0]
+        return (title, base_size + 4), (body, base_size)
     idx = sum(ord(c) for c in seed) % len(_FONT_PAIRS)
     title_path, _ = _FONT_PAIRS[idx][0]
     body_path, _ = _FONT_PAIRS[idx][1]

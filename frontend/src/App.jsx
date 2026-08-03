@@ -1,5 +1,22 @@
 import { useEffect, useState } from "react";
+import AdvisorChatBubble from "./AdvisorChatBubble";
 import Integrations from "./Integrations";
+
+const FORM_LABELS = {
+  tema: "Descripción del producto o evento",
+  publico_objetivo: "Público objetivo",
+  red_social: "Red social",
+  objetivo: "Objetivo",
+  tono_marca: "Tono de marca",
+};
+
+const FORM_PLACEHOLDERS = {
+  tema: "Ej: Lanzamiento del coworking en Siete Vueltas / curso de IA para pymes…",
+  publico_objetivo: "Ej: dueños de negocio en la región…",
+  red_social: "instagram",
+  objetivo: "branding | leads | comunidad…",
+  tono_marca: "profesional y cercano",
+};
 
 // ---------------------------------------------------------------------------
 // API key — almacenada en sessionStorage (no persiste entre sesiones)
@@ -67,6 +84,21 @@ async function uploadAsset(file) {
   return res.json();
 }
 
+async function uploadBrandManual(file) {
+  const headers = {};
+  const key = getApiKey();
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${API_BASE}/briefs/upload-brand-manual`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Componente principal
 // ---------------------------------------------------------------------------
@@ -90,6 +122,8 @@ export default function App() {
   const [archetypes, setArchetypes] = useState([]);
   const [userAssetUrl, setUserAssetUrl] = useState("");
   const [userAssetName, setUserAssetName] = useState("");
+  const [brandManual, setBrandManual] = useState(null);
+  const [uploadingBrand, setUploadingBrand] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [ctaOnImage, setCtaOnImage] = useState(false);
@@ -175,6 +209,7 @@ export default function App() {
       setImageProviders([
         { id: "stable_diffusion", label: "Stable Diffusion" },
         { id: "fal", label: "fal.ai (Flux)" },
+        { id: "venice", label: "Venice.ai" },
       ]);
     }
   };
@@ -193,13 +228,58 @@ export default function App() {
     }
   };
 
+  const loadBrandManual = async () => {
+    try {
+      const data = await api("/briefs/brand-manual");
+      setBrandManual(data || null);
+    } catch {
+      setBrandManual(null);
+    }
+  };
+
   useEffect(() => {
     loadHistory();
     loadSocialStatus();
     loadSocialAccounts();
     loadImageProviders();
     loadArchetypes();
+    loadBrandManual();
   }, [apiKey]);
+
+  // Poll de runs async (reels): rellena Resultado cuando pasa a pending_approval con video_url
+  useEffect(() => {
+    const runId = result?.run_id;
+    const status = result?.status;
+    if (!runId) return undefined;
+    const done = ["pending_approval", "completed", "failed", "rejected", "deduplicated"];
+    if (done.includes(status) && result?.result) return undefined;
+    if (!["queued", "running", "publishing"].includes(status) && result?.result) return undefined;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const updated = await api(`/runs/${runId}`);
+        if (cancelled) return;
+        setResult({
+          run_id: updated.run_id,
+          status: updated.status,
+          result: updated.result,
+          error_message: updated.error_message,
+        });
+        if (done.includes(updated.status)) {
+          await loadHistory();
+        }
+      } catch {
+        /* ignore transient poll errors */
+      }
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [result?.run_id, result?.status]);
 
   const applyKey = () => {
     saveApiKey(keyInput.trim());
@@ -263,10 +343,23 @@ export default function App() {
     try {
       await api(`/runs/${runId}/approve`, "POST", { approved_by: "human" });
       const updated = await api(`/runs/${runId}`);
-      setResult({ run_id: updated.run_id, status: updated.status, result: updated.result });
+      setResult({
+        run_id: updated.run_id,
+        status: updated.status,
+        result: updated.result,
+        error_message: updated.error_message,
+      });
       await loadHistory();
     } catch (e) {
       setError(e.message);
+      try {
+        const updated = await api(`/runs/${runId}`);
+        if (updated?.error_message) {
+          setError(`${e.message}\n\n${updated.error_message}`);
+        }
+      } catch {
+        /* keep original */
+      }
     } finally {
       setApprovingRunId(null);
     }
@@ -440,7 +533,9 @@ export default function App() {
           <p className="hint">
             {imageProvider === "fal"
               ? "Flux Pro vía API en la nube (requiere FAL_API_KEY en el servidor)."
-              : "Generación local con Automatic1111/Forge en :7860."}
+              : imageProvider === "venice"
+                ? "Venice.ai: modelo en VENICE_IMAGE_MODEL (venice-sd35 o nano-banana-pro). Reinicia API/Celery si cambias .env."
+                : "Generación local con Automatic1111/Forge en :7860."}
           </p>
         </div>
         <div className="archetype-block">
@@ -459,6 +554,103 @@ export default function App() {
           </label>
           <p className="hint">
             Fuerza un arquetipo o deja que el agente lo seleccione según el objetivo del brief.
+          </p>
+        </div>
+
+        <div className="user-asset-block">
+          <span className="field-label">Manual de marca (PDF)</span>
+          <label>
+            Importar PDF de identidad / brand book
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={loading || uploadingBrand}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setError(null);
+                setUploadingBrand(true);
+                try {
+                  const up = await uploadBrandManual(file);
+                  setBrandManual(up);
+                } catch (err) {
+                  setError(err.message);
+                } finally {
+                  setUploadingBrand(false);
+                  e.target.value = "";
+                }
+              }}
+            />
+            {uploadingBrand && <span className="spinner spinner-dark" style={{ marginLeft: "0.5rem" }}></span>}
+          </label>
+          {brandManual && (
+            <p className="hint">
+              Activo: <code>{brandManual.original_filename}</code>
+              {" "}({brandManual.char_count} caracteres extraídos
+              {brandManual.extraction_method ? ` · ${brandManual.extraction_method}` : ""})
+              {" "}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await api("/briefs/brand-manual", "DELETE");
+                    setBrandManual(null);
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                Quitar
+              </button>
+            </p>
+          )}
+          {brandManual?.palette_hex?.length > 0 && (
+            <div className="brand-palette" style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", margin: "0.4rem 0" }}>
+              {brandManual.palette_hex.map((hx) => (
+                <span
+                  key={hx}
+                  title={hx}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 4,
+                    background: hx,
+                    border: "1px solid rgba(0,0,0,0.15)",
+                  }}
+                />
+              ))}
+              <span className="hint" style={{ alignSelf: "center" }}>
+                Paleta detectada ({brandManual.palette_hex.length})
+              </span>
+            </div>
+          )}
+          {brandManual?.logo_urls?.length > 0 && (
+            <div className="brand-logos" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "0.4rem 0", alignItems: "center" }}>
+              {brandManual.logo_urls.map((url) => (
+                <img
+                  key={url}
+                  src={url}
+                  alt="Logo del manual"
+                  style={{
+                    maxHeight: 48,
+                    maxWidth: 120,
+                    objectFit: "contain",
+                    background: "#fff",
+                    border: "1px solid rgba(0,0,0,0.1)",
+                    borderRadius: 4,
+                    padding: 4,
+                  }}
+                />
+              ))}
+              <span className="hint">Logos reconocidos ({brandManual.logo_urls.length})</span>
+            </div>
+          )}
+          {brandManual?.text_preview && (
+            <p className="hint brand-preview">{brandManual.text_preview}</p>
+          )}
+          <p className="hint">
+            Escaneo minucioso del PDF: tipografías y texto (pypdf/PaddleOCR), paleta de color
+            de las páginas y logos embebidos/recortados. Todo manda en diseño con prioridad máxima.
           </p>
         </div>
 
@@ -526,11 +718,21 @@ export default function App() {
 
         {Object.keys(form).map((key) => (
           <label key={key}>
-            {key}
-            <input
-              value={form[key]}
-              onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
-            />
+            {FORM_LABELS[key] || key}
+            {key === "tema" ? (
+              <textarea
+                rows={3}
+                placeholder={FORM_PLACEHOLDERS[key] || ""}
+                value={form[key]}
+                onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
+              />
+            ) : (
+              <input
+                placeholder={FORM_PLACEHOLDERS[key] || ""}
+                value={form[key]}
+                onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
+              />
+            )}
           </label>
         ))}
 
@@ -723,6 +925,27 @@ export default function App() {
               )}
               {item.status === "pending_approval" && (
                 <div style={{ marginTop: "0.5rem", marginLeft: 0 }}>
+                  {item.result?.design?.video_url && (
+                    <div style={{ marginBottom: "0.75rem" }}>
+                      <p className="hint" style={{ marginBottom: "0.35rem" }}>
+                        Vista previa del reel (revisa antes de aprobar):
+                      </p>
+                      <video
+                        controls
+                        src={resolveImageUrl(item.result.design.video_url)}
+                        style={{ maxWidth: "320px", width: "100%", borderRadius: "6px", border: "1px solid #333" }}
+                      />
+                    </div>
+                  )}
+                  {item.result?.design?.image_url && !item.result?.design?.video_url && (
+                    <div style={{ marginBottom: "0.75rem" }}>
+                      <img
+                        src={resolveImageUrl(item.result.design.image_url)}
+                        alt={`Preview run ${item.run_id}`}
+                        style={{ maxWidth: "240px", borderRadius: "6px", border: "1px solid #333" }}
+                      />
+                    </div>
+                  )}
                   <span>
                     <button
                       disabled={approvingRunId != null}
@@ -774,6 +997,18 @@ export default function App() {
           ))}
         </ul>
       </section>
+
+      <AdvisorChatBubble
+        api={api}
+        briefContext={{
+          tema: form.tema,
+          publico_objetivo: form.publico_objetivo,
+          red_social: form.red_social,
+          objetivo: form.objetivo,
+          tono_marca: form.tono_marca,
+          content_format: contentFormat,
+        }}
+      />
     </main>
   );
 }

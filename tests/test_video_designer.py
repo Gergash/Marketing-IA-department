@@ -56,6 +56,7 @@ def test_video_designer_run_returns_video_design_output(monkeypatch: pytest.Monk
     def _fake_render_video(timeline, **kwargs):
         calls["render_video"] += 1
         assert timeline.voiceover is not None
+        assert any((s.narration or "").strip() for s in timeline.scenes)
         return "http://localhost:8000/static/videos/reel.mp4", timeline.output.width, timeline.output.height
 
     import agents.marketing_agents.video_designer as video_designer_module

@@ -14,8 +14,11 @@ from gateway.app.core.settings import get_settings
 from gateway.app.db.session import get_db
 from gateway.app.models import AgentRun, Brief, CampaignSchedule
 from gateway.app.schemas.contracts import (
+    AdvisorChatRequest,
+    AdvisorChatResponse,
     ApproveRequest,
     ArchetypeInfo,
+    BrandManualResponse,
     BriefCreate,
     BriefResponse,
     CampaignFireResponse,
@@ -99,6 +102,14 @@ def image_providers(
         )
     if s.fal_api_key.strip():
         providers.append({"id": "fal", "label": "fal.ai (Flux Pro)"})
+    if s.venice_api_key.strip():
+        model = (s.venice_image_model or "venice-sd35").strip()
+        providers.append(
+            {
+                "id": "venice",
+                "label": f"Venice.ai ({model})",
+            }
+        )
     return ImageProvidersResponse(
         default_provider=s.image_provider,
         providers=providers,
@@ -183,6 +194,108 @@ async def upload_brief_asset(
         content_type=content_type,
         size_bytes=len(data),
     )
+
+
+@router.post("/briefs/upload-brand-manual", response_model=BrandManualResponse)
+async def upload_brand_manual(
+    file: UploadFile = File(...),
+    tenant_id: str = Depends(require_auth),
+) -> BrandManualResponse:
+    """Sube el PDF del manual de marca; extrae texto e inyecta en agentes del tenant."""
+    from agents.marketing_agents.brand_manual import (
+        ALLOWED_BRAND_MIME,
+        MAX_BRAND_BYTES,
+        save_brand_manual,
+    )
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    # Algunos navegadores mandan application/octet-stream; validamos extensión también.
+    name = (file.filename or "manual.pdf").strip()
+    if content_type not in ALLOWED_BRAND_MIME and not name.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tipo no permitido: {content_type}. Sube un PDF del manual de marca.",
+        )
+
+    data = await file.read()
+    if len(data) > MAX_BRAND_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Archivo demasiado grande (máx {MAX_BRAND_BYTES // (1024 * 1024)} MB)",
+        )
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archivo vacío")
+
+    try:
+        meta = save_brand_manual(tenant_id, data, original_filename=name)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return BrandManualResponse(
+        id=meta["id"],
+        url=meta["url"],
+        original_filename=meta["original_filename"],
+        char_count=meta["char_count"],
+        text_preview=meta.get("text_preview") or "",
+        extraction_method=meta.get("extraction_method") or "",
+        palette_hex=list(meta.get("palette_hex") or []),
+        logo_urls=list(meta.get("logo_urls") or []),
+        pages_scanned=int(meta.get("pages_scanned") or 0),
+        embedded_images=int(meta.get("embedded_images") or 0),
+    )
+
+
+@router.get("/briefs/brand-manual", response_model=BrandManualResponse | None)
+def get_brand_manual(
+    tenant_id: str = Depends(require_auth),
+) -> BrandManualResponse | None:
+    """Devuelve el manual de marca activo del tenant, o null si no hay."""
+    from agents.marketing_agents.brand_manual import get_active_brand_meta, load_brand_text
+
+    meta = get_active_brand_meta(tenant_id)
+    if not meta:
+        return None
+    text = load_brand_text(tenant_id, max_chars=400)
+    return BrandManualResponse(
+        id=meta["id"],
+        url=meta["url"],
+        original_filename=meta.get("original_filename") or meta.get("pdf_filename") or "",
+        char_count=int(meta.get("char_count") or 0),
+        text_preview=(text[:400] + ("…" if len(text) > 400 else "")) if text else "",
+        extraction_method=meta.get("extraction_method") or "",
+        palette_hex=list(meta.get("palette_hex") or []),
+        logo_urls=list(meta.get("logo_urls") or []),
+        pages_scanned=int(meta.get("pages_scanned") or 0),
+        embedded_images=int(meta.get("embedded_images") or 0),
+    )
+
+
+@router.delete("/briefs/brand-manual")
+def delete_brand_manual(
+    tenant_id: str = Depends(require_auth),
+) -> dict:
+    """Desactiva el manual de marca del tenant."""
+    from agents.marketing_agents.brand_manual import clear_brand_manual
+
+    cleared = clear_brand_manual(tenant_id)
+    return {"ok": cleared}
+
+
+@router.post("/advisor/chat", response_model=AdvisorChatResponse)
+def advisor_chat(
+    payload: AdvisorChatRequest,
+    tenant_id: str = Depends(require_auth),
+) -> AdvisorChatResponse:
+    """Asesor creativo (diseñador + productor + mercadólogo) en burbuja de chat."""
+    from agents.marketing_agents.advisor import CreativeAdvisorAgent
+
+    reply = CreativeAdvisorAgent().reply(
+        payload.message,
+        tenant_id=tenant_id,
+        history=payload.history,
+        brief_context=payload.brief_context,
+    )
+    return AdvisorChatResponse(reply=reply)
 
 
 @router.post("/briefs", response_model=BriefResponse)

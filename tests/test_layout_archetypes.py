@@ -88,6 +88,8 @@ def test_build_flux_prompt_no_text_in_image() -> None:
     archetype = pick_archetype(brief, strategy)
     prompt = build_flux_prompt(archetype, brief=brief, strategy=strategy, spec=resolve_image_spec("instagram", "feed"))
     assert "no text" in prompt.lower()
+    assert "no brand manuals" in prompt.lower()
+    assert "full-bleed photograph" in prompt.lower()
     assert archetype.id in ARCHETYPES
 
 

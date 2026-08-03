@@ -7,7 +7,13 @@ import io
 from PIL import Image, ImageDraw, ImageFont
 
 from .layout_archetypes import LayoutArchetype, hex_to_rgb
-from .overlay_text import build_overlay_lines, pick_font_pair, wrap_for_width
+from .overlay_text import (
+    build_overlay_lines,
+    pick_font_pair,
+    resolve_font_roles,
+    split_brand_highlight,
+    wrap_for_width,
+)
 
 
 def _load_fonts(
@@ -31,6 +37,13 @@ def _load_fonts(
         return default, default, default
 
 
+def _truetype(path: str, size: int):
+    try:
+        return ImageFont.truetype(path, size=size)
+    except Exception:
+        return ImageFont.load_default()
+
+
 def apply_design_layout(
     img_bytes: bytes,
     archetype: LayoutArchetype,
@@ -43,6 +56,7 @@ def apply_design_layout(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """Aplica overlay editorial según arquetipo (feed) o composición centrada (story)."""
     headline_line, subline_line = build_overlay_lines(headline=headline, subline=subline)
@@ -51,6 +65,7 @@ def apply_design_layout(
         "preferred_font_paths": preferred_font_paths,
         "logo_path": logo_path,
         "tagline": tagline,
+        "brand_names": brand_names,
     }
     if (content_format or "").strip().lower() == "story":
         return _layout_story_centered(
@@ -102,6 +117,7 @@ def _layout_story_centered(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """Historias 9:16: tipografía y CTA centrados en el eje visual (no pegados abajo/izquierda)."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -204,6 +220,7 @@ def _layout_typographic_poster(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """Estilo Mattelsa/RADAR: headline grande en tercio inferior, alto contraste."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -252,6 +269,7 @@ def _layout_minimal_conceptual(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """Estilo YaComercio: headline arriba, acento en línea, mucho aire."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -295,6 +313,7 @@ def _layout_editorial_infographic(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """Estilo PowerUps/RADAR infográfico: barra inferior + acento lime."""
     accent = hex_to_rgb(archetype.accent_hex)
@@ -344,6 +363,7 @@ def _layout_cinematic_hero(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """Estilo RADAR cinematográfico: gradiente inferior + texto en tercio bajo."""
     accent = hex_to_rgb(archetype.accent_hex)
@@ -392,14 +412,19 @@ def _layout_brand_campaign_piece(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """
-    Pieza canónica con manual de marca (ref. Tres Amores):
-    foto full-bleed + logo top-center + headline script centrado + cuerpo + CTA + eslogan.
-    Una sola composición; sin cards ni barras opacas tipo dashboard.
+    Pieza canónica con manual de marca (nivel ChatGPT / Tres Amores):
+    foto full-bleed + logo top-center + headline script + cuerpo sans con
+    highlight de marca + CTA + tagline serif. Tipografía = Pillow, no el modelo.
     """
-    primary = hex_to_rgb(archetype.primary_hex)
-    secondary = hex_to_rgb(archetype.secondary_hex)
+    # Texto legible: blanco / crema sobre foto oscura; accent para marca y CTA
+    white = (255, 255, 255)
+    cream = hex_to_rgb(archetype.secondary_hex) if archetype.secondary_hex else (245, 230, 200)
+    # Si secondary es muy oscuro, forzar crema legible
+    if sum(cream) < 300:
+        cream = (245, 230, 200)
     accent = hex_to_rgb(archetype.accent_hex)
 
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
@@ -407,81 +432,86 @@ def _layout_brand_campaign_piece(
     draw = ImageDraw.Draw(overlay)
     w, h = img.size
 
-    # Viñeta suave (legibilidad) — no tapa el producto
+    # Viñeta suave: más aire en el centro (producto visible)
     for i in range(h):
-        if i < int(h * 0.22):
-            t = 1.0 - (i / max(1, int(h * 0.22)))
-            alpha = int(95 * t)
-        elif i > int(h * 0.62):
-            t = (i - int(h * 0.62)) / max(1, h - int(h * 0.62))
-            alpha = int(140 * t)
+        if i < int(h * 0.18):
+            t = 1.0 - (i / max(1, int(h * 0.18)))
+            alpha = int(80 * t)
+        elif i > int(h * 0.68):
+            t = (i - int(h * 0.68)) / max(1, h - int(h * 0.68))
+            alpha = int(120 * t)
         else:
-            alpha = 35
+            alpha = 20
         if alpha:
             draw.line([(0, i), (w, i)], fill=(0, 0, 0, alpha))
 
-    # Marco fino de acento de marca
     inset = max(8, w // 80)
     stroke = max(2, w // 400)
     draw.rectangle(
         [(inset, inset), (w - inset - 1, h - inset - 1)],
-        outline=accent + (200,),
+        outline=accent + (180,),
         width=stroke,
     )
 
-    # Logo oficial arriba-centro (marca primero)
-    logo_bottom = int(h * 0.04)
+    logo_bottom = int(h * 0.035)
     if logo_path:
-        logo_bottom = _paste_logo_top_center(img, logo_path, max_h=int(h * 0.11))
+        logo_bottom = _paste_logo_top_center(img, logo_path, max_h=int(h * 0.12))
 
-    title_size = max(28, min(58, w // 11))
-    body_size = max(16, title_size - 16)
-    font_title, font_body, font_cta = _load_fonts(
-        font_seed, title_size, body_size, preferred_font_paths=preferred_font_paths
+    roles = resolve_font_roles(
+        font_seed=font_seed,
+        preferred_font_paths=preferred_font_paths,
+        prefer_script_display=True,
     )
-    # Preferir una fuente más expresiva para el headline si hay paths de marca
-    if preferred_font_paths:
-        try:
-            font_title = ImageFont.truetype(preferred_font_paths[0], size=title_size)
-        except Exception:
-            pass
+    # Script grande (Great Vibes se lee mejor un poco más grande)
+    title_size = max(36, min(72, w // 9))
+    body_size = max(17, min(28, w // 28))
+    cta_size = max(15, body_size - 1)
+    tag_size = max(15, body_size - 2)
+
+    font_display = _truetype(roles.display, title_size)
+    font_body = _truetype(roles.body, body_size)
+    font_cta = _truetype(roles.cta, cta_size)
+    font_tag = _truetype(roles.tagline, tag_size)
 
     margin_x = int(w * 0.10)
     text_w = w - margin_x * 2
-    wrapped = wrap_for_width(headline, text_w, font_size=title_size)
+    # Script: menos chars por línea (más anchos)
+    wrapped = wrap_for_width(headline, text_w, font_size=int(title_size * 0.75))
     wrapped_sub = wrap_for_width(subline, text_w, font_size=body_size) if subline else None
 
-    y = max(logo_bottom + int(h * 0.02), int(h * 0.14))
+    y = max(logo_bottom + int(h * 0.025), int(h * 0.13))
     y += _draw_centered_text(
         draw,
         wrapped,
         y=y,
         canvas_w=w,
-        font=font_title,
-        fill=primary + (255,),
-        shadow=(0, 0, 0, 160),
+        font=font_display,
+        fill=white + (255,),
+        shadow=(0, 0, 0, 170),
     )
 
-    # Flourishes de acento bajo el headline
-    accent_w = int(w * 0.22)
+    accent_w = int(w * 0.20)
     ax0 = (w - accent_w) // 2
-    y += 10
-    draw.line([(ax0, y), (ax0 + accent_w, y)], fill=accent + (220,), width=2)
-    y += 14
+    y += 12
+    draw.line([(ax0, y), (ax0 + accent_w, y)], fill=accent + (230,), width=2)
+    y += 16
 
     if wrapped_sub:
-        y += _draw_centered_text(
+        y += _draw_centered_rich_line(
             draw,
             wrapped_sub,
             y=y,
             canvas_w=w,
             font=font_body,
-            fill=secondary + (245,),
-            shadow=(0, 0, 0, 100),
+            fill=cream + (250,),
+            accent_fill=accent + (255,),
+            brand_names=brand_names,
+            shadow=(0, 0, 0, 110),
         )
 
     if cta:
-        cta_y = int(h * 0.78)
+        cta_y = min(int(h * 0.80), y + int(h * 0.08))
+        cta_y = max(cta_y, int(h * 0.72))
         _draw_cta_pill(
             draw,
             cta,
@@ -492,29 +522,59 @@ def _layout_brand_campaign_piece(
             y_offset=cta_y,
             center=True,
             bordered=True,
-            border_color=secondary,
+            border_color=cream,
         )
 
     if tagline:
-        tag_font = font_cta
-        try:
-            if preferred_font_paths and len(preferred_font_paths) > 1:
-                tag_font = ImageFont.truetype(
-                    preferred_font_paths[1], size=max(14, body_size - 2)
-                )
-        except Exception:
-            pass
-        tag_wrapped = wrap_for_width(tagline, int(w * 0.8), font_size=max(14, body_size - 2))
+        tag_wrapped = wrap_for_width(tagline, int(w * 0.82), font_size=tag_size)
         _draw_centered_text(
             draw,
             tag_wrapped,
             y=int(h * 0.90),
             canvas_w=w,
-            font=tag_font,
-            fill=accent + (240,),
+            font=font_tag,
+            fill=accent + (245,),
+            shadow=(0, 0, 0, 100),
         )
 
     return _composite(img, overlay)
+
+
+def _draw_centered_rich_line(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    *,
+    y: int,
+    canvas_w: int,
+    font,
+    fill: tuple,
+    accent_fill: tuple,
+    brand_names: list[str] | None,
+    shadow: tuple | None = None,
+) -> int:
+    """Dibuja líneas centradas resaltando el nombre de marca en accent_fill."""
+    lines = text.split("\n")
+    total_h = 0
+    line_gap = 6
+    for line in lines:
+        segments = split_brand_highlight(line, brand_names)
+        widths = []
+        for seg, _is_brand in segments:
+            bbox = draw.textbbox((0, 0), seg, font=font)
+            widths.append(bbox[2] - bbox[0])
+        line_w = sum(widths)
+        x = max(16, (canvas_w - line_w) // 2)
+        line_h = 0
+        for (seg, is_brand), seg_w in zip(segments, widths):
+            color = accent_fill if is_brand else fill
+            if shadow:
+                draw.text((x + 2, y + 2 + total_h), seg, font=font, fill=shadow)
+            draw.text((x, y + total_h), seg, font=font, fill=color)
+            bbox = draw.textbbox((0, 0), seg, font=font)
+            line_h = max(line_h, bbox[3] - bbox[1])
+            x += seg_w
+        total_h += line_h + line_gap
+    return max(0, total_h - line_gap)
 
 
 def _paste_logo_top_center(base: Image.Image, logo_path: str, *, max_h: int) -> int:

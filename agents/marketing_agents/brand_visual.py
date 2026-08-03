@@ -267,7 +267,7 @@ def merge_scanned_assets(cues: BrandVisualCues, assets: dict | None) -> BrandVis
     logo_urls = list(assets.get("logo_urls") or [])
     logo_paths = list(assets.get("logo_paths") or [])
 
-    # Paleta escaneada tiene prioridad si el texto no traía hex reales
+    # Paleta escaneada primero (colores reales del PDF); hex/nombres del texto como respaldo
     text_palette = list(cues.palette_hex or [])
     merged_palette: list[str] = []
     for hx in palette + text_palette:
@@ -275,22 +275,24 @@ def merge_scanned_assets(cues: BrandVisualCues, assets: dict | None) -> BrandVis
         if hx and hx not in merged_palette:
             merged_palette.append(hx)
 
-    primary = cues.primary_hex
-    accent = cues.accent_hex
-    secondary = cues.secondary_hex
-    if not primary and merged_palette:
-        primary = merged_palette[0]
-        accent = merged_palette[1] if len(merged_palette) > 1 else primary
-        secondary = merged_palette[2] if len(merged_palette) > 2 else (
-            "#FFFFFF" if primary.upper() not in {"#FFFFFF", "#FFF"} else "#111111"
+    if palette:
+        # Escaneo visual manda: evita que "verde"/"azul" en prosa pisen el brand book
+        primary = palette[0]
+        accent = palette[1] if len(palette) > 1 else (cues.accent_hex or primary)
+        secondary = palette[2] if len(palette) > 2 else (
+            cues.secondary_hex
+            or ("#FFFFFF" if primary.upper() not in {"#FFFFFF", "#FFF"} else "#111111")
         )
-    elif primary and merged_palette:
-        # Refuerza accent con segundo color del scan si el texto solo tenía 1
-        if (not cues.accent_hex or cues.accent_hex == primary) and len(merged_palette) > 1:
-            for cand in merged_palette:
-                if cand.upper() != primary.upper():
-                    accent = cand
-                    break
+    else:
+        primary = cues.primary_hex
+        accent = cues.accent_hex
+        secondary = cues.secondary_hex
+        if not primary and merged_palette:
+            primary = merged_palette[0]
+            accent = merged_palette[1] if len(merged_palette) > 1 else primary
+            secondary = merged_palette[2] if len(merged_palette) > 2 else (
+                "#FFFFFF" if primary.upper() not in {"#FFFFFF", "#FFF"} else "#111111"
+            )
 
     has_signal = cues.has_signal or bool(merged_palette or logo_urls or logo_paths)
     return replace(
@@ -376,40 +378,112 @@ def brand_priority_prompt_block(cues: BrandVisualCues, brand_text: str = "") -> 
         clip = excerpt[:900].replace("\n", " ")
         parts.append(f"Brand guidelines excerpt: {clip}")
     parts.append(
-        "Compose like a brand-manual campaign piece: full-bleed real photography of the "
-        "client's product/place/atmosphere, logo reserved top-center, centered expressive "
-        "headline, short supporting copy, single CTA near the bottom — no cards, no "
-        "dashboards, no collages, not a generic yellow CTA template."
+        "Imagery only: full-bleed real photography of the client's product/place/atmosphere. "
+        "Typography and logo are composited in post — do NOT paint letters, brand manuals, "
+        "color swatches, collages, or multi-panel layouts."
     )
     return " ".join(parts)
 
 
-def resolve_brand_font_paths(font_names: list[str]) -> list[str]:
-    """Mapea nombres del manual a TTF/OTF existentes en Windows Fonts."""
-    if not font_names or not _WINDOWS_FONTS.is_dir():
-        return []
-    available = list(_WINDOWS_FONTS.glob("*.ttf")) + list(_WINDOWS_FONTS.glob("*.otf"))
-    found: list[str] = []
-    for name in font_names:
-        key = re.sub(r"[^a-z0-9]", "", name.lower())
-        # Prefer bold for titles
-        bold_hits = [
-            p for p in available
-            if key in re.sub(r"[^a-z0-9]", "", p.stem.lower())
-            and any(b in p.stem.lower() for b in ("bd", "bold", "black", "heavy"))
-        ]
-        regular_hits = [
-            p for p in available
-            if key in re.sub(r"[^a-z0-9]", "", p.stem.lower())
-        ]
-        for hit in bold_hits + regular_hits:
-            path = str(hit)
-            if path not in found:
-                found.append(path)
-            if len(found) >= 4:
-                return found
-    return found
+def resolve_brand_font_paths(font_names: list[str], brand_text: str = "") -> list[str]:
+    """
+    Mapea tipografías del manual a TTF.
 
+    Orden: pack OFL del proyecto (script/sans si el texto habla de caligrafía) →
+    Windows Fonts por nombre → pack como fallback.
+    """
+    from .overlay_text import pack_font_roles
+
+    found: list[str] = []
+    pack = pack_font_roles()
+    lower = (brand_text or "").lower()
+    wants_script = any(
+        k in lower
+        for k in (
+            "caligr",
+            "calligr",
+            "script",
+            "cursiva",
+            "handwrit",
+            "manuscrit",
+            "great vibes",
+            "playfair",
+        )
+    )
+    wants_sans = any(
+        k in lower for k in ("sans", "montserrat", "helvetica", "arial", "grotesk", "limpia")
+    )
+
+    if pack:
+        if wants_script or not font_names:
+            found.append(pack.display)
+        if wants_sans or wants_script or not font_names:
+            found.append(pack.body)
+            found.append(pack.cta)
+        if pack.tagline not in found:
+            found.append(pack.tagline)
+
+    # Nombres explícitos del manual → Windows
+    if font_names and _WINDOWS_FONTS.is_dir():
+        available = list(_WINDOWS_FONTS.glob("*.ttf")) + list(_WINDOWS_FONTS.glob("*.otf"))
+        for name in font_names:
+            key = re.sub(r"[^a-z0-9]", "", name.lower())
+            if key in {"script", "caligrafico", "caligráfico", "calligraphy", "handwriting"}:
+                if pack and pack.display not in found:
+                    found.insert(0, pack.display)
+                continue
+            bold_hits = [
+                p
+                for p in available
+                if key in re.sub(r"[^a-z0-9]", "", p.stem.lower())
+                and any(b in p.stem.lower() for b in ("bd", "bold", "black", "heavy"))
+            ]
+            regular_hits = [
+                p for p in available if key in re.sub(r"[^a-z0-9]", "", p.stem.lower())
+            ]
+            for hit in bold_hits + regular_hits:
+                path = str(hit)
+                if path not in found:
+                    found.append(path)
+                if len(found) >= 6:
+                    break
+
+    # Dedup preservando orden
+    out: list[str] = []
+    for p in found:
+        if p and p not in out:
+            out.append(p)
+    if not out and pack:
+        return [pack.display, pack.body, pack.cta, pack.tagline]
+    return out[:6]
+
+
+def extract_brand_name_candidates(brand_text: str, tema: str = "") -> list[str]:
+    """Heurística: nombres de marca para resaltar en el overlay (p. ej. Tres Amores)."""
+    names: list[str] = []
+    text = brand_text or ""
+    for pat in (
+        r"(?i)marca\s*:\s*([^\n·|]{2,40})",
+        r"(?i)brand\s*:\s*([^\n·|]{2,40})",
+        r"(?i)^([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚáéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚáéíóúñ]+){0,3})\s+Café",
+    ):
+        for m in re.finditer(pat, text):
+            cand = m.group(1).strip(" .,-")
+            # Quitar sufijos tipo "Café • Bar"
+            cand = re.split(r"\s*[•|·]\s*", cand)[0].strip()
+            if 2 <= len(cand) <= 40 and cand.lower() not in {"una", "el", "la"}:
+                names.append(cand)
+    # Del tema: "… en Tres Amores"
+    if tema:
+        m = re.search(r"(?i)\ben\s+([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚáéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚáéíóúñ]+)?)", tema)
+        if m:
+            names.append(m.group(1).strip())
+    # Dedup
+    out: list[str] = []
+    for n in names:
+        if n not in out:
+            out.append(n)
+    return out[:5]
 
 def _normalize_hex(h: str) -> str:
     h = h.strip().lstrip("#")

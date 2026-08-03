@@ -159,6 +159,7 @@ def test_brand_campaign_piece_layout_with_logo() -> None:
             cta="Cupos limitados · Escríbenos por DM",
             logo_path=logo_path,
             tagline="Donde cada encuentro se convierte en un recuerdo.",
+            brand_names=["Tres Amores"],
         )
         _assert_valid_png(result, W, H)
         # El logo dorado debe teñir la banda superior-central

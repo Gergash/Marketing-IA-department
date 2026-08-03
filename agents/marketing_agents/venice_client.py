@@ -208,9 +208,12 @@ def generate_image_bytes(
         w, h = clamp_pixel_dimensions(width, height)
         payload["width"] = w
         payload["height"] = h
-        neg = (negative_prompt or "").strip() or (
-            "blurry, low quality, distorted anatomy, text, watermark, letters, words, signature"
-        )
+        if (negative_prompt or "").strip():
+            neg = negative_prompt.strip()
+        else:
+            from .visual_prompt_guards import NO_TEXT_NEGATIVE
+
+            neg = NO_TEXT_NEGATIVE
         payload["negative_prompt"] = neg
 
     if style_preset and not _uses_resolution_tier(model_used):

@@ -35,6 +35,7 @@ def generate_image(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> tuple[str, int, int]:
     """Return (image URL, width, height) for the given prompt."""
     from gateway.app.core.settings import get_settings
@@ -47,6 +48,7 @@ def generate_image(
         "preferred_font_paths": preferred_font_paths,
         "logo_path": logo_path,
         "tagline": tagline,
+        "brand_names": brand_names,
     }
 
     if provider == "stable_diffusion":
@@ -129,21 +131,18 @@ def _stable_diffusion(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> str:
     """POST a txt2img de A1111/Forge, decodifica PNG, superpone texto y guarda en `/static/images/`."""
     import httpx
 
-    space_hint = (
-        "negative space in the center for centered typography overlay."
-        if (content_format or "").lower() == "story"
-        else "negative space at bottom for text overlay."
-    )
+    from .visual_prompt_guards import NO_TEXT_NEGATIVE, with_photo_only_guard
+
     payload: dict = {
-        "prompt": (
-            f"{prompt[:400]}. No text, no letters, no watermark, clean composition, "
-            f"{space_hint}"
+        "prompt": with_photo_only_guard(
+            f"{prompt[:400]}. Clean photographic composition, aspect {spec.label}."
         ),
-        "negative_prompt": "text, letters, words, watermark, signature, blurry, low quality, deformed, ugly",
+        "negative_prompt": NO_TEXT_NEGATIVE,
         "width": spec.width,
         "height": spec.height,
         "steps": _SD_STEPS,
@@ -178,6 +177,7 @@ def _stable_diffusion(
                 preferred_font_paths=preferred_font_paths,
                 logo_path=logo_path,
                 tagline=tagline,
+                brand_names=brand_names,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -209,6 +209,7 @@ def _apply_layout_overlay(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> bytes:
     """Aplica composición editorial según arquetipo (poster, campaña marca, hero…)."""
     archetype = brand_archetype or _ARCHETYPE_MAP.get(
@@ -225,6 +226,7 @@ def _apply_layout_overlay(
         preferred_font_paths=preferred_font_paths,
         logo_path=logo_path,
         tagline=tagline,
+        brand_names=brand_names,
     )
 
 
@@ -244,6 +246,7 @@ def _fal(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> str:
     """Genera imagen con fal.ai (Flux pro u otros modelos) y la guarda en static/images/."""
     import os
@@ -258,14 +261,10 @@ def _fal(
         logger.error("image.fal_missing_sdk", hint="pip install fal-client")
         raise RuntimeError("image_gen_failed:fal: fal_client not installed") from None
 
-    space_hint = (
-        "Leave clean negative space in the center for centered typography."
-        if (content_format or "").lower() == "story"
-        else "Clean composition with negative space for typography overlay."
-    )
-    visual_prompt = (
-        f"{prompt[:1800]}. No text, no letters, no watermark. "
-        f"Aspect ratio {spec.label}. {space_hint}"
+    from .visual_prompt_guards import with_photo_only_guard
+
+    visual_prompt = with_photo_only_guard(
+        f"{prompt[:1800]}. Aspect ratio {spec.label}."
     )
     try:
         result = fal_client.run(
@@ -308,6 +307,7 @@ def _fal(
                 preferred_font_paths=preferred_font_paths,
                 logo_path=logo_path,
                 tagline=tagline,
+                brand_names=brand_names,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -345,25 +345,16 @@ def _venice(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> str:
     """Genera imagen con Venice.ai (/image/generate) y la guarda en static/images/."""
     from .user_assets import fit_image_to_spec
-    from .venice_client import generate_image_bytes, prompt_limit_for_model, truncate_prompt
+    from .venice_client import generate_image_bytes, truncate_prompt
+    from .visual_prompt_guards import NO_TEXT_NEGATIVE, with_photo_only_guard
 
-    space_hint = (
-        "Leave clean negative space in the center for centered typography."
-        if (content_format or "").lower() == "story"
-        else "Clean composition with negative space for typography overlay."
-    )
     # Prompt acotado al límite del modelo (sd35=1500; nano-banana≈7500).
-    limit = prompt_limit_for_model(model)
-    reserve = len(space_hint) + len(spec.label) + 80
-    body_budget = max(200, limit - reserve)
-    visual_prompt = truncate_prompt(
-        f"{prompt[:body_budget]}. No text, no letters, no watermark. "
-        f"Aspect ratio {spec.label}. {space_hint}",
-        model,
-    )
+    guarded = with_photo_only_guard(f"{prompt}. Aspect ratio {spec.label}.")
+    visual_prompt = truncate_prompt(guarded, model)
     try:
         raw = generate_image_bytes(
             visual_prompt,
@@ -372,6 +363,7 @@ def _venice(
             model=model,
             width=spec.width,
             height=spec.height,
+            negative_prompt=NO_TEXT_NEGATIVE,
             style_preset=style_preset,
             resolution=resolution,
             fmt="png",
@@ -398,6 +390,7 @@ def _venice(
             preferred_font_paths=preferred_font_paths,
             logo_path=logo_path,
             tagline=tagline,
+            brand_names=brand_names,
         )
 
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -495,6 +488,7 @@ def compose_from_user_asset(
     preferred_font_paths: list[str] | None = None,
     logo_path: str | None = None,
     tagline: str | None = None,
+    brand_names: list[str] | None = None,
 ) -> tuple[str, int, int, str]:
     """
     Design-as-Code: foto del usuario como capa base + overlay Pillow.
@@ -543,6 +537,7 @@ def compose_from_user_asset(
             preferred_font_paths=preferred_font_paths,
             logo_path=logo_path,
             tagline=tagline,
+            brand_names=brand_names,
         )
 
     prefix = "user_img2img" if design_source == "user_img2img" else "user_overlay"

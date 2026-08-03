@@ -152,7 +152,9 @@ def build_flux_prompt(
     spec: ImageSpec,
     brand_block: str = "",
 ) -> str:
-    """Prompt visual enriquecido — brand manual primero si existe."""
+    """Prompt visual enriquecido — solo fotografía; tipografía la pone Pillow."""
+    from .visual_prompt_guards import with_photo_only_guard
+
     metaphor = _visual_metaphor_hint(brief, strategy)
     cues_has = False
     try:
@@ -169,33 +171,33 @@ def build_flux_prompt(
         cues_has = cues.has_signal
         priority = brand_priority_prompt_block(cues, getattr(brief, "brand_context", "") or "")
     base = (
-        f"Social media {spec.label} design background for {brief.red_social}. "
+        f"Social media {spec.label} photographic background for {brief.red_social}. "
         f"Topic: {brief.tema}. Audience: {brief.publico_objetivo}. "
         f"Brand tone: {brief.tono_marca}. Post type: {strategy.tipo_post}. "
         f"Visual metaphor: {metaphor}. "
         f"Style: {archetype.flux_style}. "
         f"Composition: {archetype.flux_composition}. "
-        f"Color direction: primary {archetype.primary_hex}, accent {archetype.accent_hex}, "
-        f"high-end agency quality tailored to this client. "
-        "Absolutely no text, no letters, no logos, no watermark in the generated image."
+        f"Color mood inspired by {archetype.primary_hex} and accent {archetype.accent_hex}, "
+        f"high-end campaign photography for this client."
     )
     if priority:
         if archetype.id == "brand_campaign_piece":
-            return (
-                f"{priority} {base} Composition must match a brand-manual campaign piece: "
-                "full-bleed real photography of the client's product/place/atmosphere, "
-                "logo reserved at top-center, centered expressive headline, short supporting line, "
-                "single CTA near the bottom — no cards, no dashboards, no collages."
+            raw = (
+                f"{priority} {base} "
+                "One edge-to-edge photograph of the client's real product, food, place, or atmosphere; "
+                "soft bokeh, leave quiet space in upper third for post-production typography. "
+                "Do not depict brand manuals, palettes, logos, or any readable characters."
             )
-        return f"{priority} {base}"
-    # Sin manual: evitar el look genérico amarillo/blanco como default implícito
-    if archetype.id == "typographic_poster" and not cues_has:
-        return (
+        else:
+            raw = f"{priority} {base}"
+    elif archetype.id == "typographic_poster" and not cues_has:
+        raw = (
             f"{base} Prefer rich, distinctive photography or illustration — "
             "avoid generic yellow-and-white template aesthetics."
         )
-    return base
-
+    else:
+        raw = base
+    return with_photo_only_guard(raw)
 
 def _visual_metaphor_hint(brief: BriefInput, strategy: StrategyOutput) -> str:
     """Metáfora visual corta derivada del brief (sin LLM extra).

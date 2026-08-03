@@ -3,6 +3,7 @@
 from .brand_visual import (
     apply_brand_to_archetype,
     brand_priority_prompt_block,
+    extract_brand_name_candidates,
     resolve_brand_cues,
     resolve_brand_font_paths,
 )
@@ -57,9 +58,10 @@ class DesignerAgent:
         if cues.has_signal and not archetype_override:
             archetype = get_archetype("brand_campaign_piece") or archetype
         archetype = apply_brand_to_archetype(archetype, cues)
-        font_paths = resolve_brand_font_paths(cues.font_names)
+        font_paths = resolve_brand_font_paths(cues.font_names, brand_text)
         brand_block = brand_priority_prompt_block(cues, brand_text)
         logo_path = (cues.logo_paths[0] if getattr(cues, "logo_paths", None) else None) or None
+        brand_names = extract_brand_name_candidates(brand_text, brief.tema)
 
         prompt = build_flux_prompt(
             archetype,
@@ -94,6 +96,7 @@ class DesignerAgent:
             preferred_font_paths=font_paths or None,
             logo_path=logo_path,
             tagline=tagline,
+            brand_names=brand_names or None,
         )
 
         if user_asset_url and user_asset_url.strip():

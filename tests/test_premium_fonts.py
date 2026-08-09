@@ -34,15 +34,49 @@ def test_pack_font_roles_finds_project_ttfs() -> None:
         assert Path(path).is_file()
         assert path.endswith(".ttf")
     assert "GreatVibes" in Path(roles.display).name
-    assert "Montserrat" in Path(roles.body).name
-    assert "Montserrat" in Path(roles.cta).name
-    assert "Playfair" in Path(roles.tagline).name
+    # Body bajo título: siempre grueso (Bold/ExtraBold/Black)
+    body = Path(roles.body).stem.lower()
+    assert "montserrat" in body or "poppins" in body or "nunito" in body
+    assert any(w in body for w in ("bold", "black", "heavy"))
+    assert "regular" not in body
+    cta = Path(roles.cta).stem.lower()
+    assert any(w in cta for w in ("bold", "black", "heavy"))
+    tag = Path(roles.tagline).stem.lower()
+    assert "playfair" in tag or "slab" in tag or "bold" in tag
 
 
 def test_resolve_font_roles_prefers_script_display() -> None:
     roles = resolve_font_roles(font_seed="instagram", prefer_script_display=True)
     assert "GreatVibes" in Path(roles.display).name
     assert Path(roles.body).is_file()
+    assert "regular" not in Path(roles.body).stem.lower()
+
+
+def test_font_catalog_varies_by_seed() -> None:
+    from agents.marketing_agents.overlay_text import list_font_families, pick_font_family
+
+    families = list_font_families()
+    assert len(families) >= 6
+    a = pick_font_family("typographic_poster:instagram:cafe", prefer_script=False)
+    b = pick_font_family("cinematic_hero:linkedin:tech summit 2026", prefer_script=False)
+    assert a is not None and b is not None
+    # Con catálogo amplio, seeds distintos suelen elegir familias distintas
+    ids = {pick_font_family(f"seed-{i}", prefer_script=False).id for i in range(20)}
+    assert len(ids) >= 3
+
+
+def test_body_never_thin_even_if_preferred_regular() -> None:
+    from agents.marketing_agents.overlay_text import _FONTS_DIR, resolve_font_roles
+
+    regular = _FONTS_DIR / "Montserrat-Regular.ttf"
+    roles = resolve_font_roles(
+        font_seed="feed-test",
+        preferred_font_paths=[str(regular)] if regular.is_file() else None,
+        prefer_script_display=False,
+    )
+    stem = Path(roles.body).stem.lower()
+    assert "regular" not in stem
+    assert any(w in stem for w in ("bold", "black", "heavy", "anton", "bebas", "archivo"))
 
 
 def test_resolve_brand_font_paths_maps_script_to_pack() -> None:

@@ -10,23 +10,26 @@ LangGraph no sustituye al pipeline completo: solo encapsula el subgrafo donde ti
 ## Flujo global (alto nivel)
 
 ```text
-Brief
+Brief (+ brand_context / paleta / logos del PDF)
   │
   ▼
-ContentStrategistAgent          ← lineal (LLM o stub; doctrina inbound inyectada)
+ContentStrategistAgent          ← lineal (LLM o stub; inbound + brand manual)
   │
   ▼
 ┌─────────────────────────────┐
 │ LangGraph: CopyQAState      │
-│   copywriter → qa           │  ← copywriter también lleva inbound
+│   copywriter → qa           │  ← copywriter también lleva inbound + brand
 │        ▲         │          │
 │        └─ revise ┘          │
 │   (hasta max_attempts)       │
 └─────────────────────────────┘
   │
-  ├─ feed / story ───────────► DesignerAgent        ← lineal (imagen)
+  ├─ feed / story ───────────► DesignerAgent
+  │                              (brand_campaign_piece si hay manual;
+  │                               fal / Venice / SD + overlay + logo)
   │
-  ├─ content_format = reel ──► VideoScriptAgent (inbound) → VideoDesignerAgent
+  ├─ content_format = reel ──► VideoScriptAgent → VideoDesignerAgent
+  │                              (escenas still o VIDEO_SCENE_PROVIDER=venice)
   │
   └─ user_clip_reel ─────────► ClipReelDesigner     ← Drive → Whisper → Shotstack
   │
@@ -37,18 +40,23 @@ HITL (Aprobar / Rechazar / Solicitar cambios → POST /runs/{id}/revise)
 PublisherAgent (si QA aprobó) ← lineal (Go sidecar Meta/LinkedIn)
 ```
 
-Doctrina: `knowledge/inbound_marketing.py` → addendum en Strategist, Copywriter y VideoScriptAgent
-(pirámide Entretener → Información → Conexión; `publico_objetivo` del brief).
+Fuera del pipeline: **CreativeAdvisorAgent** (`POST /api/advisor/chat`) — coach de marca con contexto del brief y del manual.
+
+Doctrina: `knowledge/inbound_marketing.py` → addendum en Strategist, Copywriter y VideoScriptAgent.
+
+Marca: `brand_manual` + `ocr_paddle` + `brand_scan` + `brand_visual` → `BriefInput.brand_context` / `brand_palette` / `brand_logo_*`.
 
 ## Módulos lineales
 
 | Módulo | Rol | Entrada principal | Salida |
 |--------|-----|-------------------|--------|
-| `strategist.py` | Estrategia de contenido (inbound) | `BriefInput` | `StrategyOutput` |
-| `copywriter.py` | Redacción (y revisiones con feedback QA; inbound) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
-| `designer.py` | Imagen: Flux, foto usuario (overlay/img2img) o mock | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
-| `video_script.py` | Guion reel 3-5 escenas (inbound) | `BriefInput`, `CopyOutput`, `StrategyOutput` | guion escenas |
-| `video_designer.py` | Escenas fal + voz + Shotstack (`fal.media` o publicize) | brief, copy, strategy, guion | `VideoDesignOutput` |
+| `strategist.py` | Estrategia de contenido (inbound + brand) | `BriefInput` | `StrategyOutput` |
+| `copywriter.py` | Redacción (revisiones QA; inbound + brand) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
+| `designer.py` | Imagen: fal/Venice/SD, foto usuario, logo marca | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
+| `brand_manual.py` / `brand_scan.py` / `brand_visual.py` | PDF → texto/OCR/paleta/logos → cues | tenant PDF | assets + cues |
+| `advisor.py` | Chat asesor (fuera del pipeline) | mensaje + brief | reply |
+| `video_script.py` | Guion reel 3-5 escenas (inbound) | brief, copy, strategy | guion escenas |
+| `video_designer.py` | Escenas + voz + Shotstack (still o Venice i2v) | brief, copy, strategy, guion | `VideoDesignOutput` |
 | `clip_reel_designer.py` | Reel desde clips Drive | brief, `drive_folder_id` | `VideoDesignOutput` |
 | `publisher.py` | Publicación (mock o proveedor real) | plataforma, copy, diseño | `PublishOutput` |
 | `quality.py` | Reglas de compliance / tono | texto, `tono_marca` | `QualityReview` |
@@ -87,10 +95,18 @@ Controla cuántas rondas de copy como máximo se permiten antes de salir del gra
 ## Rama Reels (`content_format="reel"`)
 
 - Tras copy/QA, `MarketingPipeline` delega a `VideoScriptAgent` + `VideoDesignerAgent` en lugar de `DesignerAgent`.
+- Escenas: stills fal/Venice + Ken Burns, o `VIDEO_SCENE_PROVIDER=venice` (image-to-video por escena, degrada a still si falla).
 - Render async vía Celery cola `video_render` (no usar `/runs/sync`).
-- Con fal.ai, fondos/voz se pasan a Shotstack como URLs `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) sigue siendo necesario para Meta y assets locales.
-- `result["design"]` incluye `video_url` (reels) o `image_url` (feed/story); misma clave `design` en ambos casos.
+- Con fal.ai, fondos/voz → Shotstack como URLs `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) para Meta y assets locales.
+- `result["design"]` incluye `video_url` (reels) o `image_url` (feed/story).
 - Al aprobar, publica a la cuenta fijada en `social_account_id` (multi-cuenta).
+
+## Manual de marca (inyección)
+
+- Upload: `POST /api/briefs/upload-brand-manual` → `save_brand_manual` (texto + `brand_scan`).
+- `_brief_input` carga texto + paleta + rutas de logo en `BriefInput`.
+- Strategist/copywriter/video_script: bloques de prompt brand.
+- Designer: `resolve_brand_cues` → colores, fonts, `logo_path`, arquetipo `brand_campaign_piece`.
 
 ## Rama clips usuario (`content_format="user_clip_reel"`)
 

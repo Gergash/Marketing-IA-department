@@ -128,13 +128,14 @@ def save_brand_manual(
     dest_dir = brand_dir(tenant_id)
     stem = uuid.uuid4().hex
 
-    # Escaneo minucioso: logos embebidos + paleta de páginas rasterizadas
+    # Escaneo minucioso: logos, paleta, tipografías y disposiciones
     scan = scan_brand_pdf(
         raw,
         dest_dir=dest_dir,
         tenant_id=tenant_id,
         stem=stem,
         url_builder=local_url_for_brand,
+        text=text,
     )
 
     if len(text) < 40 and not scan.palette_hex and not scan.logo_filenames:
@@ -147,12 +148,25 @@ def save_brand_manual(
 
     # Si el OCR/texto es corto pero el escaneo visual sí encontró identidad,
     # sintetiza un bloque usable por los agentes.
-    if len(text) < 40 and (scan.palette_hex or scan.logo_filenames):
+    if len(text) < 80 and (
+        scan.palette_hex or scan.logo_filenames or scan.font_names or scan.layout_hints
+    ):
         bits = ["Identidad visual detectada por escaneo del manual."]
         if scan.palette_hex:
             bits.append(f"Paleta de colores: {', '.join(scan.palette_hex)}.")
+        if scan.color_roles:
+            roles = ", ".join(f"{k}={v}" for k, v in scan.color_roles.items())
+            bits.append(f"Roles de color: {roles}.")
+        if scan.font_names:
+            bits.append(f"Tipografías: {', '.join(scan.font_names)}.")
         if scan.logo_filenames:
             bits.append(f"Logos detectados: {len(scan.logo_filenames)}.")
+        if scan.logo_placements:
+            bits.append(f"Ubicación habitual del logo: {', '.join(scan.logo_placements)}.")
+        if scan.layout_hints:
+            bits.append(f"Disposiciones: {'; '.join(scan.layout_hints)}.")
+        if scan.suggested_archetype:
+            bits.append(f"Layout sugerido: {scan.suggested_archetype}.")
         text = _normalize_text(" ".join(bits) + "\n\n" + text)
         method = f"{method}+visual_scan" if method else "visual_scan"
 
@@ -164,8 +178,13 @@ def save_brand_manual(
 
     visual = {
         "palette_hex": scan.palette_hex,
+        "color_roles": scan.color_roles,
         "logo_filenames": scan.logo_filenames,
         "logo_urls": scan.logo_urls,
+        "logo_placements": scan.logo_placements,
+        "font_names": scan.font_names,
+        "layout_hints": scan.layout_hints,
+        "suggested_archetype": scan.suggested_archetype,
         "pages_scanned": scan.pages_scanned,
         "embedded_images": scan.embedded_images,
         "notes": scan.notes,
@@ -185,8 +204,13 @@ def save_brand_manual(
         "extraction_method": method,
         "url": local_url_for_brand(tenant_id, pdf_name),
         "palette_hex": scan.palette_hex,
+        "color_roles": scan.color_roles,
         "logo_filenames": scan.logo_filenames,
         "logo_urls": scan.logo_urls,
+        "logo_placements": scan.logo_placements,
+        "font_names": scan.font_names,
+        "layout_hints": scan.layout_hints,
+        "suggested_archetype": scan.suggested_archetype,
         "pages_scanned": scan.pages_scanned,
         "embedded_images": scan.embedded_images,
     }
@@ -202,6 +226,8 @@ def save_brand_manual(
         filename=original_filename,
         palette=len(scan.palette_hex),
         logos=len(scan.logo_urls),
+        fonts=len(scan.font_names),
+        archetype=scan.suggested_archetype,
     )
     return {
         **meta,
@@ -241,12 +267,17 @@ def get_active_brand_meta(tenant_id: str) -> dict | None:
 
 
 def load_brand_visual_assets(tenant_id: str) -> dict:
-    """Paleta + logos del escaneo activo (rutas locales para Pillow + URLs)."""
+    """Paleta + logos + tipografías + layout del escaneo activo."""
     meta = get_active_brand_meta(tenant_id) or {}
     dest = brand_dir(tenant_id)
     logo_filenames = list(meta.get("logo_filenames") or [])
     logo_urls = list(meta.get("logo_urls") or [])
     palette = list(meta.get("palette_hex") or [])
+    font_names = list(meta.get("font_names") or [])
+    layout_hints = list(meta.get("layout_hints") or [])
+    logo_placements = list(meta.get("logo_placements") or [])
+    color_roles = dict(meta.get("color_roles") or {})
+    suggested_archetype = meta.get("suggested_archetype")
 
     visual_name = meta.get("visual_filename") or ""
     if visual_name and (dest / visual_name).is_file():
@@ -255,6 +286,11 @@ def load_brand_visual_assets(tenant_id: str) -> dict:
             palette = list(visual.get("palette_hex") or palette)
             logo_filenames = list(visual.get("logo_filenames") or logo_filenames)
             logo_urls = list(visual.get("logo_urls") or logo_urls)
+            font_names = list(visual.get("font_names") or font_names)
+            layout_hints = list(visual.get("layout_hints") or layout_hints)
+            logo_placements = list(visual.get("logo_placements") or logo_placements)
+            color_roles = dict(visual.get("color_roles") or color_roles)
+            suggested_archetype = visual.get("suggested_archetype") or suggested_archetype
         except Exception as exc:
             logger.warning("brand_manual.visual_load_failed", error=str(exc))
 
@@ -265,9 +301,14 @@ def load_brand_visual_assets(tenant_id: str) -> dict:
     ]
     return {
         "palette_hex": palette,
+        "color_roles": color_roles,
         "logo_filenames": logo_filenames,
         "logo_urls": logo_urls,
         "logo_paths": logo_paths,
+        "font_names": font_names,
+        "layout_hints": layout_hints,
+        "logo_placements": logo_placements,
+        "suggested_archetype": suggested_archetype,
     }
 
 

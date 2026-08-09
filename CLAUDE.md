@@ -2,7 +2,7 @@
 
 ## Qué es este proyecto
 
-MVP de automatización de marketing con agentes de IA. Flujo: brief → estrategia → copy con QA → diseño visual → aprobación humana → publicación en redes.
+MVP de automatización de marketing con agentes de IA. Flujo: brief (+ manual de marca) → estrategia → copy con QA → diseño visual → aprobación humana → publicación en redes.
 
 **Prioridad de desarrollo:** un solo developer, mediados 2026, iterar rápido sin sobre-ingenierizar.
 
@@ -25,13 +25,17 @@ Go sidecar social-publisher (:8088) → Meta Graph API
 ### Pipeline de agentes
 
 ```
-Strategist → LangGraph [Copywriter ↔ QA] → Designer → Publisher
+Strategist (+ brand + inbound)
+  → LangGraph [Copywriter ↔ QA]
+  → Designer | VideoDesigner | ClipReelDesigner
+  → HITL → Publisher (multi-cuenta)
 ```
 
-Doctrina inbound (HubSpot/Cyberclick/Postedin/EUDE/NothingAD/RD Station) vive en
+Asesor creativo (`advisor.py`) es **fuera** del pipeline: chat vía `POST /api/advisor/chat`.
+
+Doctrina inbound (HubSpot/Cyberclick/…) vive en
 `agents/marketing_agents/knowledge/` y se inyecta en Strategist, Copywriter y VideoScriptAgent.
-Pirámide de fines en redes: **Entretener → Informacion → Conexion**; el contenido debe llegar
-a la comunidad del brief (`publico_objetivo`), no a audiencia genérica.
+Pirámide: **Entretener → Informacion → Conexion**.
 
 ---
 
@@ -42,16 +46,17 @@ a la comunidad del brief (`publico_objetivo`), no a audiencia genérica.
 | API | FastAPI + Alembic (Python 3.10) |
 | Agentes | LangGraph + LangChain |
 | LLM | Ollama / Anthropic / OpenAI — configurable vía `.env` |
-| Imágenes | **fal.ai (Flux Pro)** — principal; DALL·E y SD como alternativas |
-| Video (Reels) | **Shotstack** (block-and-poll, env `stage` sandbox / `v1` prod) — principal; JSON2Video documentado, no implementado |
-| Voz (voiceover) | **fal.ai Kokoro Spanish** — principal en dev (reusa `FAL_API_KEY`); ElevenLabs / OpenAI TTS como alternativas |
-| Transcripción (clips usuario) | **Whisper** (`whisper-1`, timestamps por palabra) — principal; mock para tests |
-| Fuente de clips | Google Drive (OAuth `drive.readonly`) — carpeta privada del usuario |
-| Social | Meta/IG OAuth + Go publisher; LinkedIn; mocks — multi-cuenta (N cuentas por proveedor, selector por run) |
-| Async | Celery + Redis (worker default + worker dedicado `-Q video_render` para reels y user_clip_reel) |
+| Imágenes | **fal.ai** (principal) + **Venice.ai** + SD / DALL·E |
+| Marca | PDF + PaddleOCR + `brand_scan` (paleta/logos) + fonts OFL |
+| Video (Reels) | **Shotstack**; escenas `still` o Venice i2v (`VIDEO_SCENE_PROVIDER`) |
+| Voz (voiceover) | **fal.ai Kokoro Spanish** (dev) / ElevenLabs / OpenAI TTS |
+| Transcripción (clips usuario) | **Whisper** (`whisper-1`) |
+| Fuente de clips | Google Drive (OAuth `drive.readonly`) |
+| Social | Meta/IG + LinkedIn OAuth multi-cuenta + Go publisher |
+| Async | Celery + Redis (default + `-Q video_render`) |
 | Scheduler | APScheduler |
-| Frontend | React + Vite |
-| DB | PostgreSQL (Docker) |
+| Frontend | React + Vite (+ AdvisorChatBubble) |
+| DB | PostgreSQL (Docker host **5433**) |
 
 ---
 
@@ -64,29 +69,35 @@ agents/marketing_agents/
   copywriter.py         — copy + headline/subline; pirámide Entretener→Informacion→Conexion
   graph_copy_qa.py      — bucle LangGraph Copywriter ↔ QA
   quality.py            — reglas de calidad de diseño
-  designer.py           — arquetipo editorial + prompt Flux + composición PIL
+  designer.py           — arquetipo + Flux/Venice/SD + composición PIL (+ logo de marca)
+  brand_manual.py       — PDF upload, extract texto, active.json
+  ocr_paddle.py         — fallback OCR local (PaddleOCR + PyMuPDF)
+  brand_scan.py         — paleta dominante + logos embebidos/cabecera
+  brand_visual.py       — cues (hex/fuentes/logos) → prompts y arquetipo
+  advisor.py            — CreativeAdvisorAgent (chat)
+  venice_client.py      — HTTP client Venice.ai (imagen + video queue)
+  caption.py            — caption publicable (hashtags + link_url)
   publisher.py          — publicación vía proveedor social
-  image_providers.py    — generación, overlay post-proceso e img2img
+  image_providers.py    — generación, overlay e img2img
   user_assets.py        — carga y fit de fotos del usuario
-  layout_archetypes.py  — 4 arquetipos editoriales
-  design_layouts.py     — composición PIL por arquetipo
-  video_script.py       — VideoScriptAgent: guion 3-5 escenas, hook/CTA, banda 15-30s (arco inbound)
-  video_timeline.py     — contrato Timeline/Scene/VoiceoverTrack (Pydantic) + to_shotstack_edit()
-                          (títulos = clips TitleAsset en pista overlay; media abajo; sin `title_asset`)
-  video_providers.py    — render_video(): Shotstack; fal CDN o reescribe localhost→PUBLIC_IMAGE_BASE_URL
-  voice_providers.py    — synthesize_voice(): fal TTS / ElevenLabs / OpenAI TTS / mock
-  video_designer.py     — VideoDesignerAgent: escenas fal.ai + voz + Timeline + render
-  drive_source.py       — OAuth Google Drive: listar y descargar clips de una carpeta
-  transcription_providers.py — transcribe_clips(): Whisper (ffmpeg extrae audio) / mock
-  clip_assets.py        — clip_public_url(): mapea path local de clip a URL servida
-  clip_editor.py         — ClipEditorAgent: selección hook-scored de segmentos (banda 6-60s)
-  clip_reel_designer.py — ClipReelDesigner: Drive → transcripción → selección → [efecto] → Timeline → render
-  pipeline.py            — MarketingPipeline: orquesta el flujo completo Strategist→...→Publisher
-  llm.py                 — cliente LLM configurable (Ollama/Anthropic/OpenAI)
-  overlay_text.py        — helpers de overlay tipográfico sobre imagen
-  social_providers.py    — abstracción de proveedor social (Go sidecar / mocks)
-  schemas.py              — modelos internos de datos del pipeline
-  image_specs.py          — specs de dimensión/aspecto por plataforma-formato
+  layout_archetypes.py  — 5 arquetipos (incl. brand_campaign_piece)
+  design_layouts.py     — composición PIL por arquetipo (+ logo)
+  video_script.py       — VideoScriptAgent: guion 3-5 escenas
+  video_timeline.py     — Timeline/Scene + to_shotstack_edit()
+  video_providers.py    — render_video() Shotstack
+  voice_providers.py    — synthesize_voice()
+  video_designer.py     — VideoDesignerAgent (still o Venice i2v)
+  drive_source.py       — Google Drive clips
+  transcription_providers.py — Whisper
+  clip_assets.py / clip_editor.py / clip_reel_designer.py
+  thought_stream.py     — hilo de pensamiento (eventos en vivo + checkpoints interactivos)
+  pipeline.py           — MarketingPipeline
+  llm.py                — Ollama/Anthropic/OpenAI (+ keep_alive)
+  overlay_text.py       — tipografía OFL + Windows fonts
+  social_providers.py
+  schemas.py
+  image_specs.py
+  knowledge/            — doctrina inbound
 
 gateway/app/
   api/routes.py          — endpoints principales
@@ -127,10 +138,13 @@ k8s/overlays/{dev,staging,prod}/ — réplicas y APP_ENV/SHOTSTACK_ENV por entor
 
 | ID | Cuándo usar |
 |----|------------|
+| `brand_campaign_piece` | Manual de marca activo (logo + foto full-bleed + tipografía centrada) |
 | `typographic_poster` | Promocional / ventas |
 | `minimal_conceptual` | Informativo |
-| `editorial_infographic` | Educativo / branding |
+| `editorial_infographic` | Educativo / branding (sin manual) |
 | `cinematic_hero` | Storytelling / entretenimiento |
+
+Referencia visual: `docs/references/README.md`. Fonts OFL: `static/fonts/README.md`.
 
 ---
 
@@ -151,56 +165,69 @@ fal.ai escala proporcionalmente si altura > 1440px.
 ## Config `.env` típica en dev
 
 ```env
-IMAGE_PROVIDER=fal
+IMAGE_PROVIDER=fal                 # o venice | stable_diffusion
 FAL_API_KEY=...
 FAL_MODEL=fal-ai/flux-pro/v1.1
+VENICE_API_KEY=...                 # opcional
+VENICE_API_BASE=https://api.venice.ai/api/v1
+VENICE_IMAGE_MODEL=venice-sd35
+VIDEO_SCENE_PROVIDER=still         # o venice
+OCR_PROVIDER=paddle
+OCR_LANG=es
+OCR_USE_GPU=true
+OCR_MIN_TEXT_CHARS=40
 FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
 FAL_IMG2IMG_STRENGTH=0.72
 VIDEO_PROVIDER=shotstack
-SHOTSTACK_API_KEY=...          # key sandbox → SHOTSTACK_ENV=stage; key prod → v1
+SHOTSTACK_API_KEY=...
 SHOTSTACK_ENV=stage
-VIDEO_MAX_WAIT_SECONDS=600
-VIDEO_FPS=30
-VOICE_PROVIDER=fal             # reusa FAL_API_KEY; alt: elevenlabs | openai | mock
+VOICE_PROVIDER=fal
 VOICE_LANGUAGE=es
 FAL_TTS_MODEL=fal-ai/kokoro/spanish
 FAL_TTS_VOICE=ef_dora
-# ELEVENLABS_API_KEY=...       # solo si VOICE_PROVIDER=elevenlabs
-# ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 STT_PROVIDER=whisper
 EFFECTS_ENABLED=false
-FAL_EFFECTS_MODEL=fal-ai/wan-effects
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback/google
+THOUGHTS_ENABLED=true          # hilo de pensamiento de los agentes
+THOUGHTS_TTL_SECONDS=7200
+THOUGHTS_CHECKPOINT_TIMEOUT_SECONDS=180
 LLM_PROVIDER=ollama
 OLLAMA_MODEL=llama3.1
-OLLAMA_KEEP_ALIVE=30m          # mantiene el modelo cargado entre runs (evita cold-start)
-LLM_TIMEOUT_SECONDS=300        # debe tolerar la carga inicial del modelo (~5GB)
+OLLAMA_KEEP_ALIVE=30m
+LLM_TIMEOUT_SECONDS=300
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 REDIS_URL=redis://localhost:6379/0
 SOCIAL_PROVIDER=meta
 GO_PUBLISHER_URL=http://localhost:8088
-PUBLIC_IMAGE_BASE_URL=https://TU-NGROK   # Meta + assets locales; reel fal usa fal.media
+PUBLIC_IMAGE_BASE_URL=https://TU-NGROK
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
+LINKEDIN_API_VERSION=202401     # header LinkedIn-Version de la API /rest
+# Deben estar CONCEDIDOS en la pestaña Auth de la app; si no, LinkedIn rechaza todo el consentimiento.
+# Sin el producto "Sign In with LinkedIn using OpenID Connect": r_basicprofile w_member_social
+LINKEDIN_SCOPES=openid profile w_member_social
 ```
 
 **Nunca commitear `.env`.**
 
-**Reel es async-only:** `content_format=reel` (y también `user_clip_reel`) requiere `POST /api/runs/async` (se rechaza con 422 en `/runs/sync`) y un **segundo worker Celery** en la cola dedicada:
+**Marca:** subir PDF en el dashboard; requiere `pymupdf` (+ PaddleOCR si `OCR_PROVIDER=paddle`).
+
+**Reel es async-only:** `content_format=reel|user_clip_reel` → `POST /api/runs/async` + segundo worker:
 
 ```bash
 python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
 ```
 
-Tras cambiar `.env` o código de video, **reinicia el worker** (Celery no recarga env ni módulos solos).
+Tras cambiar `.env` o código de video, **reinicia el worker**.
 
-**`user_clip_reel` requiere además `ffmpeg` instalado en el host** (se invoca vía `subprocess` para extraer el audio de cada clip antes de transcribir con Whisper) y `drive_folder_id` en el request.
+**`user_clip_reel`** requiere `ffmpeg` en PATH y `drive_folder_id`.
 
 ---
 
 ## Cómo levantar el stack (7-8 terminales)
+
+Ver `infra/arranque-stack.md`. Resumen:
 
 ```bash
 # 1 - Infra
@@ -224,7 +251,7 @@ cd frontend && npm run dev
 # 6 - Go publisher (solo al publicar)
 cd microservices/social-publisher-go && go run ./cmd/server
 
-# 7 - ngrok (Shotstack + Meta; actualizar PUBLIC_IMAGE_BASE_URL y reiniciar Uvicorn + workers)
+# 7 - ngrok (Meta + assets locales)
 ngrok http 8000
 ```
 
@@ -232,15 +259,17 @@ ngrok http 8000
 
 ## API endpoints relevantes
 
-- `POST /api/briefs/upload-asset` — subir foto del usuario (multipart)
-- `POST /api/runs/sync` / `/async` — ejecutar pipeline (`user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`, `content_format` incluye `reel` y `user_clip_reel`; ambos solo vía `/async`, 422 en `/sync`; `user_clip_reel` requiere `drive_folder_id`, 422 si falta; `social_account_id` opcional para cuenta destino multi-cuenta)
-- `POST /api/runs/{id}/approve` / `/reject` — aprobación humana
-- `POST /api/runs/{id}/revise` — regenera la pieza de un run `pending_approval` con notas del revisor (`notes`, `revised_by`); 409 si el run no está pendiente. Feed/story se regeneran inline; `reel`/`user_clip_reel` se encolan en `video_render` y responden `queued`
-- `GET /api/auth/accounts` — lista cuentas OAuth multi-cuenta (sin tokens)
-- `DELETE /api/auth/accounts/{id}` — desconexión lógica (`is_active=False`)
-- `POST /api/campaigns/{id}/fire` — disparar campaña
-- `GET /api/image/archetypes` — listar arquetipos disponibles
-- `GET /api/image/providers` — listar proveedores de imagen
+- `POST /api/briefs/upload-asset` — foto usuario
+- `POST /api/briefs/upload-brand-manual` — PDF marca
+- `GET/DELETE /api/briefs/brand-manual` — manual activo
+- `POST /api/advisor/chat` — asesor creativo
+- `POST /api/runs/sync` / `/async` — pipeline (`content_format`, `image_provider`, `social_account_id`, `link_url`, `cta_on_image`, …)
+- `POST /api/runs/{id}/approve` / `/reject` / `/revise`
+- `GET /api/thoughts/{trace_id}?since=N` — hilo de pensamiento de los agentes (polling)
+- `POST /api/thoughts/{trace_id}/reply` — respuesta del usuario en un checkpoint (`continue` | `adjust` | `cancel`)
+- `GET /api/auth/accounts` / `DELETE /api/auth/accounts/{id}`
+- `POST /api/campaigns/{id}/fire`
+- `GET /api/image/archetypes` / `/image/providers`
 
 ---
 
@@ -250,71 +279,46 @@ ngrok http 8000
 pytest tests/ -v
 ```
 
-Archivos clave:
-- `tests/test_pipeline.py` — pipeline sync/async con mock
-- `tests/test_graph_copy_qa.py` — reintentos Copy/QA
-- `tests/test_scheduler.py` — campañas → `pending_approval`
-- `tests/test_layout_archetypes.py` — specs 4:5, fal scaling; IoT/cámara sin diluir por `"ia" in tema`
-- `tests/test_design_layouts.py` — composición PIL: 4 layouts, fallback
-- `tests/test_user_assets.py` — foto usuario + overlay sin fal
-- `tests/test_linkedin_native.py` — LinkedIn con imagen (mock)
-- `tests/test_inbound_knowledge.py` — doctrina inbound inyectada en estratega/copy/video_script
-- `tests/test_video_timeline.py` — contrato Timeline/Scene, `to_shotstack_edit()`, clamp de duración
-- `tests/test_voice_providers.py` — `synthesize_voice` (mock/ElevenLabs/OpenAI/fal, default español)
-- `tests/test_video_providers.py` — `render_video` (mock/Shotstack poll, publicize URLs, body de error 400)
-- `tests/test_video_designer.py` — `VideoDesignerAgent.run` end-to-end mockeado
-- `tests/test_video_pipeline.py` — `MarketingPipeline.run(content_format="reel")` end-to-end + regresión feed
-- `tests/test_pipeline_service_video.py` — `_media_url` y persistencia de `video_url`
-- `tests/test_drive_source.py` — OAuth Google Drive: listar/descargar clips, sanitización de nombre de archivo
-- `tests/test_transcription_providers.py` — Whisper mockeado, chunking >25MB con offset-correction
-- `tests/test_clip_editor.py` / `tests/test_clip_assets.py` — selección hook-scored banda 6-60s, stub determinístico
-- `tests/test_clip_reel_designer.py` — `ClipReelDesigner` end-to-end mockeado, wan-effects (éxito/degradación), reset de trim tras efecto, captions multi-segmento
-- `tests/test_contracts_user_clip_reel.py` — validación de `RunRequest` (`drive_folder_id` obligatorio) y límite de columna
-- `tests/test_video_timeline_clips.py` — contrato Timeline: overlays TitleAsset + clips video/captions
-- `tests/test_format_normalization.py` — normalización de `content_format` en requests
-- `tests/test_runs_api.py` — endpoints `/api/runs` (sync/async, validaciones 422)
-- `tests/test_llm_keep_alive.py` — `keep_alive` en el payload de Ollama y timeout tolerante a cold-start
-- `tests/test_revise_run.py` — `POST /runs/{id}/revise`: persistencia de params, re-ejecución con notas, acumulación de revisiones, ruteo de video a `video_render`
-- `tests/test_multi_account.py` — multi-cuenta: N filas por proveedor, callback que agrega sin pisar, `_resolve_publish_token` (validaciones + fallback), publish dirigido y regresión legacy
-- `tests/conftest.py` — fixtures compartidas de la suite
+~**214 tests** collected. Archivos clave además de pipeline/video/clips:
+
+- `tests/test_brand_and_advisor.py`, `test_brand_scan.py`, `test_brand_visual.py`
+- `tests/test_venice.py`, `test_premium_fonts.py`, `test_caption.py`
+- `tests/test_revise_run.py`, `test_multi_account.py`, `test_llm_keep_alive.py`
+
+Estado canónico: [`estado-actual.txt`](estado-actual.txt).  
+NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).
 
 ---
 
 ## Decisiones arquitectónicas fijas
 
-- **ComfyUI: descartado** (GPU local insuficiente para Flux; usar fal.ai)
-- **Prometheus:** activable con `PROMETHEUS_ENABLED=true` → `/metrics` (compatible con FastAPI 0.115); off en dev por defecto
-- **Go publisher:** no duplicar lógica de publicación Meta en Python si Go ya intentó
-- **Anti-duplicados IG:** error 9007 indica container no `FINISHED` — manejar sin reintentar ciegamente
-- **ngrok**: obligatorio para Meta (publicar) y para assets **locales** (`user_clip_reel`, overlays Pillow). En Reels con fal.ai, fondos/voz van a Shotstack como URLs `fal.media` (sin depender del túnel en el render)
-- **Reel es async-only:** `content_format="reel"` (y `user_clip_reel`) se rechaza con 422 en `/runs/sync`; corre solo vía `/runs/async` en la cola Celery dedicada `video_render` — requiere levantar un **segundo worker** (`python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render`) además del worker default
-- **Video sin retries:** la tarea `execute_video_pipeline_task` usa el `celery.Task` base plano (sin `autoretry_for`) para no re-renderizar video ante errores transitorios (costo/duplicados); timeout extendido ~20 min vía `task_annotations` en `celery_app.py`
-- **Contrato Shotstack:** `to_shotstack_edit()` emite pistas `captions → títulos → media` (tracks[0] = capa superior). Los overlays son clips `asset.type=title` (estilo Shotstack `minimal`/`subtitle`), **nunca** una propiedad `title_asset` dentro del clip de imagen
-- **Voz en dev:** `VOICE_PROVIDER=fal` (Kokoro Spanish) reusa `FAL_API_KEY`; no hace falta ElevenLabs para probar Reels
-- **ffmpeg es dependencia de sistema** (no Python) requerida solo para `user_clip_reel` — `transcription_providers.py` la invoca vía `subprocess` para extraer audio antes de transcribir con Whisper
-- **Google OAuth `drive.readonly` puede requerir verificación manual de la app** para usuarios externos a tu organización — en dev, agregar el email como "test user" en la pantalla de consentimiento evita el trámite
-- **URLs de clips:** `clip_public_url()` usa `PUBLIC_IMAGE_BASE_URL` (no localhost hardcodeado) porque fal.ai wan-effects descarga el clip fuente a mitad de pipeline. Sigue haciendo falta ngrok corriendo para que esa URL sea alcanzable desde fuera; lo que ya no pasa es que apunte a localhost aunque el túnel esté activo
-- **Captions de `user_clip_reel` son por segmento, no por palabra** — granularidad más fina queda para v2
-- **LLM debe estar vivo o el copy sale genérico:** `get_llm()` devuelve un `OllamaLLM` aunque Ollama esté apagado; si la llamada falla, estratega y copywriter atrapan la excepción y caen a `_stub()` → texto de plantilla en la imagen **sin error visible al usuario**. Mitigado (2026-07-27): el payload lleva `keep_alive` (`OLLAMA_KEEP_ALIVE`, default `30m`) para que Ollama no descargue el modelo entre runs, y el timeout subió a `LLM_TIMEOUT_SECONDS` (default 300s) para tolerar la carga inicial de ~5GB. **El fallback silencioso sigue existiendo**: si Ollama está apagado, el copy sale genérico igual — mantener `ollama serve` corriendo
-- **Imagen fail-loudly:** fal.ai / SD ya no caen a placeholder silencioso; fallan con `RuntimeError(image_gen_failed:…)`. Placeholders solo con `IMAGE_PROVIDER=mock` o mocks de test
-- **Doctrina inbound:** `agents/marketing_agents/knowledge/inbound_marketing.py` se inyecta en `_SYSTEM` de estratega, copywriter y `video_script` (pirámide Entretener → Información → Conexión + `publico_objetivo`)
-- **Revisión HITL (completa):** `POST /runs/{id}/revise` regenera la pieza con las notas del revisor. Requiere `AgentRun.run_params_json` (migración `0006`), que guarda la config del run original — sin eso la re-ejecución perdería arquetipo/foto/carpeta Drive. Las notas se propagan como `revision_notes` a Designer (prompt Flux + `visual_instructions`), VideoScriptAgent y ClipEditorAgent. Una revisión **nunca publica**: siempre vuelve a `pending_approval`
-- **Meta OAuth:** redirect URI debe ser path completo (`…/api/auth/callback/meta`); token sin scopes IG → Graph subcode 33 (re-autorizar desde Integraciones)
-- **Multi-cuenta social:** `oauth_tokens` es único por `(tenant, provider, account_id)` — el callback OAuth **agrega** cuentas, nunca pisa las anteriores (migración `0007`). Cada run puede fijar `social_account_id`; NULL = cuenta activa más reciente del provider (legacy). Meta guarda una fila por Fan Page con IG vinculado, con **Page token** propio por fila. Desconectar = `is_active=False` (lógico, conserva historial). El Go sidecar no resuelve cuentas: recibe token+account_id ya elegidos por el gateway
+- **ComfyUI: descartado** (GPU local insuficiente para Flux; usar fal.ai / Venice)
+- **Brand book manda:** texto + paleta + logos del PDF tienen prioridad sobre plantillas genéricas (evitar look amarillo/blanco por defecto)
+- **Prometheus:** `PROMETHEUS_ENABLED=true` → `/metrics`; off en dev
+- **Go publisher:** no duplicar lógica Meta en Python si Go ya intentó
+- **LinkedIn = solo Python:** el sidecar Go cubre únicamente Meta. LinkedIn usa la API versionada `/rest/images` + `/rest/posts` en `social_providers.py` (nunca `/v2/assets` ni `/v2/ugcPosts`, deprecados). Solo imagen y solo perfil personal
+- **Anti-duplicados IG:** error 9007 = container no `FINISHED`
+- **ngrok**: Meta + assets locales; Reels fal → Shotstack vía `fal.media`
+- **Reel async-only** + cola `video_render` + **sin autoretry** en video
+- **Contrato Shotstack:** overlays = clips `TitleAsset`, nunca propiedad `title_asset`
+- **ffmpeg** solo para `user_clip_reel`
+- **LLM stub silencioso** si Ollama apagado — mitigado con `keep_alive`/timeout; falta error en UI
+- **Imagen fail-loudly** (fal/Venice/SD); mock solo con `IMAGE_PROVIDER=mock`
+- **HITL revise** nunca publica; multi-cuenta vía `social_account_id`
 
 ---
 
 ## Deuda conocida (no implementar sin pedido explícito)
 
-1. Canva OAuth — placeholder, no implementado
-2. Canva/Figma MCP — plantillas de marca vía MCP
-3. Stable Diffusion local — alternativa conservada, no es camino principal; A1111 caído → error explícito (no mock)
-4. Video v2 (no implementado) — música de fondo, captions por palabra (hoy por segmento) para `user_clip_reel`
-5. TikTok (fase 2, diseñado sin código) — Login Kit (OAuth PKCE) como provider nuevo en `auth_social.py` + Content Posting API (`/v2/post/publish/video/init/` + upload chunked) en el Go sidecar; solo video. Bloqueo: auditoría de TikTok obligatoria para posts públicos (sin auditar: solo SELF_ONLY) — iniciar trámite antes de codificar
-6. Meta: re-OAuth con scopes IG cuando el token solo tenga `pages_*` / `public_profile`
-7. Revise v2 — historial de versiones por revisión (hoy `result_json` se sobrescribe; el asset previo queda en disco pero sin fila en `generated_assets` hasta aprobar)
-8. CI/CD — `skaffold.yaml` + `clouddeploy.yaml` + overlays kustomize existen y renderizan, pero **nunca se aplicaron contra un clúster real**: falta crear los GKE, reemplazar `PROJECT_ID`/`REGION` en `clouddeploy.yaml` y cablear los secretos vía Secret Manager
-9. Fallback silencioso del LLM — `keep_alive`/timeout ya aplicados, pero si Ollama está apagado los agentes siguen cayendo al stub sin avisar al usuario; falta propagar el error a la UI
+1. Canva OAuth / Canva-Figma MCP
+2. Stable Diffusion local — alternativa; A1111 caído → error explícito
+3. Video v2 — música, captions por palabra
+4. TikTok fase 2 (auditoría app)
+5. Meta: re-OAuth scopes IG; ngrok dominio fijo
+6. Revise v2 — historial de versiones
+7. CI/CD — Skaffold/Cloud Deploy sin GKE real
+8. Fallback LLM → propagar a UI
+9. Unlimited-OCR descartado (VRAM); PaddleOCR es el camino OCR
 
 ---
 

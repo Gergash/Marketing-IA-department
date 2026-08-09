@@ -19,13 +19,14 @@ ya elegidos. No busca tokens en DB.
   "video_url": "https://...",
   "content_format": "feed|story|reel|user_clip_reel",
   "access_token": "<token de la cuenta destino>",
-  "account_id": "<IG Business ID o URN LinkedIn>",
+  "account_id": "<IG Business ID>",
   "idempotency_key": ""
 }
 ```
 
-Plataformas: Instagram/Facebook (Meta Graph) y LinkedIn (UGC). TikTok = fase 2
-(documentado en `estado-actual.txt`; requiere Login Kit + auditoría de app).
+Plataformas: **solo Instagram/Facebook** (Meta Graph). LinkedIn se publica nativamente desde el gateway Python (`agents/marketing_agents/social_providers.py`, API versionada `/rest/images` + `/rest/posts`); mandar `platform=linkedin` aquí devuelve 400. TikTok = fase 2 (documentado en `estado-actual.txt`; requiere Login Kit + auditoría de app).
+
+Actualizado con el modelo multi-cuenta (2026-07) y formatos `reel` / `user_clip_reel`.
 
 ## Run
 

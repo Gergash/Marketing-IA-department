@@ -1,0 +1,35 @@
+{
+  "palette_hex": [
+    "#00A800",
+    "#0BBD07",
+    "#0EAE0C",
+    "#0BA409",
+    "#13250F",
+    "#FFFFFF",
+    "#23B621",
+    "#009000",
+    "#0A9709",
+    "#007800"
+  ],
+  "color_roles": {
+    "primary": "#00A800",
+    "accent": "#0BBD07",
+    "secondary": "#0EAE0C"
+  },
+  "logo_filenames": [],
+  "logo_urls": [],
+  "logo_placements": [],
+  "font_names": [],
+  "layout_hints": [
+    "logo_zone:top-left",
+    "texto_pesado_inferior",
+    "bloques_editoriales_medios",
+    "hero_central_producto"
+  ],
+  "suggested_archetype": "editorial_infographic",
+  "pages_scanned": 10,
+  "embedded_images": 10,
+  "notes": [
+    "palette_swatch:b4c8309acd854e7fa44e935d8310bdd3_palette.png"
+  ]
+}

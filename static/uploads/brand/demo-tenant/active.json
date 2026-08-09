@@ -1,32 +1,40 @@
 {
-  "id": "261cfb212bf842de981061d1147fa1f3",
-  "original_filename": "Ejemplo_Identidad_Corporativa_Tres_Amores.pdf",
-  "pdf_filename": "261cfb212bf842de981061d1147fa1f3.pdf",
-  "txt_filename": "261cfb212bf842de981061d1147fa1f3.txt",
-  "visual_filename": "261cfb212bf842de981061d1147fa1f3_visual.json",
-  "char_count": 965,
-  "extraction_method": "pypdf",
-  "url": "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3.pdf",
+  "id": "65175d8d97ad43599245d5d17972ed3c",
+  "original_filename": "BiovigIA_Manual_Marca.pdf",
+  "pdf_filename": "65175d8d97ad43599245d5d17972ed3c.pdf",
+  "txt_filename": "65175d8d97ad43599245d5d17972ed3c.txt",
+  "visual_filename": "65175d8d97ad43599245d5d17972ed3c_visual.json",
+  "char_count": 376,
+  "extraction_method": "pypdf+visual_scan",
+  "url": "http://localhost:8000/static/uploads/brand/demo-tenant/65175d8d97ad43599245d5d17972ed3c.pdf",
   "palette_hex": [
-    "#CB8A48",
-    "#884F25",
-    "#CEA170",
-    "#8D6E45",
-    "#EDE2D7",
-    "#D7CBC3"
+    "#00A800",
+    "#0BBD07",
+    "#0EAE0C",
+    "#0BA409",
+    "#13250F",
+    "#FFFFFF",
+    "#23B621",
+    "#009000",
+    "#0A9709",
+    "#007800"
   ],
-  "logo_filenames": [
-    "261cfb212bf842de981061d1147fa1f3_logo_1.png",
-    "261cfb212bf842de981061d1147fa1f3_logo_2.png",
-    "261cfb212bf842de981061d1147fa1f3_logo_3.png",
-    "261cfb212bf842de981061d1147fa1f3_logo_4.png"
+  "color_roles": {
+    "primary": "#00A800",
+    "accent": "#0BBD07",
+    "secondary": "#0EAE0C"
+  },
+  "logo_filenames": [],
+  "logo_urls": [],
+  "logo_placements": [],
+  "font_names": [],
+  "layout_hints": [
+    "logo_zone:top-left",
+    "texto_pesado_inferior",
+    "bloques_editoriales_medios",
+    "hero_central_producto"
   ],
-  "logo_urls": [
-    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_1.png",
-    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_2.png",
-    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_3.png",
-    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_4.png"
-  ],
-  "pages_scanned": 2,
-  "embedded_images": 2
+  "suggested_archetype": "editorial_infographic",
+  "pages_scanned": 10,
+  "embedded_images": 10
 }

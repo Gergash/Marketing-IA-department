@@ -204,23 +204,31 @@ En Meta Developers → Valid OAuth Redirect URIs: pegar la **URI completa** (pat
 
 ---
 
-## Flujo de prueba rápida (fal.ai + human-in-the-loop)
+## Flujo de prueba rápida (fal.ai / Venice + marca + HITL)
 
 1. T1–T5 levantados (T4b solo para Reels; T6–T7 solo si publicas en IG).
-2. `.env`: `IMAGE_PROVIDER=fal`, `FAL_API_KEY=...`, `LLM_PROVIDER=ollama`.
-3. Dashboard → crear brief → formato **feed** o **story** → **Enviar async**.
-4. Esperar `pending_approval` con imagen en Resultado.
-5. T6 + T7 → un solo clic en **Aprobar**.
+2. `.env`: `IMAGE_PROVIDER=fal` (o `venice` + `VENICE_API_KEY`), `LLM_PROVIDER=ollama`, `OCR_PROVIDER=paddle` si usas PDFs escaneados.
+3. Dashboard → **Manual de marca (PDF)** → subir brand book (aparecen paleta + logos si el scan encuentra).
+4. Crear brief → formato **feed** o **story** → elegir **Cuenta destino** → **Enviar async**.
+5. Esperar `pending_approval` con pieza (con marca: arquetipo campaña + logo).
+6. T6 + T7 → **Aprobar** (o **Solicitar cambios** con notas).
 
 ### Flujo Reels (Video-as-Code)
 
-1. T1–T5 + **T4b** (`-Q video_render`). **T7** (ngrok) obligatorio para publicar en Meta o para `user_clip_reel`; opcional en reel fal-only (assets `fal.media`).
-2. `.env`: `VIDEO_PROVIDER=shotstack`, `SHOTSTACK_API_KEY`, `SHOTSTACK_ENV=stage`, `VOICE_PROVIDER=fal` (+ `FAL_API_KEY`), o mocks.
-3. Dashboard → **Formato de publicación** → **Reel** (o **Video con mis clips (Drive)**) → **Enviar Async**.
-4. Historial: `queued` → `running` → `pending_approval` con preview `<video>` en Resultado.
-5. T6 (+ T7 si publicas) → **Aprobar** (Go publica con `media_type=REELS`). Requiere token Meta con scopes IG.
+1. T1–T5 + **T4b** (`-Q video_render`). **T7** obligatorio para Meta o `user_clip_reel`.
+2. `.env`: `VIDEO_PROVIDER=shotstack`, `SHOTSTACK_*`, `VOICE_PROVIDER=fal`; opcional `VIDEO_SCENE_PROVIDER=venice`.
+3. Dashboard → **Reel** (o **Video con mis clips**) → **Enviar Async**.
+4. Historial: `queued` → `running` → `pending_approval` con preview `<video>`.
+5. T6 (+ T7) → **Aprobar**.
 
-Si el worker loguea `unregistered task of type 'workers.tasks.execute_video_pipeline_task'`: reinicia T4 y T4b para cargar `import workers.tasks` desde `celery_app.py`, y lanza un run **nuevo** (los mensajes descartados no se reencolan solos).
+### Dependencias OCR / marca (una vez)
+
+```bash
+pip install pypdf pymupdf paddlepaddle paddleocr
+# OCR_PROVIDER=paddle en .env; reiniciar Uvicorn tras instalar
+```
+
+Si el worker loguea `unregistered task of type 'workers.tasks.execute_video_pipeline_task'`: reinicia T4 y T4b, y lanza un run **nuevo**.
 
 Si Shotstack responde `400`, el log de T4b incluye `body=...` con el detalle de validación.
 
@@ -230,11 +238,11 @@ Si Shotstack responde `400`, el log de T4b incluye `body=...` con el detalle de 
 
 | Escenario | Terminales necesarias |
 |-----------|------------------------|
-| Solo generar contenido imagen (fal.ai) | T1, T2, T3, T4, T5 |
-| Generar Reels (Shotstack + voz fal CDN) | T1, T2, T3, T4, **T4b**, T5 |
+| Solo generar imagen (fal/Venice) + marca PDF | T1, T2, T3, T4, T5 |
+| Generar Reels (Shotstack + voz; escenas still/venice) | T1, T2, T3, T4, **T4b**, T5 |
 | Reel con clips de Drive | T1, T2, T3, T4, **T4b**, T5, **T7** (+ ffmpeg + Google OAuth) |
 | Publicar en Instagram (imagen o reel) | + T6, T7 (ngrok + OAuth scopes IG) |
-| Multi-cuenta (Cliente A / Cliente B) | T3 + Integraciones (N cuentas) + selector **Cuenta destino** en el run; migración `0007` aplicada |
+| Multi-cuenta (Cliente A / Cliente B) | T3 + Integraciones + selector **Cuenta destino**; migración `0007` |
 | Prueba de fuego scheduler | T3 (+ seed script, sin Celery obligatorio) |
 
 Runbook scheduler: [`prueba-de-fuego-scheduler.md`](prueba-de-fuego-scheduler.md)

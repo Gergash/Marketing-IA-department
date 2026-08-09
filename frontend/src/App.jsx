@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import AdvisorChatBubble from "./AdvisorChatBubble";
+import AgentThoughtThread from "./AgentThoughtThread";
 import Integrations from "./Integrations";
+
+/** Traza del hilo de pensamiento: el cliente la genera porque /runs/sync no devuelve el run_id hasta terminar. */
+function newTraceId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replace(/-/g, "");
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const RUN_IN_PROGRESS = ["queued", "running", "publishing"];
 
 const FORM_LABELS = {
   tema: "Descripción del producto o evento",
@@ -118,6 +127,11 @@ export default function App() {
   const [contentFormat, setContentFormat] = useState("feed");
   const [imageProvider, setImageProvider] = useState("fal");
   const [imageProviders, setImageProviders] = useState([]);
+  const [videoGenMode, setVideoGenMode] = useState("scenes");
+  const [veniceVideoModel, setVeniceVideoModel] = useState("seedance-2.0");
+  const [videoModes, setVideoModes] = useState([]);
+  const [videoModels, setVideoModels] = useState([]);
+  const [veniceConfigured, setVeniceConfigured] = useState(false);
   const [archetypeOverride, setArchetypeOverride] = useState("");
   const [archetypes, setArchetypes] = useState([]);
   const [userAssetUrl, setUserAssetUrl] = useState("");
@@ -129,6 +143,8 @@ export default function App() {
   const [ctaOnImage, setCtaOnImage] = useState(false);
   const [alterImageWithAi, setAlterImageWithAi] = useState(false);
   const [visualInstructions, setVisualInstructions] = useState("");
+  const [traceId, setTraceId] = useState(null);
+  const [interactive, setInteractive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
@@ -214,6 +230,29 @@ export default function App() {
     }
   };
 
+  const loadVideoOptions = async () => {
+    try {
+      const data = await api("/video/options");
+      setVideoModes(Array.isArray(data.modes) ? data.modes : []);
+      setVideoModels(Array.isArray(data.models) ? data.models : []);
+      setVeniceConfigured(Boolean(data.venice_configured));
+      if (data.default_mode) setVideoGenMode(data.default_mode);
+      if (data.default_model) setVeniceVideoModel(data.default_model);
+    } catch {
+      setVideoModes([
+        { id: "full", label: "Clip AI completo (Venice)" },
+        { id: "scenes", label: "Unir tomas AI (Venice + Shotstack)" },
+        { id: "still", label: "Stills + Ken Burns" },
+      ]);
+      setVideoModels([
+        { id: "seedance-2.5", label: "Seedance 2.5" },
+        { id: "seedance-2.0", label: "Seedance 2.0" },
+        { id: "kling-o3", label: "Kling O3" },
+        { id: "minimax-h3", label: "MiniMax H3" },
+      ]);
+    }
+  };
+
   const loadArchetypes = async () => {
     try {
       const data = await api("/image/archetypes");
@@ -242,6 +281,7 @@ export default function App() {
     loadSocialStatus();
     loadSocialAccounts();
     loadImageProviders();
+    loadVideoOptions();
     loadArchetypes();
     loadBrandManual();
   }, [apiKey]);
@@ -303,10 +343,14 @@ export default function App() {
       return;
     }
 
+    const trace = newTraceId();
+    setTraceId(trace);
     setLoading(true);
     try {
       const brief = await api("/briefs", "POST", form);
       const runReq = {
+        trace_id: trace,
+        interactive,
         brief_id: brief.id,
         publish: true,
         requires_approval: true,
@@ -320,6 +364,9 @@ export default function App() {
           ? { visual_instructions: visualInstructions.trim() }
           : {}),
         ...(contentFormat === "user_clip_reel" ? { drive_folder_id: driveFolderId.trim() } : {}),
+        ...(contentFormat === "reel"
+          ? { video_gen_mode: videoGenMode, venice_video_model: veniceVideoModel }
+          : {}),
         ...(socialAccountId ? { social_account_id: Number(socialAccountId) } : {}),
         ...(linkUrl.trim() ? { link_url: linkUrl.trim() } : {}),
         ...(ctaOnImage ? { cta_on_image: true } : {}),
@@ -397,6 +444,8 @@ export default function App() {
     }
     if (revisingRunId != null) return;
 
+    const trace = newTraceId();
+    setTraceId(trace);
     setRevisingRunId(runId);
     setError(null);
     setRevisionFeedback({ runId, ok: true, message: "Regenerando la pieza con tus notas…" });
@@ -404,6 +453,8 @@ export default function App() {
       const response = await api(`/runs/${runId}/revise`, "POST", {
         notes: trimmed,
         revised_by: "human",
+        trace_id: trace,
+        interactive,
       });
       // Los reels se re-renderizan en la cola video_render: el resultado no viene en la respuesta.
       if (response.status === "queued") {
@@ -503,6 +554,63 @@ export default function App() {
               onChange={(e) => setDriveFolderId(e.target.value)}
             />
           </label>
+        )}
+        {contentFormat === "reel" && (
+          <div className="video-gen-block" style={{ marginTop: "0.75rem" }}>
+            <label>
+              Generación de video (Venice AI)
+              <select
+                value={videoGenMode}
+                disabled={loading}
+                onChange={(e) => setVideoGenMode(e.target.value)}
+              >
+                {(videoModes.length > 0
+                  ? videoModes
+                  : [
+                      { id: "full", label: "Clip AI completo" },
+                      { id: "scenes", label: "Unir tomas AI" },
+                      { id: "still", label: "Stills + Shotstack" },
+                    ]
+                ).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Modelo de video
+              <select
+                value={veniceVideoModel}
+                disabled={loading || videoGenMode === "still"}
+                onChange={(e) => setVeniceVideoModel(e.target.value)}
+              >
+                {(videoModels.length > 0
+                  ? videoModels
+                  : [
+                      { id: "seedance-2.5", label: "Seedance 2.5" },
+                      { id: "seedance-2.0", label: "Seedance 2.0" },
+                      { id: "kling-o3", label: "Kling O3" },
+                      { id: "minimax-h3", label: "MiniMax H3" },
+                    ]
+                ).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="hint">
+              {videoGenMode === "full"
+                ? "Venice genera un solo clip con Seedance / Kling / MiniMax (no collage de fotos)."
+                : videoGenMode === "scenes"
+                  ? "Venice anima cada toma y Shotstack las une en el reel final."
+                  : "Solo stills con efecto Ken Burns en Shotstack (sin generación de video AI)."}
+              {!veniceConfigured && videoGenMode !== "still"
+                ? " Aviso: VENICE_API_KEY no configurada en el servidor."
+                : ""}
+            </p>
+          </div>
         )}
       </section>
 
@@ -621,8 +729,29 @@ export default function App() {
               ))}
               <span className="hint" style={{ alignSelf: "center" }}>
                 Paleta detectada ({brandManual.palette_hex.length})
+                {brandManual.color_roles?.primary
+                  ? ` · primario ${brandManual.color_roles.primary}`
+                  : ""}
               </span>
             </div>
+          )}
+          {(brandManual?.font_names?.length > 0 ||
+            brandManual?.layout_hints?.length > 0 ||
+            brandManual?.suggested_archetype) && (
+            <p className="hint" style={{ margin: "0.35rem 0" }}>
+              {brandManual.font_names?.length > 0 && (
+                <>Tipografías: {brandManual.font_names.join(", ")}. </>
+              )}
+              {brandManual.logo_placements?.length > 0 && (
+                <>Logo: {brandManual.logo_placements.join(", ")}. </>
+              )}
+              {brandManual.suggested_archetype && (
+                <>Layout sugerido: <code>{brandManual.suggested_archetype}</code>. </>
+              )}
+              {brandManual.layout_hints?.length > 0 && (
+                <>Disposiciones: {brandManual.layout_hints.slice(0, 4).join(" · ")}</>
+              )}
+            </p>
           )}
           {brandManual?.logo_urls?.length > 0 && (
             <div className="brand-logos" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "0.4rem 0", alignItems: "center" }}>
@@ -796,6 +925,16 @@ export default function App() {
           {" "}Remarcar CTA en la imagen (solo si hay info importante que destacar; no es el estándar)
         </label>
 
+        <label style={{ display: "block", marginTop: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={interactive}
+            disabled={loading || uploading}
+            onChange={(e) => setInteractive(e.target.checked)}
+          />
+          {" "}Modo interactivo (los agentes se detienen a preguntarte en estrategia, copy y arte)
+        </label>
+
         <div className="actions">
           <button disabled={loading || uploading} onClick={() => createAndRun(false)}>
             {loading && contentFormat !== "reel" ? <span className="spinner"></span> : null}
@@ -810,6 +949,15 @@ export default function App() {
           Requiere aprobación humana activada por defecto (human-in-the-loop).
         </p>
       </section>
+
+      {/* Hilo de pensamiento de los agentes */}
+      <AgentThoughtThread
+        api={api}
+        traceId={traceId}
+        active={
+          loading || revisingRunId != null || RUN_IN_PROGRESS.includes(result?.status)
+        }
+      />
 
       {/* Resultado */}
       <section className="card">

@@ -36,6 +36,7 @@ def generate_image(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    font_seed: str | None = None,
 ) -> tuple[str, int, int]:
     """Return (image URL, width, height) for the given prompt."""
     from gateway.app.core.settings import get_settings
@@ -49,6 +50,7 @@ def generate_image(
         "logo_path": logo_path,
         "tagline": tagline,
         "brand_names": brand_names,
+        "font_seed": (font_seed or f"{layout_archetype}:{red_social}").strip(),
     }
 
     if provider == "stable_diffusion":
@@ -132,6 +134,7 @@ def _stable_diffusion(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    font_seed: str | None = None,
 ) -> str:
     """POST a txt2img de A1111/Forge, decodifica PNG, superpone texto y guarda en `/static/images/`."""
     import httpx
@@ -171,7 +174,7 @@ def _stable_diffusion(
                 overlay_subline,
                 overlay_cta,
                 layout_archetype=layout_archetype,
-                font_seed=red_social,
+                font_seed=font_seed or red_social,
                 content_format=content_format,
                 brand_archetype=brand_archetype,
                 preferred_font_paths=preferred_font_paths,
@@ -247,6 +250,7 @@ def _fal(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    font_seed: str | None = None,
 ) -> str:
     """Genera imagen con fal.ai (Flux pro u otros modelos) y la guarda en static/images/."""
     import os
@@ -301,7 +305,7 @@ def _fal(
                 overlay_subline,
                 overlay_cta,
                 layout_archetype=layout_archetype,
-                font_seed=red_social,
+                font_seed=font_seed or red_social,
                 content_format=content_format,
                 brand_archetype=brand_archetype,
                 preferred_font_paths=preferred_font_paths,
@@ -346,6 +350,7 @@ def _venice(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    font_seed: str | None = None,
 ) -> str:
     """Genera imagen con Venice.ai (/image/generate) y la guarda en static/images/."""
     from .user_assets import fit_image_to_spec
@@ -384,7 +389,7 @@ def _venice(
             overlay_subline,
             overlay_cta,
             layout_archetype=layout_archetype,
-            font_seed=red_social,
+            font_seed=font_seed or red_social,
             content_format=content_format,
             brand_archetype=brand_archetype,
             preferred_font_paths=preferred_font_paths,
@@ -489,6 +494,7 @@ def compose_from_user_asset(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    font_seed: str | None = None,
 ) -> tuple[str, int, int, str]:
     """
     Design-as-Code: foto del usuario como capa base + overlay Pillow.
@@ -531,7 +537,7 @@ def compose_from_user_asset(
             overlay_subline,
             overlay_cta,
             layout_archetype=layout_archetype,
-            font_seed=red_social,
+            font_seed=font_seed or red_social,
             content_format=content_format,
             brand_archetype=brand_archetype,
             preferred_font_paths=preferred_font_paths,

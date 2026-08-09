@@ -54,9 +54,10 @@ class DesignerAgent:
             tenant_id=tid,
             assets=assets if any(assets.values()) else None,
         )
-        # Con señales de marca, forzar pieza de campaña (logo / foto full-bleed / CTA)
+        # Con señales de marca: preferir arquetipo detectado en el manual; si no, campaña
         if cues.has_signal and not archetype_override:
-            archetype = get_archetype("brand_campaign_piece") or archetype
+            suggested = get_archetype(cues.suggested_archetype) if cues.suggested_archetype else None
+            archetype = suggested or get_archetype("brand_campaign_piece") or archetype
         archetype = apply_brand_to_archetype(archetype, cues)
         font_paths = resolve_brand_font_paths(cues.font_names, brand_text)
         brand_block = brand_priority_prompt_block(cues, brand_text)
@@ -97,6 +98,7 @@ class DesignerAgent:
             logo_path=logo_path,
             tagline=tagline,
             brand_names=brand_names or None,
+            font_seed=f"{archetype.id}:{brief.red_social}:{brief.tema}",
         )
 
         if user_asset_url and user_asset_url.strip():

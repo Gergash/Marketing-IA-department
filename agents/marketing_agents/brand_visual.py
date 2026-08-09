@@ -145,7 +145,7 @@ _WINDOWS_FONTS = Path("C:/Windows/Fonts")
 
 @dataclass
 class BrandVisualCues:
-    """Señales visuales del manual: colores, tipografías, logos, emociones y estilo."""
+    """Señales visuales del manual: colores, tipografías, logos, layout y estilo."""
 
     primary_hex: str | None = None
     secondary_hex: str | None = None
@@ -158,6 +158,9 @@ class BrandVisualCues:
     logo_urls: list[str] = field(default_factory=list)
     logo_paths: list[str] = field(default_factory=list)
     logo_mentions: bool = False
+    logo_placements: list[str] = field(default_factory=list)
+    layout_hints: list[str] = field(default_factory=list)
+    suggested_archetype: str | None = None
     has_signal: bool = False
 
 
@@ -260,14 +263,18 @@ def parse_brand_visual_cues(brand_text: str) -> BrandVisualCues:
 
 
 def merge_scanned_assets(cues: BrandVisualCues, assets: dict | None) -> BrandVisualCues:
-    """Fusiona paleta/logos del escaneo visual OCR+raster sobre cues de texto."""
+    """Fusiona paleta/logos/fuentes/layout del escaneo visual sobre cues de texto."""
     if not assets:
         return cues
     palette = [c.upper() if c.startswith("#") else c for c in (assets.get("palette_hex") or [])]
     logo_urls = list(assets.get("logo_urls") or [])
     logo_paths = list(assets.get("logo_paths") or [])
+    scan_fonts = list(assets.get("font_names") or [])
+    layout_hints = list(assets.get("layout_hints") or [])
+    logo_placements = list(assets.get("logo_placements") or [])
+    color_roles = dict(assets.get("color_roles") or {})
+    suggested = assets.get("suggested_archetype")
 
-    # Paleta escaneada primero (colores reales del PDF); hex/nombres del texto como respaldo
     text_palette = list(cues.palette_hex or [])
     merged_palette: list[str] = []
     for hx in palette + text_palette:
@@ -275,8 +282,13 @@ def merge_scanned_assets(cues: BrandVisualCues, assets: dict | None) -> BrandVis
         if hx and hx not in merged_palette:
             merged_palette.append(hx)
 
-    if palette:
-        # Escaneo visual manda: evita que "verde"/"azul" en prosa pisen el brand book
+    if color_roles.get("primary"):
+        primary = color_roles["primary"]
+        accent = color_roles.get("accent") or cues.accent_hex or primary
+        secondary = color_roles.get("secondary") or cues.secondary_hex or (
+            "#FFFFFF" if primary.upper() not in {"#FFFFFF", "#FFF"} else "#111111"
+        )
+    elif palette:
         primary = palette[0]
         accent = palette[1] if len(palette) > 1 else (cues.accent_hex or primary)
         secondary = palette[2] if len(palette) > 2 else (
@@ -294,15 +306,27 @@ def merge_scanned_assets(cues: BrandVisualCues, assets: dict | None) -> BrandVis
                 "#FFFFFF" if primary.upper() not in {"#FFFFFF", "#FFF"} else "#111111"
             )
 
-    has_signal = cues.has_signal or bool(merged_palette or logo_urls or logo_paths)
+    # Fuentes: escaneo PDF primero, luego texto OCR/manual
+    merged_fonts: list[str] = []
+    for name in scan_fonts + list(cues.font_names or []):
+        if name and name not in merged_fonts:
+            merged_fonts.append(name)
+
+    has_signal = cues.has_signal or bool(
+        merged_palette or logo_urls or logo_paths or merged_fonts or layout_hints
+    )
     return replace(
         cues,
         primary_hex=primary,
         secondary_hex=secondary,
         accent_hex=accent or primary,
         palette_hex=merged_palette[:8],
+        font_names=merged_fonts[:8],
         logo_urls=logo_urls,
         logo_paths=logo_paths,
+        logo_placements=logo_placements,
+        layout_hints=layout_hints,
+        suggested_archetype=suggested or cues.suggested_archetype,
         has_signal=has_signal,
     )
 
@@ -362,6 +386,15 @@ def brand_priority_prompt_block(cues: BrandVisualCues, brand_text: str = "") -> 
             f"Typography vibe inspired by: {', '.join(cues.font_names)} "
             "(no readable letters in the image)."
         )
+    if cues.logo_placements:
+        parts.append(
+            f"Brand logo placement habit from manual: {', '.join(cues.logo_placements)} "
+            "(leave matching clear space)."
+        )
+    if cues.layout_hints:
+        parts.append(f"Layout dispositions from brand book: {', '.join(cues.layout_hints)}.")
+    if cues.suggested_archetype:
+        parts.append(f"Prefer composition style aligned with: {cues.suggested_archetype}.")
     if cues.logo_paths or cues.logo_urls or cues.logo_mentions:
         parts.append(
             "Official brand logo will be composited in post — leave clean corner space; "
@@ -387,15 +420,19 @@ def brand_priority_prompt_block(cues: BrandVisualCues, brand_text: str = "") -> 
 
 def resolve_brand_font_paths(font_names: list[str], brand_text: str = "") -> list[str]:
     """
-    Mapea tipografías del manual a TTF.
+    Mapea tipografías del manual a TTF gruesos del pack / Windows.
 
-    Orden: pack OFL del proyecto (script/sans si el texto habla de caligrafía) →
-    Windows Fonts por nombre → pack como fallback.
+    Prioriza Bold/ExtraBold/Black. Nunca devuelve Regular/Light para body.
     """
-    from .overlay_text import pack_font_roles
+    from .overlay_text import (
+        _is_thin_filename,
+        list_font_families,
+        pack_font_roles,
+    )
 
     found: list[str] = []
     pack = pack_font_roles()
+    families = list_font_families()
     lower = (brand_text or "").lower()
     wants_script = any(
         k in lower
@@ -411,7 +448,11 @@ def resolve_brand_font_paths(font_names: list[str], brand_text: str = "") -> lis
         )
     )
     wants_sans = any(
-        k in lower for k in ("sans", "montserrat", "helvetica", "arial", "grotesk", "limpia")
+        k in lower
+        for k in ("sans", "montserrat", "helvetica", "arial", "grotesk", "limpia", "poppins")
+    )
+    wants_display = any(
+        k in lower for k in ("impact", "display", "bebas", "anton", "condensed", "oswald")
     )
 
     if pack:
@@ -423,7 +464,20 @@ def resolve_brand_font_paths(font_names: list[str], brand_text: str = "") -> lis
         if pack.tagline not in found:
             found.append(pack.tagline)
 
-    # Nombres explícitos del manual → Windows
+    if wants_display:
+        for fid in ("anton", "bebas", "archivo_black", "oswald"):
+            fam = next((f for f in families if f.id == fid), None)
+            if fam and fam.title not in found:
+                found.insert(0, fam.title)
+
+    # Variar: añadir 1–2 familias bold del catálogo
+    for fam in families:
+        if fam.style in {"sans", "display", "serif"} and fam.body not in found:
+            found.append(fam.body)
+        if len(found) >= 8:
+            break
+
+    # Nombres explícitos del manual → Windows (solo bold)
     if font_names and _WINDOWS_FONTS.is_dir():
         available = list(_WINDOWS_FONTS.glob("*.ttf")) + list(_WINDOWS_FONTS.glob("*.otf"))
         for name in font_names:
@@ -438,24 +492,24 @@ def resolve_brand_font_paths(font_names: list[str], brand_text: str = "") -> lis
                 if key in re.sub(r"[^a-z0-9]", "", p.stem.lower())
                 and any(b in p.stem.lower() for b in ("bd", "bold", "black", "heavy"))
             ]
-            regular_hits = [
-                p for p in available if key in re.sub(r"[^a-z0-9]", "", p.stem.lower())
-            ]
-            for hit in bold_hits + regular_hits:
+            for hit in bold_hits:
                 path = str(hit)
-                if path not in found:
+                if path not in found and not _is_thin_filename(path):
                     found.append(path)
-                if len(found) >= 6:
+                if len(found) >= 10:
                     break
 
-    # Dedup preservando orden
     out: list[str] = []
     for p in found:
-        if p and p not in out:
-            out.append(p)
+        if not p or p in out:
+            continue
+        if _is_thin_filename(p) and pack and p != pack.display:
+            # No colar Regular/Light salvo display script
+            continue
+        out.append(p)
     if not out and pack:
         return [pack.display, pack.body, pack.cta, pack.tagline]
-    return out[:6]
+    return out[:8]
 
 
 def extract_brand_name_candidates(brand_text: str, tema: str = "") -> list[str]:

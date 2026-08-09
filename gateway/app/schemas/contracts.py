@@ -68,6 +68,15 @@ class RunRequest(BaseModel):
     link_url: str | None = None
     # Si True, pinta el CTA como pastilla en la imagen (solo para remarcar info importante)
     cta_on_image: bool = False
+    # Identificador del hilo de pensamiento, generado por el cliente: /runs/sync no devuelve
+    # el run_id hasta terminar, así que el dashboard necesita una clave para seguir el run en vivo
+    trace_id: str | None = Field(default=None, max_length=64)
+    # Si True, los agentes se detienen en los checkpoints a esperar indicaciones del usuario
+    interactive: bool = False
+    # Reels: full = clip AI completo | scenes = unir tomas AI | still = stills+Shotstack
+    video_gen_mode: Literal["full", "scenes", "still"] | None = None
+    # Alias Venice: seedance-2.5 | seedance-2.0 | kling-o3 | kling-o3-pro | minimax-h3
+    venice_video_model: str | None = None
 
     @model_validator(mode="after")
     def _require_drive_folder_for_user_clip_reel(self) -> "RunRequest":
@@ -95,7 +104,7 @@ class UploadAssetResponse(BaseModel):
 
 
 class BrandManualResponse(BaseModel):
-    """Manual de marca PDF cargado, texto OCR y escaneo visual (paleta + logos)."""
+    """Manual de marca PDF cargado, texto OCR y escaneo visual completo."""
 
     id: str
     url: str
@@ -104,7 +113,12 @@ class BrandManualResponse(BaseModel):
     text_preview: str = ""
     extraction_method: str = ""
     palette_hex: list[str] = Field(default_factory=list)
+    color_roles: dict[str, str] = Field(default_factory=dict)
     logo_urls: list[str] = Field(default_factory=list)
+    logo_placements: list[str] = Field(default_factory=list)
+    font_names: list[str] = Field(default_factory=list)
+    layout_hints: list[str] = Field(default_factory=list)
+    suggested_archetype: str | None = None
     pages_scanned: int = 0
     embedded_images: int = 0
 
@@ -130,6 +144,16 @@ class ImageProvidersResponse(BaseModel):
     providers: list[dict[str, str]]
 
 
+class VideoOptionsResponse(BaseModel):
+    """Opciones de generación de video (Venice) expuestas al frontend."""
+
+    default_mode: str
+    default_model: str
+    modes: list[dict[str, str]]
+    models: list[dict[str, str]]
+    venice_configured: bool
+
+
 class RunResponse(BaseModel):
     """Respuesta inmediata tras sync o async: id de run, estado y resultado si aplica."""
 
@@ -148,6 +172,55 @@ class JobStatusResponse(BaseModel):
     approved_by: str | None = None
     result: dict | None = None
     content_format: str = "feed"
+
+
+class ThoughtEvent(BaseModel):
+    """Un latido del hilo de pensamiento: qué agente habla, en qué fase y con qué datos."""
+
+    id: str
+    trace_id: str
+    ts: str
+    agent: str
+    agent_label: str
+    # start | thinking | output | question | answer | error | end
+    phase: str
+    message: str
+    data: dict = Field(default_factory=dict)
+    checkpoint: str | None = None
+    options: list[dict] = Field(default_factory=list)
+
+
+class ThoughtsResponse(BaseModel):
+    """Ventana de eventos del hilo; `next_since` alimenta el siguiente poll."""
+
+    trace_id: str
+    events: list[ThoughtEvent] = Field(default_factory=list)
+    next_since: int = 0
+    interactive_supported: bool = True
+
+
+class ThoughtReplyRequest(BaseModel):
+    """Respuesta del usuario al agente que espera en un checkpoint."""
+
+    action: Literal["continue", "adjust", "cancel"] = "continue"
+    notes: str = ""
+    # Checkpoint al que responde; vacío = el que esté abierto en ese momento
+    checkpoint: str = ""
+
+    @model_validator(mode="after")
+    def _require_notes_for_adjust(self) -> "ThoughtReplyRequest":
+        if self.action == "adjust" and not self.notes.strip():
+            raise ValueError("action='adjust' requiere notes con lo que quieres cambiar")
+        return self
+
+
+class ThoughtReplyResponse(BaseModel):
+    """Confirmación de que la respuesta quedó encolada para el agente."""
+
+    trace_id: str
+    action: str
+    checkpoint: str = ""
+    accepted: bool = True
 
 
 class SocialPublishStatusResponse(BaseModel):
@@ -184,6 +257,9 @@ class ReviseRequest(BaseModel):
 
     notes: str = Field(min_length=3)
     revised_by: str = "human"
+    # Hilo de pensamiento de esta regeneración (nuevo, no el del run original)
+    trace_id: str | None = Field(default=None, max_length=64)
+    interactive: bool = False
 
     @model_validator(mode="after")
     def _reject_blank_notes(self) -> "ReviseRequest":

@@ -274,7 +274,7 @@ def to_shotstack_edit(timeline: Timeline) -> dict:
                             "style": "subtitle",
                             "color": "#ffffff",
                             "size": "small",
-                            "position": "bottom",
+                            "position": "center",
                         },
                         "start": cap.start_s,
                         "length": max(cap.end_s - cap.start_s, 0.1),

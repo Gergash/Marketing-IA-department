@@ -57,10 +57,13 @@ class Settings(BaseSettings):
     venice_image_style_preset: str = ""
     # Solo modelos resolution-tier (Nano Banana / GPT Image): 1K | 2K | 4K
     venice_image_resolution: str = "2K"
-    # Animación de escenas de Reel (still → MP4) vía /video/queue
-    # still = solo imagen (Ken Burns en Shotstack) | venice = image-to-video por escena
-    video_scene_provider: str = "still"
-    venice_video_model: str = "wan-2.5-preview-image-to-video"
+    # Animación / generación de video Venice
+    # video_gen_mode: full = un clip AI | scenes = unir tomas AI | still = stills+Ken Burns
+    video_gen_mode: str = "scenes"
+    # Compat legacy: still | venice (si venice y mode vacío → scenes)
+    video_scene_provider: str = "venice"
+    # Alias: seedance-2.5 | seedance-2.0 | kling-o3 | kling-o3-pro | minimax-h3
+    venice_video_model: str = "seedance-2.0"
     venice_video_duration: str = "5s"  # 5s | 10s
     venice_video_resolution: str = "720p"  # 480p | 720p | 1080p
 
@@ -124,6 +127,12 @@ class Settings(BaseSettings):
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8000/api/auth/callback/linkedin"
+    # Versión de la API versionada (/rest/*). LinkedIn la exige en cada request.
+    linkedin_api_version: str = "202401"
+    # Scopes a solicitar. Deben estar CONCEDIDOS en la pestaña Auth de la app o
+    # LinkedIn rechaza el consentimiento entero. Apps sin el producto OpenID usan
+    # "r_basicprofile w_member_social".
+    linkedin_scopes: str = "openid profile w_member_social"
 
     # OAuth 2.0 — Google Drive (fuente de clips de video del usuario)
     google_client_id: str = ""
@@ -138,6 +147,12 @@ class Settings(BaseSettings):
     api_key: str = ""
     # Slack Incoming Webhook para notificaciones human-in-the-loop
     slack_webhook_url: str = ""
+
+    # Hilo de pensamiento de los agentes (Marketing Studio)
+    thoughts_enabled: bool = True
+    thoughts_ttl_seconds: int = 7200
+    # Cuánto espera un agente en un checkpoint interactivo antes de seguir solo
+    thoughts_checkpoint_timeout_seconds: int = 180
 
     # Métricas Prometheus — False en dev (incompatibilidad con FastAPI >=0.115 en algunas versiones)
     # Activar en producción con PROMETHEUS_ENABLED=true

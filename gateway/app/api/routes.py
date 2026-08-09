@@ -9,6 +9,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.marketing_agents.thought_stream import (
+    RunCancelledByUser,
+    push_reply,
+    read_events,
+    supports_cross_process,
+)
 from gateway.app.core.auth import require_auth
 from gateway.app.core.settings import get_settings
 from gateway.app.db.session import get_db
@@ -31,6 +37,10 @@ from gateway.app.schemas.contracts import (
     RunRequest,
     RunResponse,
     SocialPublishStatusResponse,
+    ThoughtReplyRequest,
+    VideoOptionsResponse,
+    ThoughtReplyResponse,
+    ThoughtsResponse,
     UploadAssetResponse,
 )
 from gateway.app.services.pipeline_service import (
@@ -113,6 +123,37 @@ def image_providers(
     return ImageProvidersResponse(
         default_provider=s.image_provider,
         providers=providers,
+    )
+
+
+@router.get("/video/options", response_model=VideoOptionsResponse)
+def video_options(
+    tenant_id: str = Depends(require_auth),
+) -> VideoOptionsResponse:
+    """Modos y modelos Venice para Reels (sin secretos)."""
+    _ = tenant_id
+    from agents.marketing_agents.venice_video_models import VENICE_VIDEO_MODEL_OPTIONS
+
+    s = get_settings()
+    return VideoOptionsResponse(
+        default_mode=(s.video_gen_mode or "scenes").strip() or "scenes",
+        default_model=(s.venice_video_model or "seedance-2.0").strip() or "seedance-2.0",
+        modes=[
+            {
+                "id": "full",
+                "label": "Clip AI completo (Venice genera todo el video)",
+            },
+            {
+                "id": "scenes",
+                "label": "Unir tomas AI (Venice por escena + Shotstack)",
+            },
+            {
+                "id": "still",
+                "label": "Stills + Ken Burns (Shotstack, sin Venice video)",
+            },
+        ],
+        models=VENICE_VIDEO_MODEL_OPTIONS,
+        venice_configured=bool(s.venice_api_key.strip()),
     )
 
 
@@ -239,7 +280,12 @@ async def upload_brand_manual(
         text_preview=meta.get("text_preview") or "",
         extraction_method=meta.get("extraction_method") or "",
         palette_hex=list(meta.get("palette_hex") or []),
+        color_roles=dict(meta.get("color_roles") or {}),
         logo_urls=list(meta.get("logo_urls") or []),
+        logo_placements=list(meta.get("logo_placements") or []),
+        font_names=list(meta.get("font_names") or []),
+        layout_hints=list(meta.get("layout_hints") or []),
+        suggested_archetype=meta.get("suggested_archetype"),
         pages_scanned=int(meta.get("pages_scanned") or 0),
         embedded_images=int(meta.get("embedded_images") or 0),
     )
@@ -264,7 +310,12 @@ def get_brand_manual(
         text_preview=(text[:400] + ("…" if len(text) > 400 else "")) if text else "",
         extraction_method=meta.get("extraction_method") or "",
         palette_hex=list(meta.get("palette_hex") or []),
+        color_roles=dict(meta.get("color_roles") or {}),
         logo_urls=list(meta.get("logo_urls") or []),
+        logo_placements=list(meta.get("logo_placements") or []),
+        font_names=list(meta.get("font_names") or []),
+        layout_hints=list(meta.get("layout_hints") or []),
+        suggested_archetype=meta.get("suggested_archetype"),
         pages_scanned=int(meta.get("pages_scanned") or 0),
         embedded_images=int(meta.get("embedded_images") or 0),
     )
@@ -323,10 +374,12 @@ def list_briefs(
     )
 
 
-def _run_params(payload: RunRequest) -> dict:
+def _run_params(payload: RunRequest, *, interactive: bool | None = None) -> dict:
     """Configuración visual del run que una revisión posterior debe poder reproducir."""
     return {
         "publish": payload.publish,
+        "trace_id": payload.trace_id,
+        "interactive": payload.interactive if interactive is None else interactive,
         "image_provider": payload.image_provider,
         "archetype_override": payload.archetype_override,
         "user_asset_url": payload.user_asset_url,
@@ -336,6 +389,8 @@ def _run_params(payload: RunRequest) -> dict:
         "social_account_id": payload.social_account_id,
         "link_url": payload.link_url,
         "cta_on_image": payload.cta_on_image,
+        "video_gen_mode": payload.video_gen_mode,
+        "venice_video_model": payload.venice_video_model,
     }
 
 
@@ -378,6 +433,10 @@ def run_pipeline_sync(
             visual_instructions=payload.visual_instructions,
             drive_folder_id=payload.drive_folder_id,
         )
+    except RunCancelledByUser:
+        # Detener desde un checkpoint es decisión del usuario, no un fallo: el run ya
+        # quedó `rejected` en el servicio, así que se responde 200 en vez de 500.
+        return RunResponse(run_id=run.id, status="rejected")
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
         run.error_message = str(exc)
@@ -402,7 +461,9 @@ def run_pipeline_async(
         run_mode="async",
         idempotency_key=payload.idempotency_key,
         content_format=payload.content_format,
-        params=_run_params(payload),
+        # Sin Redis los eventos viven en la memoria de este proceso: el worker de Celery
+        # nunca vería las respuestas y se quedaría esperando hasta agotar el plazo.
+        params=_run_params(payload, interactive=payload.interactive and supports_cross_process()),
         social_account_id=payload.social_account_id,
     )
     is_video = payload.content_format in ("reel", "user_clip_reel")
@@ -506,7 +567,16 @@ def revise_run_endpoint(
     content_format = getattr(run, "content_format", "feed") or "feed"
     if content_format not in ("reel", "user_clip_reel"):
         try:
-            result = revise_run(db, run_id, notes=payload.notes, revised_by=payload.revised_by)
+            result = revise_run(
+                db,
+                run_id,
+                notes=payload.notes,
+                revised_by=payload.revised_by,
+                trace_id=payload.trace_id,
+                interactive=payload.interactive,
+            )
+        except RunCancelledByUser:
+            return RunResponse(run_id=run_id, status="rejected")
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         except Exception as exc:
@@ -523,7 +593,13 @@ def revise_run_endpoint(
     # Los formatos de video tardan minutos: se re-renderizan en la cola dedicada, igual que el run original.
     try:
         params = prepare_revision(
-            db, run_id, notes=payload.notes, revised_by=payload.revised_by, next_status="queued"
+            db,
+            run_id,
+            notes=payload.notes,
+            revised_by=payload.revised_by,
+            next_status="queued",
+            trace_id=payload.trace_id,
+            interactive=payload.interactive and supports_cross_process(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -604,6 +680,51 @@ def list_runs(
         )
         for run in runs
     ]
+
+
+@router.get("/thoughts/{trace_id}", response_model=ThoughtsResponse)
+def get_thoughts(
+    trace_id: str,
+    since: int = 0,
+    tenant_id: str = Depends(require_auth),
+) -> ThoughtsResponse:
+    """Eventos del hilo de pensamiento a partir de `since` (polling del dashboard).
+
+    `next_since` es el cursor para el siguiente poll; los eventos son inmutables y
+    solo se añaden al final, así que basta con el índice.
+    """
+    _ = tenant_id
+    events = read_events(trace_id, since)
+    return ThoughtsResponse(
+        trace_id=trace_id,
+        events=events,
+        next_since=max(since, 0) + len(events),
+        interactive_supported=supports_cross_process(),
+    )
+
+
+@router.post("/thoughts/{trace_id}/reply", response_model=ThoughtReplyResponse)
+def reply_to_thought(
+    trace_id: str,
+    payload: ThoughtReplyRequest,
+    tenant_id: str = Depends(require_auth),
+) -> ThoughtReplyResponse:
+    """Entrega la decisión del usuario al agente que espera en un checkpoint."""
+    _ = tenant_id
+    try:
+        push_reply(
+            trace_id,
+            action=payload.action,
+            notes=payload.notes,
+            checkpoint=payload.checkpoint,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ThoughtReplyResponse(
+        trace_id=trace_id,
+        action=payload.action,
+        checkpoint=payload.checkpoint,
+    )
 
 
 @router.post("/campaigns", response_model=CampaignScheduleResponse)

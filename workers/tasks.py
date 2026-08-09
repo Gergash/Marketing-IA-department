@@ -3,6 +3,7 @@
 import structlog
 from celery import Task
 
+from agents.marketing_agents.thought_stream import RunCancelledByUser
 from gateway.app.db.session import SessionLocal
 from gateway.app.services.pipeline_service import execute_pipeline
 from workers.celery_app import celery_app
@@ -36,20 +37,25 @@ def execute_pipeline_task(
     """Tarea asíncrona: abre sesión BD y ejecuta `execute_pipeline` con los mismos flags que en la API."""
     with SessionLocal() as db:
         logger.info("execute_pipeline_task.start", run_id=run_id)
-        result = execute_pipeline(
-            db,
-            run_id,
-            publish=publish,
-            requires_approval=requires_approval,
-            idempotency_key=idempotency_key,
-            image_provider=image_provider,
-            archetype_override=archetype_override,
-            user_asset_url=user_asset_url,
-            alter_image_with_ai=alter_image_with_ai,
-            visual_instructions=visual_instructions,
-            drive_folder_id=drive_folder_id,
-            revision_notes=revision_notes,
-        )
+        try:
+            result = execute_pipeline(
+                db,
+                run_id,
+                publish=publish,
+                requires_approval=requires_approval,
+                idempotency_key=idempotency_key,
+                image_provider=image_provider,
+                archetype_override=archetype_override,
+                user_asset_url=user_asset_url,
+                alter_image_with_ai=alter_image_with_ai,
+                visual_instructions=visual_instructions,
+                drive_folder_id=drive_folder_id,
+                revision_notes=revision_notes,
+            )
+        except RunCancelledByUser as exc:
+            # `autoretry_for=(Exception,)` reintentaria un run que el usuario detuvo a proposito.
+            logger.info("execute_pipeline_task.cancelled", run_id=run_id, checkpoint=exc.checkpoint)
+            return {"status": "rejected", "checkpoint": exc.checkpoint}
         logger.info("execute_pipeline_task.done", run_id=run_id)
         return result
 
@@ -77,20 +83,24 @@ def execute_video_pipeline_task(
     """
     with SessionLocal() as db:
         logger.info("execute_video_pipeline_task.start", run_id=run_id)
-        result = execute_pipeline(
-            db,
-            run_id,
-            publish=publish,
-            requires_approval=requires_approval,
-            idempotency_key=idempotency_key,
-            image_provider=image_provider,
-            archetype_override=archetype_override,
-            user_asset_url=user_asset_url,
-            alter_image_with_ai=alter_image_with_ai,
-            visual_instructions=visual_instructions,
-            drive_folder_id=drive_folder_id,
-            revision_notes=revision_notes,
-        )
+        try:
+            result = execute_pipeline(
+                db,
+                run_id,
+                publish=publish,
+                requires_approval=requires_approval,
+                idempotency_key=idempotency_key,
+                image_provider=image_provider,
+                archetype_override=archetype_override,
+                user_asset_url=user_asset_url,
+                alter_image_with_ai=alter_image_with_ai,
+                visual_instructions=visual_instructions,
+                drive_folder_id=drive_folder_id,
+                revision_notes=revision_notes,
+            )
+        except RunCancelledByUser as exc:
+            logger.info("execute_video_pipeline_task.cancelled", run_id=run_id, checkpoint=exc.checkpoint)
+            return {"status": "rejected", "checkpoint": exc.checkpoint}
         logger.info("execute_video_pipeline_task.done", run_id=run_id)
         return result
 

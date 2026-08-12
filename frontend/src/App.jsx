@@ -1,5 +1,31 @@
 import { useEffect, useState } from "react";
+import AdvisorChatBubble from "./AdvisorChatBubble";
+import AgentThoughtThread from "./AgentThoughtThread";
 import Integrations from "./Integrations";
+
+/** Traza del hilo de pensamiento: el cliente la genera porque /runs/sync no devuelve el run_id hasta terminar. */
+function newTraceId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replace(/-/g, "");
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const RUN_IN_PROGRESS = ["queued", "running", "publishing"];
+
+const FORM_LABELS = {
+  tema: "Descripción del producto o evento",
+  publico_objetivo: "Público objetivo",
+  red_social: "Red social",
+  objetivo: "Objetivo",
+  tono_marca: "Tono de marca",
+};
+
+const FORM_PLACEHOLDERS = {
+  tema: "Ej: Lanzamiento del coworking en Siete Vueltas / curso de IA para pymes…",
+  publico_objetivo: "Ej: dueños de negocio en la región…",
+  red_social: "instagram",
+  objetivo: "branding | leads | comunidad…",
+  tono_marca: "profesional y cercano",
+};
 
 // ---------------------------------------------------------------------------
 // API key — almacenada en sessionStorage (no persiste entre sesiones)
@@ -67,6 +93,21 @@ async function uploadAsset(file) {
   return res.json();
 }
 
+async function uploadBrandManual(file) {
+  const headers = {};
+  const key = getApiKey();
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${API_BASE}/briefs/upload-brand-manual`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Componente principal
 // ---------------------------------------------------------------------------
@@ -86,13 +127,24 @@ export default function App() {
   const [contentFormat, setContentFormat] = useState("feed");
   const [imageProvider, setImageProvider] = useState("fal");
   const [imageProviders, setImageProviders] = useState([]);
+  const [videoGenMode, setVideoGenMode] = useState("scenes");
+  const [veniceVideoModel, setVeniceVideoModel] = useState("seedance-2.0");
+  const [videoModes, setVideoModes] = useState([]);
+  const [videoModels, setVideoModels] = useState([]);
+  const [veniceConfigured, setVeniceConfigured] = useState(false);
   const [archetypeOverride, setArchetypeOverride] = useState("");
   const [archetypes, setArchetypes] = useState([]);
   const [userAssetUrl, setUserAssetUrl] = useState("");
   const [userAssetName, setUserAssetName] = useState("");
+  const [brandManual, setBrandManual] = useState(null);
+  const [uploadingBrand, setUploadingBrand] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [ctaOnImage, setCtaOnImage] = useState(false);
   const [alterImageWithAi, setAlterImageWithAi] = useState(false);
   const [visualInstructions, setVisualInstructions] = useState("");
+  const [traceId, setTraceId] = useState(null);
+  const [interactive, setInteractive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState(null);
@@ -138,6 +190,15 @@ export default function App() {
       (network || "").toLowerCase()
     ] || null);
 
+  const providerShortLabel = (provider) =>
+    ({ meta: "IG", linkedin: "LinkedIn", google: "Drive" }[provider] || provider);
+
+  /** Etiqueta legible: "Negocio 1 — IG", "Mi página — LinkedIn" */
+  const formatAccountLabel = (account) => {
+    const name = account.account_name || account.account_id || `Cuenta #${account.id}`;
+    return `${name} — ${providerShortLabel(account.provider)}`;
+  };
+
   const accountsForNetwork = socialAccounts.filter(
     (a) => a.provider === providerForNetwork(form.red_social)
   );
@@ -164,6 +225,30 @@ export default function App() {
       setImageProviders([
         { id: "stable_diffusion", label: "Stable Diffusion" },
         { id: "fal", label: "fal.ai (Flux)" },
+        { id: "venice", label: "Venice.ai" },
+      ]);
+    }
+  };
+
+  const loadVideoOptions = async () => {
+    try {
+      const data = await api("/video/options");
+      setVideoModes(Array.isArray(data.modes) ? data.modes : []);
+      setVideoModels(Array.isArray(data.models) ? data.models : []);
+      setVeniceConfigured(Boolean(data.venice_configured));
+      if (data.default_mode) setVideoGenMode(data.default_mode);
+      if (data.default_model) setVeniceVideoModel(data.default_model);
+    } catch {
+      setVideoModes([
+        { id: "full", label: "Clip AI completo (Venice)" },
+        { id: "scenes", label: "Unir tomas AI (Venice + Shotstack)" },
+        { id: "still", label: "Stills + Ken Burns" },
+      ]);
+      setVideoModels([
+        { id: "seedance-2.5", label: "Seedance 2.5" },
+        { id: "seedance-2.0", label: "Seedance 2.0" },
+        { id: "kling-o3", label: "Kling O3" },
+        { id: "minimax-h3", label: "MiniMax H3" },
       ]);
     }
   };
@@ -182,13 +267,59 @@ export default function App() {
     }
   };
 
+  const loadBrandManual = async () => {
+    try {
+      const data = await api("/briefs/brand-manual");
+      setBrandManual(data || null);
+    } catch {
+      setBrandManual(null);
+    }
+  };
+
   useEffect(() => {
     loadHistory();
     loadSocialStatus();
     loadSocialAccounts();
     loadImageProviders();
+    loadVideoOptions();
     loadArchetypes();
+    loadBrandManual();
   }, [apiKey]);
+
+  // Poll de runs async (reels): rellena Resultado cuando pasa a pending_approval con video_url
+  useEffect(() => {
+    const runId = result?.run_id;
+    const status = result?.status;
+    if (!runId) return undefined;
+    const done = ["pending_approval", "completed", "failed", "rejected", "deduplicated"];
+    if (done.includes(status) && result?.result) return undefined;
+    if (!["queued", "running", "publishing"].includes(status) && result?.result) return undefined;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const updated = await api(`/runs/${runId}`);
+        if (cancelled) return;
+        setResult({
+          run_id: updated.run_id,
+          status: updated.status,
+          result: updated.result,
+          error_message: updated.error_message,
+        });
+        if (done.includes(updated.status)) {
+          await loadHistory();
+        }
+      } catch {
+        /* ignore transient poll errors */
+      }
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [result?.run_id, result?.status]);
 
   const applyKey = () => {
     saveApiKey(keyInput.trim());
@@ -202,11 +333,24 @@ export default function App() {
     // y tardan minutos: no admiten /runs/sync (422).
     const isVideoFormat = contentFormat === "reel" || contentFormat === "user_clip_reel";
     const effectiveAsync = isVideoFormat ? true : asyncMode;
-    setLoading(true);
     setError(null);
+
+    // Con cuentas conectadas para la red del brief, hay que elegir una antes del POST
+    if (accountsForNetwork.length > 0 && !socialAccountId) {
+      setError(
+        `Elige la cuenta destino (${providerShortLabel(providerForNetwork(form.red_social)) || form.red_social}) antes de ejecutar el run.`
+      );
+      return;
+    }
+
+    const trace = newTraceId();
+    setTraceId(trace);
+    setLoading(true);
     try {
       const brief = await api("/briefs", "POST", form);
       const runReq = {
+        trace_id: trace,
+        interactive,
         brief_id: brief.id,
         publish: true,
         requires_approval: true,
@@ -220,7 +364,12 @@ export default function App() {
           ? { visual_instructions: visualInstructions.trim() }
           : {}),
         ...(contentFormat === "user_clip_reel" ? { drive_folder_id: driveFolderId.trim() } : {}),
+        ...(contentFormat === "reel"
+          ? { video_gen_mode: videoGenMode, venice_video_model: veniceVideoModel }
+          : {}),
         ...(socialAccountId ? { social_account_id: Number(socialAccountId) } : {}),
+        ...(linkUrl.trim() ? { link_url: linkUrl.trim() } : {}),
+        ...(ctaOnImage ? { cta_on_image: true } : {}),
       };
       const run = await api(effectiveAsync ? "/runs/async" : "/runs/sync", "POST", runReq);
       setResult({ run_id: run.run_id, status: run.status, result: run.result });
@@ -241,10 +390,23 @@ export default function App() {
     try {
       await api(`/runs/${runId}/approve`, "POST", { approved_by: "human" });
       const updated = await api(`/runs/${runId}`);
-      setResult({ run_id: updated.run_id, status: updated.status, result: updated.result });
+      setResult({
+        run_id: updated.run_id,
+        status: updated.status,
+        result: updated.result,
+        error_message: updated.error_message,
+      });
       await loadHistory();
     } catch (e) {
       setError(e.message);
+      try {
+        const updated = await api(`/runs/${runId}`);
+        if (updated?.error_message) {
+          setError(`${e.message}\n\n${updated.error_message}`);
+        }
+      } catch {
+        /* keep original */
+      }
     } finally {
       setApprovingRunId(null);
     }
@@ -282,6 +444,8 @@ export default function App() {
     }
     if (revisingRunId != null) return;
 
+    const trace = newTraceId();
+    setTraceId(trace);
     setRevisingRunId(runId);
     setError(null);
     setRevisionFeedback({ runId, ok: true, message: "Regenerando la pieza con tus notas…" });
@@ -289,6 +453,8 @@ export default function App() {
       const response = await api(`/runs/${runId}/revise`, "POST", {
         notes: trimmed,
         revised_by: "human",
+        trace_id: trace,
+        interactive,
       });
       // Los reels se re-renderizan en la cola video_render: el resultado no viene en la respuesta.
       if (response.status === "queued") {
@@ -373,32 +539,8 @@ export default function App() {
             <option value="user_clip_reel">Video con mis clips (Drive)</option>
           </select>
         </label>
-        <label>
-          Cuenta destino
-          <select
-            value={socialAccountId}
-            onChange={(e) => setSocialAccountId(e.target.value)}
-            disabled={accountsForNetwork.length === 0}
-          >
-            {accountsForNetwork.length === 0 ? (
-              <option value="">Sin cuentas conectadas para {form.red_social} — conecta en Integraciones</option>
-            ) : (
-              <>
-                <option value="">Automática (única cuenta del proveedor)</option>
-                {accountsForNetwork.map((a) => (
-                  <option key={a.id} value={String(a.id)}>
-                    {a.account_name || a.account_id} ({a.provider})
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
-        </label>
         <p className="hint">
-          El run se publicará en esta cuenta al aprobarlo. Conecta más cuentas del mismo proveedor
-          desde Integraciones.
-        </p>
-        <p className="hint">
+          La cuenta destino se elige en el brief (debajo), justo antes de Sync/Async.
           Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
           {(contentFormat === "reel" || contentFormat === "user_clip_reel") &&
             " Los reels son async-only: se envían siempre con \"Enviar Async\"."}
@@ -412,6 +554,63 @@ export default function App() {
               onChange={(e) => setDriveFolderId(e.target.value)}
             />
           </label>
+        )}
+        {contentFormat === "reel" && (
+          <div className="video-gen-block" style={{ marginTop: "0.75rem" }}>
+            <label>
+              Generación de video (Venice AI)
+              <select
+                value={videoGenMode}
+                disabled={loading}
+                onChange={(e) => setVideoGenMode(e.target.value)}
+              >
+                {(videoModes.length > 0
+                  ? videoModes
+                  : [
+                      { id: "full", label: "Clip AI completo" },
+                      { id: "scenes", label: "Unir tomas AI" },
+                      { id: "still", label: "Stills + Shotstack" },
+                    ]
+                ).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Modelo de video
+              <select
+                value={veniceVideoModel}
+                disabled={loading || videoGenMode === "still"}
+                onChange={(e) => setVeniceVideoModel(e.target.value)}
+              >
+                {(videoModels.length > 0
+                  ? videoModels
+                  : [
+                      { id: "seedance-2.5", label: "Seedance 2.5" },
+                      { id: "seedance-2.0", label: "Seedance 2.0" },
+                      { id: "kling-o3", label: "Kling O3" },
+                      { id: "minimax-h3", label: "MiniMax H3" },
+                    ]
+                ).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="hint">
+              {videoGenMode === "full"
+                ? "Venice genera un solo clip con Seedance / Kling / MiniMax (no collage de fotos)."
+                : videoGenMode === "scenes"
+                  ? "Venice anima cada toma y Shotstack las une en el reel final."
+                  : "Solo stills con efecto Ken Burns en Shotstack (sin generación de video AI)."}
+              {!veniceConfigured && videoGenMode !== "still"
+                ? " Aviso: VENICE_API_KEY no configurada en el servidor."
+                : ""}
+            </p>
+          </div>
         )}
       </section>
 
@@ -442,7 +641,9 @@ export default function App() {
           <p className="hint">
             {imageProvider === "fal"
               ? "Flux Pro vía API en la nube (requiere FAL_API_KEY en el servidor)."
-              : "Generación local con Automatic1111/Forge en :7860."}
+              : imageProvider === "venice"
+                ? "Venice.ai: modelo en VENICE_IMAGE_MODEL (venice-sd35 o nano-banana-pro). Reinicia API/Celery si cambias .env."
+                : "Generación local con Automatic1111/Forge en :7860."}
           </p>
         </div>
         <div className="archetype-block">
@@ -461,6 +662,124 @@ export default function App() {
           </label>
           <p className="hint">
             Fuerza un arquetipo o deja que el agente lo seleccione según el objetivo del brief.
+          </p>
+        </div>
+
+        <div className="user-asset-block">
+          <span className="field-label">Manual de marca (PDF)</span>
+          <label>
+            Importar PDF de identidad / brand book
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={loading || uploadingBrand}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setError(null);
+                setUploadingBrand(true);
+                try {
+                  const up = await uploadBrandManual(file);
+                  setBrandManual(up);
+                } catch (err) {
+                  setError(err.message);
+                } finally {
+                  setUploadingBrand(false);
+                  e.target.value = "";
+                }
+              }}
+            />
+            {uploadingBrand && <span className="spinner spinner-dark" style={{ marginLeft: "0.5rem" }}></span>}
+          </label>
+          {brandManual && (
+            <p className="hint">
+              Activo: <code>{brandManual.original_filename}</code>
+              {" "}({brandManual.char_count} caracteres extraídos
+              {brandManual.extraction_method ? ` · ${brandManual.extraction_method}` : ""})
+              {" "}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await api("/briefs/brand-manual", "DELETE");
+                    setBrandManual(null);
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                Quitar
+              </button>
+            </p>
+          )}
+          {brandManual?.palette_hex?.length > 0 && (
+            <div className="brand-palette" style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", margin: "0.4rem 0" }}>
+              {brandManual.palette_hex.map((hx) => (
+                <span
+                  key={hx}
+                  title={hx}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 4,
+                    background: hx,
+                    border: "1px solid rgba(0,0,0,0.15)",
+                  }}
+                />
+              ))}
+              <span className="hint" style={{ alignSelf: "center" }}>
+                Paleta detectada ({brandManual.palette_hex.length})
+                {brandManual.color_roles?.primary
+                  ? ` · primario ${brandManual.color_roles.primary}`
+                  : ""}
+              </span>
+            </div>
+          )}
+          {(brandManual?.font_names?.length > 0 ||
+            brandManual?.layout_hints?.length > 0 ||
+            brandManual?.suggested_archetype) && (
+            <p className="hint" style={{ margin: "0.35rem 0" }}>
+              {brandManual.font_names?.length > 0 && (
+                <>Tipografías: {brandManual.font_names.join(", ")}. </>
+              )}
+              {brandManual.logo_placements?.length > 0 && (
+                <>Logo: {brandManual.logo_placements.join(", ")}. </>
+              )}
+              {brandManual.suggested_archetype && (
+                <>Layout sugerido: <code>{brandManual.suggested_archetype}</code>. </>
+              )}
+              {brandManual.layout_hints?.length > 0 && (
+                <>Disposiciones: {brandManual.layout_hints.slice(0, 4).join(" · ")}</>
+              )}
+            </p>
+          )}
+          {brandManual?.logo_urls?.length > 0 && (
+            <div className="brand-logos" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "0.4rem 0", alignItems: "center" }}>
+              {brandManual.logo_urls.map((url) => (
+                <img
+                  key={url}
+                  src={url}
+                  alt="Logo del manual"
+                  style={{
+                    maxHeight: 48,
+                    maxWidth: 120,
+                    objectFit: "contain",
+                    background: "#fff",
+                    border: "1px solid rgba(0,0,0,0.1)",
+                    borderRadius: 4,
+                    padding: 4,
+                  }}
+                />
+              ))}
+              <span className="hint">Logos reconocidos ({brandManual.logo_urls.length})</span>
+            </div>
+          )}
+          {brandManual?.text_preview && (
+            <p className="hint brand-preview">{brandManual.text_preview}</p>
+          )}
+          <p className="hint">
+            Escaneo minucioso del PDF: tipografías y texto (pypdf/PaddleOCR), paleta de color
+            de las páginas y logos embebidos/recortados. Todo manda en diseño con prioridad máxima.
           </p>
         </div>
 
@@ -528,13 +847,94 @@ export default function App() {
 
         {Object.keys(form).map((key) => (
           <label key={key}>
-            {key}
-            <input
-              value={form[key]}
-              onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
-            />
+            {FORM_LABELS[key] || key}
+            {key === "tema" ? (
+              <textarea
+                rows={3}
+                placeholder={FORM_PLACEHOLDERS[key] || ""}
+                value={form[key]}
+                onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
+              />
+            ) : (
+              <input
+                placeholder={FORM_PLACEHOLDERS[key] || ""}
+                value={form[key]}
+                onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
+              />
+            )}
           </label>
         ))}
+
+        <label>
+          Cuenta destino
+          <select
+            value={socialAccountId}
+            onChange={(e) => setSocialAccountId(e.target.value)}
+            disabled={loading || uploading || accountsForNetwork.length === 0}
+            required={accountsForNetwork.length > 0}
+          >
+            {accountsForNetwork.length === 0 ? (
+              <option value="">
+                Sin cuentas para {form.red_social} — conecta en Integraciones
+              </option>
+            ) : (
+              <>
+                <option value="">
+                  {accountsForNetwork.length === 1
+                    ? "Elige la cuenta…"
+                    : `Elige a cuál de las ${accountsForNetwork.length} cuentas publicar…`}
+                </option>
+                {accountsForNetwork.map((a) => (
+                  <option key={a.id} value={String(a.id)}>
+                    {formatAccountLabel(a)}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+        </label>
+        <p className="hint">
+          Filtrado por <code>red_social</code> del brief (Instagram/Facebook → Meta/IG,
+          LinkedIn → LinkedIn). Al aprobar, se publica en esta cuenta.
+          {(() => {
+            const selected = accountsForNetwork.find((a) => String(a.id) === socialAccountId);
+            return selected ? ` Seleccionada: ${formatAccountLabel(selected)}.` : "";
+          })()}
+        </p>
+
+        <label>
+          Enlace en la descripción (opcional)
+          <input
+            type="url"
+            placeholder="https://… (se agrega al caption junto con hashtags)"
+            value={linkUrl}
+            disabled={loading || uploading}
+            onChange={(e) => setLinkUrl(e.target.value)}
+          />
+        </label>
+        <p className="hint">
+          Links y hashtags van en la descripción del post, no como botón en la imagen.
+        </p>
+        <label style={{ display: "block", marginTop: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={ctaOnImage}
+            disabled={loading || uploading}
+            onChange={(e) => setCtaOnImage(e.target.checked)}
+          />
+          {" "}Remarcar CTA en la imagen (solo si hay info importante que destacar; no es el estándar)
+        </label>
+
+        <label style={{ display: "block", marginTop: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={interactive}
+            disabled={loading || uploading}
+            onChange={(e) => setInteractive(e.target.checked)}
+          />
+          {" "}Modo interactivo (los agentes se detienen a preguntarte en estrategia, copy y arte)
+        </label>
+
         <div className="actions">
           <button disabled={loading || uploading} onClick={() => createAndRun(false)}>
             {loading && contentFormat !== "reel" ? <span className="spinner"></span> : null}
@@ -549,6 +949,15 @@ export default function App() {
           Requiere aprobación humana activada por defecto (human-in-the-loop).
         </p>
       </section>
+
+      {/* Hilo de pensamiento de los agentes */}
+      <AgentThoughtThread
+        api={api}
+        traceId={traceId}
+        active={
+          loading || revisingRunId != null || RUN_IN_PROGRESS.includes(result?.status)
+        }
+      />
 
       {/* Resultado */}
       <section className="card">
@@ -664,6 +1073,27 @@ export default function App() {
               )}
               {item.status === "pending_approval" && (
                 <div style={{ marginTop: "0.5rem", marginLeft: 0 }}>
+                  {item.result?.design?.video_url && (
+                    <div style={{ marginBottom: "0.75rem" }}>
+                      <p className="hint" style={{ marginBottom: "0.35rem" }}>
+                        Vista previa del reel (revisa antes de aprobar):
+                      </p>
+                      <video
+                        controls
+                        src={resolveImageUrl(item.result.design.video_url)}
+                        style={{ maxWidth: "320px", width: "100%", borderRadius: "6px", border: "1px solid #333" }}
+                      />
+                    </div>
+                  )}
+                  {item.result?.design?.image_url && !item.result?.design?.video_url && (
+                    <div style={{ marginBottom: "0.75rem" }}>
+                      <img
+                        src={resolveImageUrl(item.result.design.image_url)}
+                        alt={`Preview run ${item.run_id}`}
+                        style={{ maxWidth: "240px", borderRadius: "6px", border: "1px solid #333" }}
+                      />
+                    </div>
+                  )}
                   <span>
                     <button
                       disabled={approvingRunId != null}
@@ -715,6 +1145,18 @@ export default function App() {
           ))}
         </ul>
       </section>
+
+      <AdvisorChatBubble
+        api={api}
+        briefContext={{
+          tema: form.tema,
+          publico_objetivo: form.publico_objetivo,
+          red_social: form.red_social,
+          objetivo: form.objetivo,
+          tono_marca: form.tono_marca,
+          content_format: contentFormat,
+        }}
+      />
     </main>
   );
 }

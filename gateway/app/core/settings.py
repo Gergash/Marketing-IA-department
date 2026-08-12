@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Timeout de la llamada al LLM; debe tolerar la carga inicial del modelo (~5GB)
     llm_timeout_seconds: int = 300
 
-    # Image generation — provider: stable_diffusion | comfyui | fal | openai | canva | mock
+    # Image generation — provider: stable_diffusion | comfyui | fal | venice | openai | canva | mock
     image_provider: str = "stable_diffusion"
     stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
     # Nombre exacto del checkpoint en Automatic1111 (como en el desplegable), p. ej. archivo .safetensors
@@ -48,6 +48,33 @@ class Settings(BaseSettings):
     # Modelo img2img cuando el usuario sube foto y pide alteración con IA
     fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
     fal_img2img_strength: float = 0.72
+    # Venice.ai — IMAGE_PROVIDER=venice | VIDEO_SCENE_PROVIDER=venice
+    # Key: https://venice.ai/token — base real: https://api.venice.ai/api/v1
+    venice_api_key: str = ""
+    venice_api_base: str = "https://api.venice.ai/api/v1"
+    # Imagen: venice-sd35 (pixel ≤1280) | nano-banana-pro / nano-banana-2 (aspect+resolution)
+    venice_image_model: str = "venice-sd35"
+    venice_image_style_preset: str = ""
+    # Solo modelos resolution-tier (Nano Banana / GPT Image): 1K | 2K | 4K
+    venice_image_resolution: str = "2K"
+    # Animación / generación de video Venice
+    # video_gen_mode: full = un clip AI | scenes = unir tomas AI | still = stills+Ken Burns
+    video_gen_mode: str = "scenes"
+    # Compat legacy: still | venice (si venice y mode vacío → scenes)
+    video_scene_provider: str = "venice"
+    # Alias: seedance-2.5 | seedance-2.0 | kling-o3 | kling-o3-pro | minimax-h3
+    venice_video_model: str = "seedance-2.0"
+    venice_video_duration: str = "5s"  # 5s | 10s
+    venice_video_resolution: str = "720p"  # 480p | 720p | 1080p
+
+    # OCR local para manuales de marca escaneados — provider: none | paddle
+    # Flujo: pypdf primero; si hay poco texto → PaddleOCR (GPU/CPU)
+    ocr_provider: str = "paddle"
+    ocr_lang: str = "es"
+    ocr_use_gpu: bool = True
+    ocr_min_text_chars: int = 40
+    ocr_max_pages: int = 40
+    ocr_dpi: int = 200
 
     # Voiceover generation — provider: elevenlabs | openai | fal | mock
     voice_provider: str = "elevenlabs"
@@ -100,6 +127,12 @@ class Settings(BaseSettings):
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8000/api/auth/callback/linkedin"
+    # Versión de la API versionada (/rest/*). LinkedIn la exige en cada request.
+    linkedin_api_version: str = "202401"
+    # Scopes a solicitar. Deben estar CONCEDIDOS en la pestaña Auth de la app o
+    # LinkedIn rechaza el consentimiento entero. Apps sin el producto OpenID usan
+    # "r_basicprofile w_member_social".
+    linkedin_scopes: str = "openid profile w_member_social"
 
     # OAuth 2.0 — Google Drive (fuente de clips de video del usuario)
     google_client_id: str = ""
@@ -114,6 +147,12 @@ class Settings(BaseSettings):
     api_key: str = ""
     # Slack Incoming Webhook para notificaciones human-in-the-loop
     slack_webhook_url: str = ""
+
+    # Hilo de pensamiento de los agentes (Marketing Studio)
+    thoughts_enabled: bool = True
+    thoughts_ttl_seconds: int = 7200
+    # Cuánto espera un agente en un checkpoint interactivo antes de seguir solo
+    thoughts_checkpoint_timeout_seconds: int = 180
 
     # Métricas Prometheus — False en dev (incompatibilidad con FastAPI >=0.115 en algunas versiones)
     # Activar en producción con PROMETHEUS_ENABLED=true

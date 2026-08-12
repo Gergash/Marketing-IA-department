@@ -2,6 +2,7 @@
 
 import structlog
 
+from .brand_manual import brand_prompt_block, brand_system_addendum
 from .knowledge import inbound_system_addendum
 from .llm import get_llm
 from .schemas import CopyOutput, StrategyOutput
@@ -15,17 +16,20 @@ the intended community and moves Entretener → Informacion → Conexion.
 
 Return ONLY valid JSON with exactly these fields:
 {
-  "copy_final": "<complete post text integrating hook and message; platform-appropriate length>",
+  "copy_final": "<complete post CAPTION/description text; NO hashtag block at the end (hashtags go in the hashtags array); platform-appropriate length>",
   "headline_for_image": "<1-2 SHORT complete sentences for image overlay, max 100 chars, perfect spelling>",
   "subline_for_image": "<optional supporting line for overlay, max 80 chars, complete sentence or empty string>",
-  "hashtags":   ["<all hashtags to append including # prefix>"],
-  "cta":        "<short call-to-action for button, max 45 chars>"
+  "hashtags":   ["<3-5 hashtags with # prefix — ALWAYS required; they are appended to the caption at publish time>"],
+  "cta":        "<short textual call-to-action phrase for the caption, max 45 chars — NOT an on-image button>"
 }
 
 Rules:
 - Write in the same language as the strategy (infer from hook/hashtags).
 - headline_for_image and subline_for_image MUST use correct spelling and grammar; never cut words mid-syllable.
 - headline_for_image is what appears ON the image — keep it punchy, not the full post.
+- Do NOT design for an on-image CTA button. The yellow/pill button is NOT standard; CTA lives in the caption text.
+- Links/URLs must NOT be invented; if a link is needed it will be attached separately to the caption.
+- ALWAYS return 3–5 relevant hashtags in the hashtags array (with #). Never return an empty hashtags list.
 - LinkedIn: up to 1300 chars for copy_final, paragraph breaks.
 - Instagram / Facebook: up to 2200 chars for copy_final, line breaks + emojis OK.
 - X/Twitter: copy_final 280 chars max.
@@ -43,6 +47,7 @@ class CopywriterAgent:
         strategy: StrategyOutput,
         *,
         qa_feedback: list[str] | None = None,
+        brand_context: str = "",
     ) -> CopyOutput:
         """Produce `CopyOutput` vía LLM configurado o `_stub` si no hay LLM o falla la llamada."""
         llm = get_llm()
@@ -55,6 +60,7 @@ class CopywriterAgent:
             f"- Core message: {strategy.mensaje_base}\n"
             f"- Suggested hashtags: {', '.join(strategy.hashtags)}\n"
             f"- Structure copy_final as: Entretener → Informacion → Conexion"
+            + brand_prompt_block(brand_context)
         )
         if qa_feedback:
             prompt += (
@@ -62,8 +68,9 @@ class CopywriterAgent:
                 "Revise the copy to fully address every point below (same JSON output shape):\n"
                 + "\n".join(f"- {r}" for r in qa_feedback)
             )
+        system = _SYSTEM + brand_system_addendum(brand_context)
         try:
-            data = llm.complete_json(_SYSTEM, prompt)
+            data = llm.complete_json(system, prompt)
             out = CopyOutput(**data)
             return self._ensure_overlay_fields(out, strategy)
         except Exception as exc:
@@ -71,7 +78,8 @@ class CopywriterAgent:
             return self._stub(strategy, qa_feedback=qa_feedback)
 
     def _ensure_overlay_fields(self, out: CopyOutput, strategy: StrategyOutput) -> CopyOutput:
-        """Rellena headline/subline de overlay si el LLM no los devolvió."""
+        """Rellena headline/subline de overlay y garantiza hashtags para la descripción."""
+        from .caption import ensure_hashtags
         from .overlay_text import truncate_at_sentence
 
         if not out.headline_for_image.strip():
@@ -79,6 +87,7 @@ class CopywriterAgent:
         if not out.subline_for_image.strip() and strategy.mensaje_base:
             out.subline_for_image = truncate_at_sentence(strategy.mensaje_base, 80)
         out.cta = truncate_at_sentence(out.cta, 45)
+        out.hashtags = ensure_hashtags(out.hashtags, fallback=strategy.hashtags)
         return out
 
     def _stub(self, strategy: StrategyOutput, *, qa_feedback: list[str] | None = None) -> CopyOutput:

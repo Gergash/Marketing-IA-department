@@ -152,8 +152,24 @@ def _mock(
 
 
 # ---------------------------------------------------------------------------
-# LinkedIn UGC Posts API — publicación con imagen vía registerUpload
+# LinkedIn — API versionada: /rest/images (initializeUpload) + /rest/posts
+# Docs: https://learn.microsoft.com/linkedin/marketing/community-management/shares/images-api
+# Reemplaza a /v2/assets?action=registerUpload + /v2/ugcPosts (deprecados).
 # ---------------------------------------------------------------------------
+
+_LINKEDIN_REST_BASE = "https://api.linkedin.com/rest"
+
+
+def _linkedin_headers(token: str) -> dict:
+    """Headers obligatorios de la API versionada de LinkedIn."""
+    from gateway.app.core.settings import get_settings
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "LinkedIn-Version": get_settings().linkedin_api_version,
+        "X-Restli-Protocol-Version": "2.0.0",
+    }
+
 
 def _linkedin(
     copy_text: str,
@@ -162,88 +178,65 @@ def _linkedin(
     person_urn: str,
     content_format: str,
 ) -> dict:
-    """Publica en LinkedIn con imagen vía UGC Posts API (registerUpload → PUT → ugcPosts)."""
+    """Publica en LinkedIn con imagen: initializeUpload → PUT binario → /rest/posts."""
     import httpx
 
     if not person_urn:
         person_urn = _linkedin_fetch_urn(token)
 
-    headers_auth = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0",
-    }
+    headers = _linkedin_headers(token)
 
     with httpx.Client(timeout=60) as client:
-        # 1. Descargar imagen (localhost es accesible desde el mismo proceso)
+        # 1. Descargar la imagen (el proceso la sirve o la alcanza por PUBLIC_IMAGE_BASE_URL)
         img_resp = client.get(image_url)
         img_resp.raise_for_status()
         image_bytes = img_resp.content
         content_type = img_resp.headers.get("content-type", "image/jpeg")
 
-        # 2. Registrar upload en LinkedIn
-        register_body = {
-            "registerUploadRequest": {
-                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
-                "owner": person_urn,
-                "serviceRelationships": [
-                    {
-                        "relationshipType": "OWNER",
-                        "identifier": "urn:li:userGeneratedContent",
-                    }
-                ],
-            }
-        }
-        r_register = client.post(
-            "https://api.linkedin.com/v2/assets?action=registerUpload",
-            json=register_body,
-            headers=headers_auth,
+        # 2. Registrar el upload y obtener URL firmada + URN del asset
+        r_init = client.post(
+            f"{_LINKEDIN_REST_BASE}/images?action=initializeUpload",
+            json={"initializeUploadRequest": {"owner": person_urn}},
+            headers=headers,
         )
-        r_register.raise_for_status()
-        value = r_register.json().get("value", {})
-        upload_mechanism = value.get("uploadMechanism", {}).get(
-            "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest", {}
+        _raise_linkedin_error(r_init, "initializeUpload")
+        value = r_init.json().get("value", {})
+        upload_url = value.get("uploadUrl", "")
+        image_urn = value.get("image", "")
+        if not upload_url or not image_urn:
+            raise ValueError(f"LinkedIn: initializeUpload sin uploadUrl o image URN — {r_init.text[:300]}")
+
+        # 3. Subir los bytes al endpoint firmado
+        r_upload = client.put(
+            upload_url,
+            content=image_bytes,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": content_type},
         )
-        upload_url = upload_mechanism.get("uploadUrl", "")
-        asset_urn = value.get("asset", "")
-        if not upload_url or not asset_urn:
-            raise ValueError("LinkedIn: registerUpload no devolvió uploadUrl o asset")
+        _raise_linkedin_error(r_upload, "upload binario")
 
-        # 3. Subir imagen binaria
-        upload_headers = {k: v for k, v in upload_mechanism.get("headers", {}).items()}
-        upload_headers["Authorization"] = f"Bearer {token}"
-        upload_headers["Content-Type"] = content_type
-        r_upload = client.put(upload_url, content=image_bytes, headers=upload_headers)
-        r_upload.raise_for_status()
-
-        # 4. Crear el UGC post con imagen
+        # 4. Crear el post referenciando el asset
         post_body = {
             "author": person_urn,
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": copy_text[:3000]},
-                    "shareMediaCategory": "IMAGE",
-                    "media": [
-                        {
-                            "status": "READY",
-                            "description": {"text": "Imagen generada por Marketing DEPA IA"},
-                            "media": asset_urn,
-                            "title": {"text": ""},
-                        }
-                    ],
-                }
+            "commentary": copy_text[:3000],
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
             },
-            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+            "content": {"media": {"id": image_urn, "altText": "Imagen generada por Marketing DEPA IA"}},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
         }
-        r_post = client.post(
-            "https://api.linkedin.com/v2/ugcPosts",
-            json=post_body,
-            headers=headers_auth,
-        )
-        r_post.raise_for_status()
-        post_id = r_post.headers.get("x-restli-id", r_post.json().get("id", "unknown"))
-        logger.info("linkedin.published_with_image", post_id=post_id, asset=asset_urn)
+        r_post = client.post(f"{_LINKEDIN_REST_BASE}/posts", json=post_body, headers=headers)
+        _raise_linkedin_error(r_post, "crear post")
+
+        # El URN del share llega en el header; el body viene vacío en 201.
+        post_id = r_post.headers.get("x-restli-id", "")
+        if not post_id:
+            post_id = str((r_post.json() or {}).get("id", "unknown")) if r_post.content else "unknown"
+
+        logger.info("linkedin.published_with_image", post_id=post_id, asset=image_urn)
         return {
             "status": "published",
             "publication_url": f"https://www.linkedin.com/feed/update/{post_id}/",
@@ -252,13 +245,28 @@ def _linkedin(
         }
 
 
+def _raise_linkedin_error(resp, step: str) -> None:
+    """Falla con el cuerpo de LinkedIn incluido: sus errores traen el motivo real del rechazo."""
+    if resp.status_code < 400:
+        return
+    logger.warning("linkedin.step_failed", step=step, status=resp.status_code, body=resp.text[:500])
+    raise ValueError(f"LinkedIn {step} HTTP {resp.status_code}: {resp.text[:300]}")
+
+
 def _linkedin_fetch_urn(token: str) -> str:
-    """Obtiene el URN `urn:li:person:{id}` del miembro autenticado para usar como autor del post."""
+    """Obtiene el URN del miembro autenticado vía OpenID userinfo (fallback /v2/me)."""
     import httpx
     with httpx.Client(timeout=10) as client:
+        # /v2/me exige r_liteprofile, que ya no pedimos; userinfo va con el scope `profile`.
         r = client.get(
+            "https://api.linkedin.com/v2/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.is_success and r.json().get("sub"):
+            return f"urn:li:person:{r.json()['sub']}"
+        r_me = client.get(
             "https://api.linkedin.com/v2/me",
             headers={"Authorization": f"Bearer {token}"},
         )
-        r.raise_for_status()
-        return f"urn:li:person:{r.json()['id']}"
+        r_me.raise_for_status()
+        return f"urn:li:person:{r_me.json()['id']}"

@@ -23,10 +23,26 @@ async function fetchAccounts(apiKey) {
   return apiFetch("/auth/accounts", apiKey);
 }
 
+function TokenStatus({ account }) {
+  const { is_expired, expires_soon, expires_in_days, expires_at } = account;
+  if (is_expired) {
+    return <span style={{ color: "#e55", fontWeight: "bold" }}>Caducado — reconecta</span>;
+  }
+  if (expires_soon) {
+    return <span style={{ color: "#e9a13b" }} title={expires_at}>Caduca en {expires_in_days} d</span>;
+  }
+  if (expires_at) {
+    return <span style={{ color: "#888" }} title={expires_at}>{expires_in_days} d</span>;
+  }
+  // Meta System User y tokens sin expires_in declarado.
+  return <span style={{ color: "#888" }}>—</span>;
+}
+
 export default function Integrations({ apiKey, onAccountsChanged }) {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -49,8 +65,10 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
     const oauth = params.get("oauth");
     if (oauth === "success") {
       setError(null);
+      setSuccessMsg(`Cuenta ${params.get("provider") || ""} conectada correctamente.`);
       load();
     } else if (oauth === "error") {
+      setSuccessMsg(null);
       setError(params.get("message") || "Error al conectar la red social");
     }
     if (oauth) {
@@ -85,6 +103,7 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
       </p>
 
       {error && <p style={{ color: "red", fontSize: "0.85rem" }}>{error}</p>}
+      {successMsg && <p style={{ color: "#3c3", fontSize: "0.85rem" }}>{successMsg}</p>}
 
       <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         <button
@@ -130,6 +149,7 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
               <th style={{ padding: "4px 8px" }}>Proveedor</th>
               <th style={{ padding: "4px 8px" }}>Account ID</th>
               <th style={{ padding: "4px 8px" }}>Actualizado</th>
+              <th style={{ padding: "4px 8px" }}>Token</th>
               <th style={{ padding: "4px 8px" }}></th>
             </tr>
           </thead>
@@ -149,6 +169,7 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
                 <td style={{ padding: "4px 8px" }}><code>{c.provider}</code></td>
                 <td style={{ padding: "4px 8px" }}><code>{c.account_id}</code></td>
                 <td style={{ padding: "4px 8px", color: "#888" }}>{new Date(c.updated_at).toLocaleString()}</td>
+                <td style={{ padding: "4px 8px" }}><TokenStatus account={c} /></td>
                 <td style={{ padding: "4px 8px" }}>
                   <button
                     onClick={() => handleDisconnect(c)}

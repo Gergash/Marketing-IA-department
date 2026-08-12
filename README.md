@@ -4,12 +4,13 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 
 ## Capacidades
 
-- Generación automática de diseños gráficos
-- Creación programática de videos
-- Redacción de guiones y contenido optimizado
-- Publicación y respuesta automática en redes sociales
-- Integración de herramientas mediante MCP (Model Context Protocol)
-- Orquestación de agentes especializados (copywriter, diseñador, analista, community manager)
+- Generación de piezas gráficas (fal.ai / Venice.ai / SD) con overlays editoriales y tipografía premium
+- Manual de marca PDF: OCR (PaddleOCR), paleta de color, logos → prioridad máxima en diseño
+- Reels programáticos (Shotstack) y Reels desde clips del usuario (Google Drive)
+- Copy con bucle LangGraph Copywriter ↔ QA y doctrina inbound
+- Asesor creativo conversacional (burbuja en el dashboard)
+- Publicación nativa Meta/Instagram y LinkedIn (OAuth multi-cuenta + sidecar Go)
+- HITL: aprobar / rechazar / solicitar cambios (`revise`)
 
 ## Stack Tecnológico
 
@@ -18,29 +19,29 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 | Orquestación IA | LangGraph + LangChain |
 | Modelos IA | LLMs vía API (OpenAI, Anthropic, Ollama) |
 | Backend API | FastAPI (Python 3.10) |
-| Microservicios | Go |
+| Microservicios | Go (`social-publisher-go`) |
 | Base de datos | PostgreSQL + Redis |
 | Migraciones | Alembic |
-| Cola de tareas | Celery |
+| Cola de tareas | Celery (default + `video_render`) |
 | Frontend | React + Vite |
-| Contenido visual | fal.ai (Flux Pro) + Pillow overlay + foto usuario (Design-as-Code) |
-| Video (Reels) | Shotstack (block-and-poll, `stage`/`v1`) + fal.ai Kokoro TTS (voz; ElevenLabs/OpenAI alt) |
-| Contenedores | Docker |
+| Contenido visual | fal.ai (Flux) + Venice.ai + Pillow + brand scan + foto usuario |
+| Marca / OCR | pypdf + PaddleOCR + PyMuPDF (`brand_manual` / `brand_scan`) |
+| Video (Reels) | Shotstack + fal TTS (Kokoro) / ElevenLabs / OpenAI; escenas still o Venice i2v |
+| Contenedores | Docker (+ esqueleto K8s / Skaffold) |
 
 ## Estado del roadmap
 
-- **Paso 1** Happy path local: API + frontend sin fricciones (CORS + proxy Vite)
-- **Paso 2** PostgreSQL + Alembic: Docker Compose con healthchecks, migraciones versionadas
-- **Paso 3** APIs reales: LLMs (Anthropic/OpenAI/Ollama), imagen (fal.ai/Flux, SD, DALL·E), social (Meta/LinkedIn nativo vía OAuth + Go)
-- **Paso 4** Seguridad: Auth real, secrets, human-in-the-loop
-- **Paso 5** LangGraph: bucle **Copywriter ↔ QA** con trazabilidad (`copy_qa_trace`); resto del pipeline lineal — ver [`agents/PIPELINE.md`](agents/PIPELINE.md). Doctrina inbound en `agents/marketing_agents/knowledge/` (Entretener→Informacion→Conexion).
-- **Paso 6** 🟡 Go/infra: sidecar Go operativo; MCP connect en stdio; Kubernetes esqueleto
-- **Paso 7** Video-as-Code (Reels): `content_format=reel` (script → escenas fal.ai + voz fal → timeline TitleAsset → Shotstack). Assets fal van a Shotstack como URLs `fal.media`; ngrok/`PUBLIC_IMAGE_BASE_URL` sigue siendo necesario para **Meta** y assets locales. Async-only, cola Celery `video_render`.
-- **Paso 8** Reel con clips del usuario: `user_clip_reel` (Drive → Whisper → hook-scored → captions → wan-effects opcional → Shotstack/Go). Pendiente v2: música, captions por palabra.
-- **Paso 9** Revisión de piezas: **Solicitar cambios** en dashboard → `POST /runs/{id}/revise` regenera con las notas (nunca publica; vuelve a `pending_approval`).
-- **Paso 10** Multi-cuenta social: N cuentas por proveedor (`oauth_tokens` únicos por tenant+provider+account) con selector **Cuenta destino** por run; `GET /api/auth/accounts`. TikTok (Login Kit + Content Posting API en Go) queda como fase 2 — requiere auditoría de la app por TikTok.
+- **Paso 1–5** ✅ Happy path, Postgres/Alembic, APIs reales, HITL, LangGraph Copy↔QA + inbound — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
+- **Paso 6** 🟡 Go sidecar operativo; MCP connect stdio; K8s/Skaffold escritos, sin clúster real
+- **Paso 7** ✅ Video-as-Code (`reel`): script → escenas + voz → Shotstack; async-only, cola `video_render`; opcional `VIDEO_SCENE_PROVIDER=venice`
+- **Paso 8** ✅ `user_clip_reel` (Drive → Whisper → hook-scored → Shotstack). v2: música, captions por palabra
+- **Paso 9** ✅ `POST /runs/{id}/revise` (nunca publica; vuelve a `pending_approval`)
+- **Paso 10** ✅ Multi-cuenta social + selector **Cuenta destino**. TikTok = fase 2 (auditoría app)
+- **Paso 11** ✅ Manual de marca PDF (OCR + paleta + logos) → arquetipo `brand_campaign_piece`
+- **Paso 12** ✅ Venice.ai como proveedor de imagen (y escenas i2v opcionales)
+- **Paso 13** ✅ Asesor creativo (`POST /api/advisor/chat` + burbuja UI)
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-07-27).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-08-03).
 
 ## Estructura
 
@@ -252,49 +253,48 @@ Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto
 
 ### 3B — Imagen (diseño de posts)
 
-**fal.ai — Flux Pro** (proveedor principal recomendado, sin GPU local):
-
-Genera imágenes de calidad profesional vía API. Requiere cuenta en fal.ai (registro gratuito, $1 de crédito inicial ≈ 20 imágenes).
+**fal.ai — Flux** (proveedor principal recomendado, sin GPU local):
 
 ```env
 IMAGE_PROVIDER=fal
 FAL_API_KEY=tu_key_de_fal.ai
-FAL_MODEL=fal-ai/flux-pro/v1.1   # o fal-ai/flux/schnell para mayor velocidad
-```
-
-Instalación del SDK (una vez):
-
-```bash
-pip install fal-client
-# ya incluido en requirements.txt
-```
-
-El pipeline descarga la imagen generada, aplica overlay de copy/CTA con Pillow y la guarda en `static/images/fal_<uuid>.png`. Logs esperados: `image.fal_generated` → `image.fal_saved`.
-
-**Foto del usuario (Design-as-Code):** sube JPEG/PNG/WebP con `POST /api/briefs/upload-asset` → `static/uploads/`. En el run, pasa `user_asset_url`. Sin toggle de IA: la foto queda como capa base y solo se aplica overlay editorial. Con `alter_image_with_ai: true` + `visual_instructions`: fal img2img (`FAL_IMG2IMG_MODEL`) y luego overlay; el run sigue en `pending_approval`.
-
-```env
+FAL_MODEL=fal-ai/flux-pro/v1.1   # o fal-ai/flux/schnell
 FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
 FAL_IMG2IMG_STRENGTH=0.72
 ```
 
-**DALL-E 3** (requiere `OPENAI_API_KEY`):
+El pipeline genera el fondo, aplica overlay editorial (Pillow + tipografías OFL en `static/fonts/`) y guarda en `static/images/`. Con manual de marca activo prioriza el arquetipo `brand_campaign_piece` (logo + paleta del PDF).
+
+**Venice.ai** (alternativa cloud; base canónica `https://api.venice.ai/api/v1`):
 
 ```env
-IMAGE_PROVIDER=openai
-OPENAI_API_KEY=sk-...
+IMAGE_PROVIDER=venice
+VENICE_API_KEY=...
+VENICE_IMAGE_MODEL=venice-sd35   # o nano-banana-pro / nano-banana-2
+VENICE_IMAGE_RESOLUTION=2K
+# Reels: animar escenas con image-to-video
+VIDEO_SCENE_PROVIDER=venice      # default: still (Ken Burns)
+VENICE_VIDEO_MODEL=wan-2.5-preview-image-to-video
 ```
 
-**Canva API** (requiere OAuth — ver comentarios en `agents/marketing_agents/image_providers.py`):
+`GET /api/image/providers` solo lista Venice si hay key.
+
+**Manual de marca (PDF):**
 
 ```env
-IMAGE_PROVIDER=canva
-CANVA_CLIENT_ID=...
-CANVA_CLIENT_SECRET=...
-CANVA_TEMPLATE_ID=...
+OCR_PROVIDER=paddle
+OCR_LANG=es
+OCR_USE_GPU=true
+OCR_MIN_TEXT_CHARS=40
 ```
 
-Si `IMAGE_PROVIDER=mock` (por defecto), se genera una URL placeholder de dummyimage.com.
+Deps: `pypdf`, `pymupdf`, `paddlepaddle`, `paddleocr`. Flujo: pypdf → si texto corto, PaddleOCR → `brand_scan` (paleta + logos). Endpoints: `POST /api/briefs/upload-brand-manual`, `GET/DELETE /api/briefs/brand-manual`.
+
+**Foto del usuario (Design-as-Code):** `POST /api/briefs/upload-asset` + `user_asset_url`; opcional `alter_image_with_ai` + fal img2img.
+
+**DALL·E 3** (`IMAGE_PROVIDER=openai`) y **Canva** (placeholder OAuth, no implementado). `IMAGE_PROVIDER=mock` → placeholder de desarrollo.
+
+**Asesor creativo:** `POST /api/advisor/chat` + burbuja en el dashboard (usa el LLM configurado + extracto del manual).
 
 ### 3C — Publicación en redes sociales
 
@@ -426,15 +426,20 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
 - **Métricas Prometheus:** http://127.0.0.1:8000/metrics
 - **Endpoints principales:**
   - `POST /api/briefs` — crear brief de campaña
-  - `POST /api/briefs/upload-asset` — subir foto del usuario (multipart)
-  - `POST /api/runs/sync` — ejecutar pipeline sincrónicamente (rechaza `content_format=reel` con 422)
-  - `POST /api/runs/async` — encolar ejecución (requiere Redis + worker; único camino para `content_format=reel`, cola dedicada `video_render`)
-  - `GET /api/runs/{run_id}` — consultar estado
-  - `GET /api/runs` — historial de ejecuciones
-  - `GET /api/image/archetypes` — arquetipos para override manual
-  - `GET /api/image/providers` — proveedores de imagen disponibles
-  - `POST /api/campaigns` — crear campaña programada (cron)
-  - `POST /api/campaigns/{id}/fire` — disparar campaña de inmediato (prueba de fuego)
+  - `POST /api/briefs/upload-asset` — foto del usuario
+  - `POST /api/briefs/upload-brand-manual` — PDF de marca (OCR + scan)
+  - `GET/DELETE /api/briefs/brand-manual` — manual activo (paleta/logos)
+  - `POST /api/advisor/chat` — asesor creativo
+  - `POST /api/runs/sync` — sync (rechaza `reel` / `user_clip_reel` con 422)
+  - `POST /api/runs/async` — async (cola `video_render` para video)
+  - `POST /api/runs/{id}/approve|reject|revise` — HITL
+  - `GET /api/runs`, `/api/runs/{id}`
+  - `GET /api/image/archetypes`, `/api/image/providers`
+  - `GET /api/auth/accounts` — multi-cuenta OAuth
+  - `POST /api/campaigns`, `POST /api/campaigns/{id}/fire`
 - **Estado del proyecto (canónico):** [`estado-actual.txt`](estado-actual.txt)
+- **NotebookLM (fuente para subir):** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) — guía [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)
+- **Pipeline:** [`agents/PIPELINE.md`](agents/PIPELINE.md)
+- **Referencia visual de marca:** [`docs/references/README.md`](docs/references/README.md)
 - **Prueba de Fuego del Scheduler:** [`infra/prueba-de-fuego-scheduler.md`](infra/prueba-de-fuego-scheduler.md)
-- **Arranque del stack completo (7 terminales):** [`infra/arranque-stack.md`](infra/arranque-stack.md)
+- **Arranque del stack completo:** [`infra/arranque-stack.md`](infra/arranque-stack.md)

@@ -2,6 +2,7 @@
 
 import structlog
 
+from .brand_manual import brand_prompt_block, brand_system_addendum
 from .knowledge import inbound_system_addendum
 from .llm import get_llm
 from .schemas import BriefInput, StrategyOutput
@@ -32,23 +33,35 @@ Rules:
 class ContentStrategistAgent:
     """Define tipo de post, hook, mensaje base y hashtags según el brief (LLM o stub)."""
 
-    def run(self, brief: BriefInput) -> StrategyOutput:
-        """Devuelve `StrategyOutput` desde el LLM o `_stub` ante ausencia de LLM o error."""
+    def run(self, brief: BriefInput, *, user_notes: str | None = None) -> StrategyOutput:
+        """Devuelve `StrategyOutput` desde el LLM o `_stub` ante ausencia de LLM o error.
+
+        `user_notes` llega del checkpoint interactivo: el usuario leyó la estrategia
+        propuesta y pidió otra dirección.
+        """
         llm = get_llm()
         if llm is None:
             logger.warning("strategist.using_stub", reason="no_llm_configured")
             return self._stub(brief)
         prompt = (
-            f"- Topic (tema): {brief.tema}\n"
+            f"- Product/event description (tema): {brief.tema}\n"
             f"- Target audience / community to reach: {brief.publico_objetivo}\n"
             f"- Platform: {brief.red_social}\n"
             f"- Goal: {brief.objetivo}\n"
             f"- Brand tone: {brief.tono_marca}\n"
             f"- Language: {brief.idioma}\n"
             f"- Inbound intent stack (required): entretener → informacion → conexion"
+            + brand_prompt_block(brief.brand_context)
         )
+        if user_notes and user_notes.strip():
+            prompt += (
+                "\n\nThe human reviewer read the previous strategy and asked for a different "
+                "direction. Their instructions override the defaults above:\n"
+                f"- {user_notes.strip()}"
+            )
+        system = _SYSTEM + brand_system_addendum(brief.brand_context)
         try:
-            data = llm.complete_json(_SYSTEM, prompt)
+            data = llm.complete_json(system, prompt)
             return StrategyOutput(**data)
         except Exception as exc:
             logger.error("strategist.llm_error", error=str(exc))

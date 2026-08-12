@@ -1,0 +1,27 @@
+{
+  "palette_hex": [
+    "#CB8A48",
+    "#884F25",
+    "#CEA170",
+    "#8D6E45",
+    "#EDE2D7",
+    "#D7CBC3"
+  ],
+  "logo_filenames": [
+    "261cfb212bf842de981061d1147fa1f3_logo_1.png",
+    "261cfb212bf842de981061d1147fa1f3_logo_2.png",
+    "261cfb212bf842de981061d1147fa1f3_logo_3.png",
+    "261cfb212bf842de981061d1147fa1f3_logo_4.png"
+  ],
+  "logo_urls": [
+    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_1.png",
+    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_2.png",
+    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_3.png",
+    "http://localhost:8000/static/uploads/brand/demo-tenant/261cfb212bf842de981061d1147fa1f3_logo_4.png"
+  ],
+  "pages_scanned": 2,
+  "embedded_images": 2,
+  "notes": [
+    "palette_swatch:261cfb212bf842de981061d1147fa1f3_palette.png"
+  ]
+}

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta
+from math import ceil
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,7 +40,7 @@ def oauth_login(
     if provider == "meta":
         if not s.meta_client_id:
             raise HTTPException(status_code=400, detail="META_CLIENT_ID no configurado en .env")
-        scopes = "pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement"
+        scopes = "pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts"
         auth_url = (
             f"https://www.facebook.com/dialog/oauth"
             f"?client_id={s.meta_client_id}"
@@ -53,14 +54,18 @@ def oauth_login(
             raise HTTPException(status_code=400, detail="LINKEDIN_CLIENT_ID no configurado en .env")
         # Community Management API (Share/Posts) + Sign In with LinkedIn (OpenID).
         # w_member_social: publicar como miembro. r_liteprofile está deprecado → openid/profile.
-        scopes = "openid profile w_member_social"
-        auth_url = (
-            f"https://www.linkedin.com/oauth/v2/authorization"
-            f"?response_type=code"
-            f"&client_id={s.linkedin_client_id}"
-            f"&redirect_uri={s.linkedin_redirect_uri}"
-            f"&scope={scopes}"
-            f"&state={state}"
+        # quote_via=quote (no quote_plus): LinkedIn separa scopes por %20 y no
+        # interpreta '+' como espacio → "Bummer, something went wrong".
+        # El redirect_uri además debe coincidir exacto con "Authorized redirect URLs".
+        auth_url = "https://www.linkedin.com/oauth/v2/authorization?" + urlencode(
+            {
+                "response_type": "code",
+                "client_id": s.linkedin_client_id,
+                "redirect_uri": s.linkedin_redirect_uri,
+                "scope": s.linkedin_scopes,
+                "state": state,
+            },
+            quote_via=quote,
         )
     elif provider == "google":
         if not s.google_client_id:
@@ -108,7 +113,13 @@ def oauth_callback(
 
     tenant_id = _pending_states.pop(state, None)
     if not tenant_id:
-        raise HTTPException(status_code=400, detail="State inválido o expirado. Inicia el flujo desde /api/auth/login/{provider}.")
+        # Siempre volver al frontend: un 400 JSON en la pestaña de Meta/ngrok
+        # deja al usuario sin retorno al dashboard.
+        return _oauth_frontend_redirect(
+            provider,
+            oauth="error",
+            message="State inválido o expirado. Vuelve a pulsar Conectar desde Integraciones.",
+        )
 
     s = get_settings()
 
@@ -133,6 +144,14 @@ def oauth_callback(
         db.commit()
     except HTTPException as exc:
         return _oauth_frontend_redirect(provider, oauth="error", message=str(exc.detail))
+    except Exception as exc:
+        # Errores de DB/red no deben dejar al usuario en una página JSON de ngrok.
+        db.rollback()
+        return _oauth_frontend_redirect(
+            provider,
+            oauth="error",
+            message=f"No se pudo guardar la cuenta {provider}: {exc}",
+        )
 
     account_id = ",".join(a["account_id"] for a in accounts)
     return _oauth_frontend_redirect(
@@ -192,6 +211,25 @@ def _upsert_oauth_account(
         ))
 
 
+EXPIRY_WARNING_DAYS = 7
+
+
+def token_expiry_info(expires_at: datetime | None, now: datetime | None = None) -> dict:
+    """Traduce `expires_at` a banderas que la UI puede mostrar sin recalcular fechas."""
+    if expires_at is None:
+        return {"expires_at": None, "expires_in_days": None, "is_expired": False, "expires_soon": False}
+    now = now or datetime.utcnow()
+    remaining_days = (expires_at - now).total_seconds() / 86400
+    is_expired = remaining_days <= 0
+    return {
+        "expires_at": expires_at.isoformat(),
+        # Techo: quedan horas → "1 d", no "0 d" (que se leería como caducado).
+        "expires_in_days": ceil(remaining_days) if not is_expired else 0,
+        "is_expired": is_expired,
+        "expires_soon": not is_expired and remaining_days <= EXPIRY_WARNING_DAYS,
+    }
+
+
 @router.get("/status")
 def oauth_status(
     tenant_id: str = Depends(require_auth),
@@ -199,14 +237,24 @@ def oauth_status(
 ) -> dict:
     """Devuelve qué proveedores tiene conectados el tenant (sin exponer tokens)."""
     rows = db.execute(
-        select(OAuthToken.provider, OAuthToken.account_id, OAuthToken.updated_at).where(
+        select(
+            OAuthToken.provider,
+            OAuthToken.account_id,
+            OAuthToken.updated_at,
+            OAuthToken.expires_at,
+        ).where(
             OAuthToken.tenant_id == tenant_id,
             OAuthToken.is_active.is_(True),
         )
     ).all()
     return {
         "connected": [
-            {"provider": r.provider, "account_id": r.account_id, "updated_at": r.updated_at.isoformat()}
+            {
+                "provider": r.provider,
+                "account_id": r.account_id,
+                "updated_at": r.updated_at.isoformat(),
+                **token_expiry_info(r.expires_at),
+            }
             for r in rows
         ]
     }
@@ -232,6 +280,7 @@ def list_social_accounts(
                 "account_name": r.account_name,
                 "profile_picture_url": r.profile_picture_url,
                 "updated_at": r.updated_at.isoformat(),
+                **token_expiry_info(r.expires_at),
             }
             for r in rows
         ]
@@ -456,10 +505,17 @@ def _exchange_linkedin(code: str, s) -> dict:
         )
         r.raise_for_status()
         data = r.json()
+
+    # LinkedIn devuelve expires_in (~60 días). Sin persistirlo, el token caduca en
+    # silencio y el fallo solo aparece al aprobar un run.
+    expires_at = None
+    if data.get("expires_in"):
+        expires_at = datetime.utcnow() + timedelta(seconds=int(data["expires_in"]))
+
     return {
         "access_token": data["access_token"],
         "refresh_token": data.get("refresh_token"),
-        "expires_at": None,
+        "expires_at": expires_at,
     }
 
 
@@ -503,24 +559,32 @@ def _fetch_google_account(token: str) -> str:
 
 
 def _fetch_linkedin_account(token: str) -> dict:
-    """Obtiene URN + nombre + foto vía OpenID userinfo (fallback /v2/me solo con URN)."""
+    """Obtiene la identidad del miembro: OpenID userinfo, o /v2/me si la app usa r_basicprofile."""
+    headers = {"Authorization": f"Bearer {token}"}
     with httpx.Client(timeout=10) as client:
-        r = client.get(
-            "https://api.linkedin.com/v2/userinfo",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        if r.is_success:
+        # Camino moderno: producto "Sign In with LinkedIn using OpenID Connect".
+        r = client.get("https://api.linkedin.com/v2/userinfo", headers=headers)
+        if r.is_success and r.json().get("sub"):
             data = r.json()
-            sub = data.get("sub")
-            if sub:
-                return {
-                    "account_id": f"urn:li:person:{sub}",
-                    "account_name": data.get("name"),
-                    "profile_picture_url": data.get("picture"),
-                }
-        r_me = client.get(
-            "https://api.linkedin.com/v2/me",
-            headers={"Authorization": f"Bearer {token}"},
+            return {
+                "account_id": f"urn:li:person:{data['sub']}",
+                "account_name": data.get("name"),
+                "profile_picture_url": data.get("picture"),
+            }
+
+        # Camino clásico: apps con r_basicprofile y sin el producto OpenID.
+        r_me = client.get("https://api.linkedin.com/v2/me", headers=headers)
+        if not r_me.is_success:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No se pudo leer el perfil de LinkedIn: el token no tiene ni `profile` (OpenID) "
+                    "ni `r_basicprofile`. Habilita 'Sign In with LinkedIn using OpenID Connect' en "
+                    "Products, o ajusta LINKEDIN_SCOPES a los scopes que muestre la pestaña Auth."
+                ),
+            )
+        me = r_me.json()
+        name = " ".join(
+            part for part in (me.get("localizedFirstName"), me.get("localizedLastName")) if part
         )
-        r_me.raise_for_status()
-        return {"account_id": f"urn:li:person:{r_me.json()['id']}"}
+        return {"account_id": f"urn:li:person:{me['id']}", "account_name": name or None}

@@ -51,7 +51,11 @@ def test_output_spec_defaults_9_16() -> None:
 
 def test_to_shotstack_edit_maps_scenes_to_clips_and_sums_durations() -> None:
     timeline = Timeline(
-        scenes=[_scene(duration_s=4.0), _scene(duration_s=5.0), _scene(duration_s=3.0)],
+        scenes=[
+            _scene(duration_s=4.0, narration="Primera narracion de la escena uno"),
+            _scene(duration_s=5.0, narration="Segunda narracion de la escena dos"),
+            _scene(duration_s=3.0, narration="Tercera narracion de cierre"),
+        ],
         voiceover=VoiceoverTrack(audio_url="http://localhost:8000/static/audio/vo1.mp3", duration_s=12.0),
     )
     edit = to_shotstack_edit(timeline)
@@ -63,8 +67,8 @@ def test_to_shotstack_edit_maps_scenes_to_clips_and_sums_durations() -> None:
     assert edit["output"]["format"] == "mp4"
 
     tracks = edit["timeline"]["tracks"]
-    # títulos (arriba) + media; soundtrack va aparte en timeline.soundtrack
-    assert len(tracks) == 2
+    # captions + títulos + media
+    assert len(tracks) == 3
     media_clips = tracks[-1]["clips"]
     assert len(media_clips) == 3
     assert all(c["asset"]["type"] == "image" for c in media_clips)
@@ -78,7 +82,10 @@ def test_to_shotstack_edit_maps_scenes_to_clips_and_sums_durations() -> None:
     assert media_clips[2]["start"] == pytest.approx(9.0)
 
     assert "soundtrack" in edit["timeline"]
-    assert tracks[0]["clips"][0]["asset"]["type"] == "title"
+    assert tracks[0]["clips"][0]["asset"]["style"] == "subtitle"
+    assert tracks[1]["clips"][0]["asset"]["type"] == "title"
+    assert tracks[1]["clips"][0]["asset"]["size"] == "small"
+    assert tracks[1]["clips"][0]["asset"]["position"] == "top"
 
 
 def test_to_shotstack_edit_without_voiceover_still_maps_clips() -> None:

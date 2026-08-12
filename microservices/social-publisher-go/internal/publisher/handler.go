@@ -46,7 +46,10 @@ func PublishHandler(w http.ResponseWriter, r *http.Request) {
 	case platform == "instagram" || platform == "ig" || platform == "facebook":
 		resp, err = PublishMeta(req)
 	case platform == "linkedin":
-		resp, err = PublishLinkedIn(req)
+		// LinkedIn se publica nativamente desde el gateway Python (/rest/posts);
+		// el sidecar solo cubre Meta. Llegar aquí significa routing mal configurado.
+		http.Error(w, "linkedin se publica desde el gateway Python, no por el sidecar Go", http.StatusBadRequest)
+		return
 	default:
 		http.Error(w, fmt.Sprintf("plataforma no soportada: %s", req.Platform), http.StatusBadRequest)
 		return

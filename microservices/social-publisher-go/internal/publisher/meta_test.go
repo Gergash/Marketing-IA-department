@@ -20,6 +20,9 @@ func TestUserClipReelRoutedToReelsBranch(t *testing.T) {
 	if got := params.Get("media_type"); got != "REELS" {
 		t.Errorf("media_type = %q, want REELS", got)
 	}
+	if got := params.Get("share_to_feed"); got != "true" {
+		t.Errorf("share_to_feed = %q, want true", got)
+	}
 	if timeout != reelMediaContainerTimeout {
 		t.Errorf("containerTimeout = %v, want %v", timeout, reelMediaContainerTimeout)
 	}
@@ -41,6 +44,9 @@ func TestReelStillRoutedToReelsBranch(t *testing.T) {
 	}
 	if got := params.Get("media_type"); got != "REELS" {
 		t.Errorf("media_type = %q, want REELS", got)
+	}
+	if got := params.Get("share_to_feed"); got != "true" {
+		t.Errorf("share_to_feed = %q, want true", got)
 	}
 	if timeout != reelMediaContainerTimeout {
 		t.Errorf("containerTimeout = %v, want %v", timeout, reelMediaContainerTimeout)

@@ -106,5 +106,64 @@ def test_layout_preserves_aspect_ratio_story() -> None:
         headline="Historia",
         subline="Story test",
         cta=None,
+        content_format="story",
     )
     _assert_valid_png(result, W, H)
+
+
+@pytest.mark.parametrize("archetype", ALL_ARCHETYPES, ids=[a.id for a in ALL_ARCHETYPES])
+def test_story_layout_centers_overlay(archetype: LayoutArchetype) -> None:
+    """En story, el overlay altera el centro de la imagen (no solo el tercio inferior izquierdo)."""
+    W, H = 540, 960
+    base_color = (90, 100, 110)
+    result = apply_design_layout(
+        _make_png(W, H, base_color),
+        archetype,
+        headline="Texto central",
+        subline="Más centrado",
+        cta="Ver más",
+        content_format="story",
+    )
+    img = Image.open(io.BytesIO(result)).convert("RGB")
+    center = img.getpixel((W // 2, H // 2))
+    # El centro debe diferir del fondo plano por viñeta/texto
+    assert center != base_color
+
+    feed = apply_design_layout(
+        _make_png(W, H, base_color),
+        archetype,
+        headline="Texto feed",
+        subline="Abajo",
+        cta="Ver más",
+        content_format="feed",
+    )
+    assert result != feed
+
+
+def test_brand_campaign_piece_layout_with_logo() -> None:
+    """Layout de campaña con marca: PNG válido + logo top-center opcional."""
+    import tempfile
+    from pathlib import Path
+
+    W, H = 400, 500
+    logo = Image.new("RGBA", (80, 40), (201, 162, 39, 255))
+    with tempfile.TemporaryDirectory() as tmp:
+        logo_path = str(Path(tmp) / "logo.png")
+        logo.save(logo_path)
+        archetype = _ARCHETYPE_MAP["brand_campaign_piece"]
+        result = apply_design_layout(
+            _make_png(W, H, (40, 30, 25)),
+            archetype,
+            headline="Celebra Amor y Amistad",
+            subline="Reserva tu mesa en Tres Amores",
+            cta="Cupos limitados · Escríbenos por DM",
+            logo_path=logo_path,
+            tagline="Donde cada encuentro se convierte en un recuerdo.",
+            brand_names=["Tres Amores"],
+        )
+        _assert_valid_png(result, W, H)
+        # El logo dorado debe teñir la banda superior-central
+        out = Image.open(io.BytesIO(result)).convert("RGB")
+        top_center = out.getpixel((W // 2, int(H * 0.06)))
+        assert top_center[0] > 100  # canal R del dorado/logo
+

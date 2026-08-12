@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from agents.marketing_agents import BriefInput, MarketingPipeline
 from agents.marketing_agents.schemas import CopyOutput, DesignOutput
+from agents.marketing_agents.thought_stream import RunCancelledByUser, build_stream
 from gateway.app.core.settings import get_settings
 from gateway.app.models import AgentRun, Brief, GeneratedAsset, OAuthToken, Publication
 
@@ -24,6 +25,9 @@ logger = structlog.get_logger(__name__)
 
 def _brief_input(brief: Brief) -> BriefInput:
     """Convierte la entidad ORM `Brief` al DTO `BriefInput` del pipeline de agentes."""
+    from agents.marketing_agents.brand_manual import load_brand_text, load_brand_visual_assets
+
+    assets = load_brand_visual_assets(brief.tenant_id)
     return BriefInput(
         tema=brief.tema,
         publico_objetivo=brief.publico_objetivo,
@@ -31,6 +35,11 @@ def _brief_input(brief: Brief) -> BriefInput:
         objetivo=brief.objetivo,
         tono_marca=brief.tono_marca,
         idioma=brief.idioma,
+        brand_context=load_brand_text(brief.tenant_id),
+        brand_palette=list(assets.get("palette_hex") or []),
+        brand_logo_urls=list(assets.get("logo_urls") or []),
+        brand_logo_paths=list(assets.get("logo_paths") or []),
+        tenant_id=brief.tenant_id or "",
     )
 
 
@@ -156,6 +165,17 @@ def _resolve_publish_token(
     ).scalar_one_or_none()
 
 
+def _assert_token_not_expired(token_row: OAuthToken) -> None:
+    """Falla antes de llamar a la API si el token ya caducó (LinkedIn dura ~60 días)."""
+    if token_row.expires_at is None or token_row.expires_at > datetime.utcnow():
+        return
+    label = token_row.account_name or token_row.account_id
+    raise ValueError(
+        f"El token de {label} ({token_row.provider}) caducó el "
+        f"{token_row.expires_at:%Y-%m-%d}. Reconecta la cuenta en Integraciones y vuelve a aprobar."
+    )
+
+
 def _publish_via_linkedin(
     db: Session,
     result: dict,
@@ -173,9 +193,19 @@ def _publish_via_linkedin(
             "No hay cuenta de LinkedIn conectada para este tenant. "
             "Conéctala desde el dashboard en Integraciones → Conectar LinkedIn."
         )
+    _assert_token_not_expired(token_row)
 
     copy_text = result["copy"]["copy_final"]
-    image_url = result["design"]["image_url"]
+    image_url = result["design"].get("image_url")
+
+    # El publisher de LinkedIn solo soporta imagen; en reel/user_clip_reel el diseño
+    # trae video_url e image_url=None.
+    if not image_url:
+        raise ValueError(
+            "La publicación nativa en LinkedIn solo soporta imagen (feed/story). "
+            f"Este run es '{getattr(run, 'content_format', None) or 'video'}' y no generó imagen. "
+            "Publica el video manualmente o cambia la red social del brief."
+        )
 
     # Normalizar URL: si apunta a localhost, usar PUBLIC_IMAGE_BASE_URL
     public_base = get_settings().public_image_base_url.rstrip("/")
@@ -228,8 +258,23 @@ def _publish_via_go(
     if oauth_provider:
         token_row = _resolve_publish_token(db, run, oauth_provider)
         if token_row:
+            _assert_token_not_expired(token_row)
             access_token = token_row.access_token
             account_id = token_row.account_id
+
+    # Si publicamos a la IG configurada en .env, preferir el Page token del System User
+    # (scopes completos, sin caducidad) — el OAuth de usuario a veces falla en media_publish Reels (code 1).
+    env_ig = (settings.instagram_business_account_id or "").strip()
+    env_tok = (settings.meta_page_access_token or "").strip()
+    if env_ig and env_tok and (not account_id or account_id == env_ig):
+        if access_token != env_tok:
+            logger.info(
+                "go_publisher.using_env_page_token",
+                account_id=env_ig,
+                reason="META_PAGE_ACCESS_TOKEN matches INSTAGRAM_BUSINESS_ACCOUNT_ID",
+            )
+        access_token = env_tok
+        account_id = env_ig
 
     if not access_token:
         logger.warning(
@@ -259,14 +304,15 @@ def _publish_via_go(
         }
         if content_format in ("reel", "user_clip_reel"):
             payload["video_url"] = media_url
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=360) as client:
             published = client.post(f"{settings.go_publisher_url}/publish", json=payload)
         if published.is_success:
             result["publish_result"] = published.json()
             logger.info("go_publisher.ok", platform=brief.red_social)
             return "success"
-        logger.warning("go_publisher.non_2xx", status=published.status_code, body=published.text[:200])
-        run.error_message = f"go_publisher_http_{published.status_code}"
+        body_snip = (published.text or "")[:800]
+        logger.warning("go_publisher.non_2xx", status=published.status_code, body=body_snip[:200])
+        run.error_message = f"go_publisher_http_{published.status_code}: {body_snip}"
         return "failed"
     except Exception as exc:  # noqa: BLE001
         run.error_message = f"go_publisher_error: {exc}"
@@ -277,6 +323,33 @@ def _publish_via_go(
 # ---------------------------------------------------------------------------
 # API pública
 # ---------------------------------------------------------------------------
+
+def _run_with_thoughts(
+    pipeline: MarketingPipeline,
+    brief_in: BriefInput,
+    thoughts,
+    session: Session,
+    run_row: AgentRun,
+    **kwargs,
+) -> dict:
+    """Ejecuta el pipeline dejando constancia en el hilo cuando algo revienta.
+
+    Detener el run desde un checkpoint es una decisión humana, no un fallo: el run
+    queda `rejected` aquí mismo para que ni la API responda 500 ni Celery reintente.
+    """
+    try:
+        return pipeline.run(brief_in, thoughts=thoughts, **kwargs)
+    except RunCancelledByUser as exc:
+        run_row.status = "rejected"
+        run_row.error_message = f"cancelled_by_user_at:{exc.checkpoint}"
+        session.add(run_row)
+        session.commit()
+        logger.info("pipeline.cancelled_by_user", run_id=run_row.id, checkpoint=exc.checkpoint)
+        raise
+    except Exception as exc:  # noqa: BLE001
+        thoughts.error("pipeline", f"El run se detuvo por un error: {exc}")
+        raise
+
 
 def _normalize_content_format(value: str | None) -> str:
     """Normaliza el formato de publicación a `feed`/`story`/`reel`/`user_clip_reel` (desconocido → feed)."""
@@ -363,38 +436,20 @@ def execute_pipeline(
     pipeline = MarketingPipeline()
     brief_in = _brief_input(brief)
     content_format = _normalize_content_format(getattr(run, "content_format", None))
+    stored_params = json.loads(run.run_params_json) if run.run_params_json else {}
+    link_url = (stored_params.get("link_url") or "").strip() or None
+    cta_on_image = bool(stored_params.get("cta_on_image", False))
+    video_gen_mode = stored_params.get("video_gen_mode")
+    venice_video_model = stored_params.get("venice_video_model")
 
-    if requires_approval:
-        # Human-in-the-loop: generar estrategia + copy + diseño + QA,
-        # pero NO publicar. Esperar aprobación humana.
-        result = pipeline.run(
-            brief_in,
-            publish=False,
-            idempotency_key=idempotency_key,
-            content_format=content_format,
-            image_provider=image_provider,
-            archetype_override=archetype_override,
-            user_asset_url=user_asset_url,
-            alter_image_with_ai=alter_image_with_ai,
-            visual_instructions=visual_instructions,
-            db=db,
-            tenant_id=run.tenant_id,
-            run_id=run.id,
-            drive_folder_id=drive_folder_id,
-            revision_notes=revision_notes,
-        )
-        run.result_json = json.dumps(result, ensure_ascii=True)
-        run.status = "pending_approval"
-        db.add(run)
-        db.commit()
-        _notify_slack(get_settings().slack_webhook_url, run.id, brief.tema)
-        logger.info("pipeline.pending_approval", run_id=run.id)
-        return result
+    # Hilo de pensamiento: el trace_id lo genera el cliente antes del POST porque
+    # /runs/sync no devuelve el run_id hasta que el pipeline termina.
+    thoughts = build_stream(
+        (stored_params.get("trace_id") or "").strip(),
+        interactive=bool(stored_params.get("interactive", False)),
+    )
 
-    # Sin aprobación requerida: generar contenido; publicación vía _publish_run.
-    result = pipeline.run(
-        brief_in,
-        publish=False,
+    pipeline_kwargs = dict(
         idempotency_key=idempotency_key,
         content_format=content_format,
         image_provider=image_provider,
@@ -406,7 +461,35 @@ def execute_pipeline(
         tenant_id=run.tenant_id,
         run_id=run.id,
         drive_folder_id=drive_folder_id,
+        link_url=link_url,
+        cta_on_image=cta_on_image,
+        video_gen_mode=video_gen_mode,
+        venice_video_model=venice_video_model,
     )
+
+    if requires_approval:
+        # Human-in-the-loop: generar estrategia + copy + diseño + QA,
+        # pero NO publicar. Esperar aprobación humana.
+        result = _run_with_thoughts(
+            pipeline,
+            brief_in,
+            thoughts,
+            db,
+            run,
+            publish=False,
+            revision_notes=revision_notes,
+            **pipeline_kwargs,
+        )
+        run.result_json = json.dumps(result, ensure_ascii=True)
+        run.status = "pending_approval"
+        db.add(run)
+        db.commit()
+        _notify_slack(get_settings().slack_webhook_url, run.id, brief.tema)
+        logger.info("pipeline.pending_approval", run_id=run.id)
+        return result
+
+    # Sin aprobación requerida: generar contenido; publicación vía _publish_run.
+    result = _run_with_thoughts(pipeline, brief_in, thoughts, db, run, publish=False, **pipeline_kwargs)
 
     if publish and result.get("quality", {}).get("approved", False):
         _publish_run(db, result, brief, run, idempotency_key)
@@ -450,14 +533,19 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
         go_outcome = _publish_run(db, result, brief, run, run.idempotency_key)
 
         if go_outcome == "unavailable" and not result.get("publish_result"):
+            detail = (run.error_message or "").strip()
             raise ValueError(
                 "No se pudo publicar. Para LinkedIn: verifica que la cuenta esté conectada en Integraciones. "
                 "Para Meta/IG: verifica que el sidecar Go (:8088) esté activo."
+                + (f" Detalle: {detail}" if detail else "")
             )
         if go_outcome == "failed" and not result.get("publish_result"):
+            detail = (run.error_message or "").strip()
             raise ValueError(
-                "La API nativa rechazó la publicación. "
-                "Espera unos segundos y pulsa Aprobar una sola vez."
+                "La API nativa (Meta/LinkedIn) rechazó la publicación. "
+                "Revisa scopes del token OAuth de la cuenta elegida (no el System User del .env) "
+                "y pulsa Aprobar una sola vez."
+                + (f" Detalle Graph/Go: {detail}" if detail else "")
             )
 
         if not result.get("publish_result"):
@@ -483,11 +571,17 @@ def prepare_revision(
     notes: str,
     revised_by: str = "human",
     next_status: str = "running",
+    trace_id: str | None = None,
+    interactive: bool = False,
 ) -> dict:
     """Valida el run revisable, acumula la nota, incrementa el contador y devuelve los params originales.
 
     Separado de `revise_run` porque los formatos de video no se regeneran inline: el endpoint
     encola la tarea Celery con estos mismos params tras marcar la revisión.
+
+    El hilo de pensamiento se reescribe con el `trace_id` de esta revisión: reusar el del run
+    original dejaría los eventos en una traza que el dashboard ya no está mirando, y heredar
+    `interactive=True` colgaría la regeneración esperando a un usuario que no fue preguntado.
     """
     run = db.get(AgentRun, run_id)
     if not run:
@@ -500,6 +594,9 @@ def prepare_revision(
         raise ValueError("Las notas de revisión no pueden estar vacías")
 
     params = json.loads(run.run_params_json) if run.run_params_json else {}
+    params["trace_id"] = (trace_id or "").strip() or None
+    params["interactive"] = bool(interactive) and bool(params["trace_id"])
+    run.run_params_json = json.dumps(params, ensure_ascii=True)
 
     stamp = f"#{(run.revision_count or 0) + 1} ({revised_by}): {clean}"
     run.revision_notes = f"{run.revision_notes}\n{stamp}" if run.revision_notes else stamp
@@ -511,9 +608,24 @@ def prepare_revision(
     return params
 
 
-def revise_run(db: Session, run_id: int, *, notes: str, revised_by: str = "human") -> dict:
+def revise_run(
+    db: Session,
+    run_id: int,
+    *,
+    notes: str,
+    revised_by: str = "human",
+    trace_id: str | None = None,
+    interactive: bool = False,
+) -> dict:
     """Regenera inline la pieza de un run en `pending_approval` aplicando las notas del revisor."""
-    params = prepare_revision(db, run_id, notes=notes, revised_by=revised_by)
+    params = prepare_revision(
+        db,
+        run_id,
+        notes=notes,
+        revised_by=revised_by,
+        trace_id=trace_id,
+        interactive=interactive,
+    )
     return execute_pipeline(
         db,
         run_id,

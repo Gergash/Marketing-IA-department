@@ -29,25 +29,61 @@ def _image_scene(**overrides) -> Scene:
 
 
 def test_existing_image_reel_output_structurally_unchanged() -> None:
-    """Regresión: imagen + overlay → track de títulos encima y track de media debajo."""
-    timeline = Timeline(scenes=[_image_scene(duration_s=4.0)])
+    """Imagen + overlay: subtítulos (auto) + títulos cortos arriba + media abajo."""
+    timeline = Timeline(
+        scenes=[_image_scene(duration_s=4.0, narration="Hola mundo de prueba para subtítulos")]
+    )
     edit = to_shotstack_edit(timeline)
     tracks = edit["timeline"]["tracks"]
-    assert len(tracks) == 2  # títulos + media (sin captions)
+    assert len(tracks) == 3  # captions + títulos + media
 
-    title_clip = tracks[0]["clips"][0]
+    caption_clip = tracks[0]["clips"][0]
+    assert caption_clip["asset"]["type"] == "title"
+    assert caption_clip["asset"]["style"] == "subtitle"
+    assert caption_clip["asset"]["position"] == "bottom"
+
+    title_clip = tracks[1]["clips"][0]
     assert title_clip["asset"]["type"] == "title"
-    assert title_clip["asset"]["text"] == "Titulo\nSub"
-    assert title_clip["asset"]["style"] == "minimal"
+    assert title_clip["asset"]["size"] == "small"
+    assert title_clip["asset"]["position"] == "top"
+    assert "Titulo" in title_clip["asset"]["text"]
     assert title_clip["start"] == pytest.approx(0.0)
     assert title_clip["length"] == pytest.approx(4.0)
 
-    media_clip = tracks[1]["clips"][0]
+    media_clip = tracks[2]["clips"][0]
     assert media_clip["asset"] == {"type": "image", "src": "http://localhost:8000/static/images/bg1.png"}
     assert media_clip["start"] == pytest.approx(0.0)
     assert media_clip["length"] == pytest.approx(4.0)
     assert media_clip["effect"] == "zoomIn"
     assert "title_asset" not in media_clip
+
+
+def test_fit_title_overlay_truncates_long_headlines() -> None:
+    from agents.marketing_agents.video_timeline import fit_title_overlay
+
+    long = "MEJORES PRÁCTICAS PARA EMPRENDEDORES DIGITALES"
+    fitted = fit_title_overlay(long)
+    assert len(fitted.replace("\n", "")) <= 30
+    assert "…" in fitted or len(long) <= 28
+
+
+def test_auto_captions_from_narration_always_present() -> None:
+    timeline = Timeline(
+        scenes=[
+            _image_scene(
+                duration_s=4.0,
+                headline="Hook",
+                narration="Los emprendedores saben que los datos son clave para crecer.",
+            )
+        ]
+    )
+    edit = to_shotstack_edit(timeline)
+    caption_track = edit["timeline"]["tracks"][0]
+    assert caption_track["clips"]
+    assert all(c["asset"]["style"] == "subtitle" for c in caption_track["clips"])
+    assert all(c["asset"]["position"] == "bottom" for c in caption_track["clips"])
+    joined = " ".join(c["asset"]["text"] for c in caption_track["clips"])
+    assert "emprendedores" in joined.lower() or "datos" in joined.lower()
 
 
 def test_scene_defaults_asset_type_image() -> None:
@@ -115,9 +151,25 @@ def test_captions_track_aligns_to_word_timestamps() -> None:
     assert tracks[2]["clips"][0]["asset"]["type"] == "image"
 
 
-def test_no_captions_no_extra_track_and_no_render_failure() -> None:
-    """Segmento sin habla (transcript vacío): no se emite cue, no falla el render."""
+def test_empty_captions_still_auto_subtitles_from_headline() -> None:
+    """Si captions=[] pero hay headline, siempre se generan subtítulos (política Reels)."""
     timeline = Timeline(scenes=[_image_scene()], captions=[])
     edit = to_shotstack_edit(timeline)
-    # títulos + media (sin captions)
-    assert len(edit["timeline"]["tracks"]) == 2
+    # captions (auto) + títulos + media
+    assert len(edit["timeline"]["tracks"]) == 3
+    assert edit["timeline"]["tracks"][0]["clips"][0]["asset"]["style"] == "subtitle"
+
+
+def test_video_scene_without_text_has_only_media_track() -> None:
+    """Clip de usuario sin narración ni headline: solo media (sin fallar)."""
+    scene = Scene(
+        background_url="http://localhost:8000/static/clips/silent.mp4",
+        asset_type="video",
+        headline="",
+        subline="",
+        narration="",
+        duration_s=3.0,
+    )
+    edit = to_shotstack_edit(Timeline(scenes=[scene], captions=[]))
+    assert len(edit["timeline"]["tracks"]) == 1
+    assert edit["timeline"]["tracks"][0]["clips"][0]["asset"]["type"] == "video"

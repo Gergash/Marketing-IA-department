@@ -5,6 +5,7 @@ from __future__ import annotations
 import structlog
 from pydantic import BaseModel, Field
 
+from .brand_manual import brand_prompt_block, brand_system_addendum
 from .knowledge import inbound_system_addendum
 from .llm import get_llm
 from .schemas import BriefInput, CopyOutput, StrategyOutput
@@ -26,9 +27,9 @@ Return ONLY valid JSON with exactly these fields:
   "cta":  "<closing call-to-action spoken in the last scene, max 80 chars>",
   "scenes": [
     {
-      "headline": "<short on-screen overlay text, max 60 chars, complete phrase, perfect spelling>",
-      "subline": "<optional supporting on-screen text, max 60 chars, or empty string>",
-      "narration": "<spoken narration line for this scene, natural complete sentence>",
+      "headline": "<VERY short on-screen title, max 28 chars, 1-2 words or short phrase; must fit vertical video>",
+      "subline": "<optional tiny support line max 28 chars, or empty string>",
+      "narration": "<spoken narration line for this scene — ALSO used as on-screen SUBTITLES; natural complete sentence>",
       "visual_prompt": "<background visual description for image generation; no text, no letters, no watermark>"
     }
   ]
@@ -40,6 +41,7 @@ Rules:
 - Write in the language specified by 'idioma'.
 - Never include emojis unless the tone explicitly calls for them.
 - Scene 1 entertains (stop-scroll); middle scenes inform the target audience; last scene connects (community CTA).
+- On-screen headline MUST stay under 28 characters — long phrases belong in narration/subtitles, not the title overlay.
 """ + inbound_system_addendum(role="video_script")
 
 
@@ -77,7 +79,7 @@ class VideoScriptAgent:
             logger.warning("video_script.using_stub", reason="no_llm_configured")
             return self._stub(brief, strategy, copy)
         prompt = (
-            f"- Topic (tema): {brief.tema}\n"
+            f"- Product/event description (tema): {brief.tema}\n"
             f"- Target audience / community to reach: {brief.publico_objetivo}\n"
             f"- Platform: {brief.red_social}\n"
             f"- Strategy hook: {strategy.hook}\n"
@@ -86,6 +88,7 @@ class VideoScriptAgent:
             f"- CTA: {copy.cta}\n"
             f"- Language: {brief.idioma}\n"
             f"- Scene arc required: Entretener → Informacion → Conexion"
+            + brand_prompt_block(brief.brand_context)
         )
         notes = (revision_notes or "").strip()
         if notes:
@@ -94,7 +97,10 @@ class VideoScriptAgent:
                 f"apply it over the previous script): {notes}"
             )
         try:
-            data = llm.complete_json(_SYSTEM, prompt)
+            data = llm.complete_json(
+                _SYSTEM + brand_system_addendum(brief.brand_context),
+                prompt,
+            )
             return VideoScript(**data)
         except Exception as exc:
             logger.error("video_script.llm_error", error=str(exc))

@@ -24,6 +24,8 @@ class Scene(BaseModel):
     background_url: str = Field(min_length=1)
     headline: str = ""
     subline: str = ""
+    # Narración hablada: si hay captions vacíos, se convierte en subtítulos automáticos.
+    narration: str = ""
     archetype: str = "typographic_poster"  # reutiliza IDs de layout_archetypes para estilo de overlay
     duration_s: float = Field(default=4.0, gt=0)
     effect: str = "zoomIn"  # token provider-neutral (Ken Burns); mapeado a Shotstack en to_shotstack_edit
@@ -34,7 +36,7 @@ class Scene(BaseModel):
 
 
 class Caption(BaseModel):
-    """Cue de subtítulo sincronizado a timestamps de palabra (Whisper)."""
+    """Cue de subtítulo sincronizado a timestamps de palabra (Whisper) o a la narración de escena."""
 
     text: str = Field(min_length=1)
     start_s: float = Field(ge=0)
@@ -110,6 +112,88 @@ def _clamped_scene_durations(timeline: Timeline) -> list[float]:
 
 # Estilos TitleAsset válidos en Shotstack (el archetype interno no se envía tal cual).
 _SHOTSTACK_TITLE_STYLE = "minimal"
+_MAX_TITLE_CHARS = 28
+_MAX_TITLE_LINE = 16
+_MAX_SUBTITLE_CHARS = 42
+
+
+def _wrap_short(text: str, *, max_chars: int, line_width: int) -> str:
+    """Recorta y parte en 1–2 líneas cortas para que Shotstack no desborde el frame 9:16."""
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned:
+        return ""
+    if len(cleaned) > max_chars:
+        cut = cleaned[: max_chars - 1]
+        if " " in cut:
+            cut = cut.rsplit(" ", 1)[0]
+        cleaned = f"{cut}…"
+    words = cleaned.split()
+    if not words:
+        return ""
+    line1: list[str] = []
+    line2: list[str] = []
+    for word in words:
+        trial = " ".join(line1 + [word])
+        if not line2 and len(trial) <= line_width:
+            line1.append(word)
+        else:
+            line2.append(word)
+    if not line2:
+        return " ".join(line1)
+    second = " ".join(line2)
+    if len(second) > line_width:
+        second = second[: line_width - 1].rsplit(" ", 1)[0] + "…"
+    return f"{' '.join(line1)}\n{second}"
+
+
+def fit_title_overlay(headline: str, subline: str = "") -> str:
+    """Headline corto para overlay superior; el subline largo va a subtítulos, no al título grande."""
+    primary = (headline or "").strip() or (subline or "").strip()
+    return _wrap_short(primary, max_chars=_MAX_TITLE_CHARS, line_width=_MAX_TITLE_LINE)
+
+
+def _chunk_subtitle(text: str, max_chars: int = _MAX_SUBTITLE_CHARS) -> list[str]:
+    """Parte una narración en cues de subtítulo legibles (por palabras)."""
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned:
+        return []
+    words = cleaned.split()
+    chunks: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            current = word
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def build_captions_from_narrations(
+    narrations: list[str],
+    durations: list[float],
+    *,
+    max_chars_per_cue: int = _MAX_SUBTITLE_CHARS,
+) -> list[Caption]:
+    """Genera subtítulos a partir de la narración de cada escena, repartidos en su duración."""
+    captions: list[Caption] = []
+    cursor = 0.0
+    for narration, length in zip(narrations, durations):
+        chunks = _chunk_subtitle(narration, max_chars_per_cue)
+        if not chunks or length <= 0:
+            cursor += max(length, 0.0)
+            continue
+        slice_len = length / len(chunks)
+        for i, chunk in enumerate(chunks):
+            start = cursor + i * slice_len
+            end = cursor + (i + 1) * slice_len
+            captions.append(Caption(text=chunk, start_s=start, end_s=max(end, start + 0.1)))
+        cursor += length
+    return captions
 
 
 def to_shotstack_edit(timeline: Timeline) -> dict:
@@ -145,17 +229,18 @@ def to_shotstack_edit(timeline: Timeline) -> dict:
                 }
             )
 
-        overlay_text = "\n".join(part for part in (scene.headline, scene.subline) if part).strip()
-        if overlay_text:
+        # Título corto arriba (size small). El texto largo va en subtítulos, no como "large" centrado.
+        title_text = fit_title_overlay(scene.headline, scene.subline)
+        if title_text:
             title_clips.append(
                 {
                     "asset": {
                         "type": "title",
-                        "text": overlay_text,
+                        "text": title_text,
                         "style": _SHOTSTACK_TITLE_STYLE,
                         "color": "#ffffff",
-                        "size": "large",
-                        "position": "center",
+                        "size": "small",
+                        "position": "top",
                     },
                     "start": start,
                     "length": length,
@@ -163,9 +248,22 @@ def to_shotstack_edit(timeline: Timeline) -> dict:
             )
         start += length
 
+    captions = list(timeline.captions)
+    if not captions:
+        narrations = [(s.narration or "").strip() for s in timeline.scenes]
+        if any(narrations):
+            captions = build_captions_from_narrations(narrations, durations)
+        else:
+            # Fallback: subtítulos desde headline/subline si no hay narración explícita
+            fallback = [
+                " ".join(p for p in (s.headline, s.subline) if p).strip() for s in timeline.scenes
+            ]
+            if any(fallback):
+                captions = build_captions_from_narrations(fallback, durations)
+
     # tracks[0] = capa superior. Media siempre al fondo.
     tracks: list[dict] = []
-    if timeline.captions:
+    if captions:
         tracks.append(
             {
                 "clips": [
@@ -176,12 +274,12 @@ def to_shotstack_edit(timeline: Timeline) -> dict:
                             "style": "subtitle",
                             "color": "#ffffff",
                             "size": "small",
-                            "position": "bottom",
+                            "position": "center",
                         },
                         "start": cap.start_s,
                         "length": max(cap.end_s - cap.start_s, 0.1),
                     }
-                    for cap in timeline.captions
+                    for cap in captions
                 ]
             }
         )

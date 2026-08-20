@@ -1,0 +1,10 @@
+# DEPRECATED para la VPS compartida con InsightFlow.
+#
+# En Hostinger KVM 4 el TLS lo gestiona el Caddy del HOST
+# (/etc/caddy/Caddyfile). Usa el fragmento:
+#
+#   infra/deploy/Caddyfile.marketing.snippet
+#
+# Documentación completa:
+#
+#   infra/deploy/vps-hostinger.md

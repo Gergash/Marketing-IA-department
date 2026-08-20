@@ -3,6 +3,8 @@
 Referencia de **comandos exactos** para levantar el MVP en Windows (Git Bash / PowerShell).  
 Todos los servicios asumen que ya activaste el venv y estás en la raíz del repo salvo donde se indique otra ruta.
 
+**Producción en la VPS (Hostinger + InsightFlow):** no uses esta guía. Ve a [`deploy/vps-hostinger.md`](deploy/vps-hostinger.md).
+
 **Raíz del proyecto:** `~/Desktop/PowerUps/Marketing DEPA IA`
 
 ---
@@ -29,7 +31,7 @@ Copia y configura `.env` desde `.env.example` (nunca commitear `.env`).
 | T1 | Docker (Postgres + Redis) | Siempre | 5433, 6379 |
 | T2 | Ollama | Siempre (LLM) | 11434 |
 | T3 | FastAPI (Uvicorn) | Siempre | 8000 |
-| T4 | Celery worker (cola `celery`) | Runs async imagen/story (`feed` / `story`) | — |
+| T4 | Celery worker (cola `celery`) | Runs async de imagen (`feed` / `story` / `universal`) | — |
 | T4b | Celery worker (cola `video_render`) | Reels y clips Drive (`reel` / `user_clip_reel`) | — |
 | T5 | Frontend Vite | Dashboard | 5173 |
 | T6 | Go publisher | Al aprobar/publicar en IG / Reels | 8088 |
@@ -98,7 +100,7 @@ source .venv/Scripts/activate
 python -m celery -A workers.celery_app.celery_app worker -l info
 ```
 
-Necesario para **Enviar Async** con formatos `feed` y `story`.
+Necesario para **Enviar Async** con formatos de imagen (`feed`, `story`, `universal`).
 
 Al arrancar, el banner **`[tasks]`** debe listar al menos:
 
@@ -209,7 +211,7 @@ En Meta Developers → Valid OAuth Redirect URIs: pegar la **URI completa** (pat
 1. T1–T5 levantados (T4b solo para Reels; T6–T7 solo si publicas en IG).
 2. `.env`: `IMAGE_PROVIDER=fal` (o `venice` + `VENICE_API_KEY`), `LLM_PROVIDER=ollama`, `OCR_PROVIDER=paddle` si usas PDFs escaneados.
 3. Dashboard → **Manual de marca (PDF)** → subir brand book (aparecen paleta + logos si el scan encuentra).
-4. Crear brief → formato **feed** o **story** → elegir **Cuenta destino** → **Enviar async**.
+4. Crear brief → elegir **Red social** y **Formato** (feed / story / universal) → **Cuenta destino** → **Enviar async**.
 5. Esperar `pending_approval` con pieza (con marca: arquetipo campaña + logo).
 6. T6 + T7 → **Aprobar** (o **Solicitar cambios** con notas).
 

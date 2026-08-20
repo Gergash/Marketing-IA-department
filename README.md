@@ -4,11 +4,13 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 
 ## Capacidades
 
-- Generación de piezas gráficas (fal.ai / Venice.ai / SD) con overlays editoriales y tipografía premium
+- Generación de piezas gráficas (fal.ai / Venice.ai / SD) con overlays editoriales, tipografía premium y contraste adaptativo
+- Formatos por red social (Instagram, Facebook, LinkedIn, TikTok, X) + **formato universal 1:1** para publicar la misma pieza en varias redes
 - Manual de marca PDF: OCR (PaddleOCR), paleta de color, logos → prioridad máxima en diseño
 - Reels programáticos (Shotstack) y Reels desde clips del usuario (Google Drive)
 - Copy con bucle LangGraph Copywriter ↔ QA y doctrina inbound
 - Asesor creativo conversacional (burbuja en el dashboard)
+- Hilo de pensamiento en vivo de los agentes + modo interactivo con checkpoints
 - Publicación nativa Meta/Instagram y LinkedIn (OAuth multi-cuenta + sidecar Go)
 - HITL: aprobar / rechazar / solicitar cambios (`revise`)
 
@@ -38,10 +40,27 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 9** ✅ `POST /runs/{id}/revise` (nunca publica; vuelve a `pending_approval`)
 - **Paso 10** ✅ Multi-cuenta social + selector **Cuenta destino**. TikTok = fase 2 (auditoría app)
 - **Paso 11** ✅ Manual de marca PDF (OCR + paleta + logos) → arquetipo `brand_campaign_piece`
-- **Paso 12** ✅ Venice.ai como proveedor de imagen (y escenas i2v opcionales)
+- **Paso 12** ✅ Venice.ai como proveedor de imagen (y escenas i2v opcionales); modos `full` / `scenes` / `still` en `GET /api/video/options`
 - **Paso 13** ✅ Asesor creativo (`POST /api/advisor/chat` + burbuja UI)
+- **Paso 14** ✅ Hilo de pensamiento (`GET /api/thoughts/{trace_id}`) + modo interactivo con checkpoints
+- **Paso 15** ✅ Formatos por red + `content_format=universal` (`GET /api/image/formats`). TikTok y X: generación sí, publicación automática no
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-08-03).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-08-11).
+
+## Formatos de publicación
+
+Fuente única de dimensiones: `agents/marketing_agents/image_specs.py`, expuesta en `GET /api/image/formats`. El dashboard solo ofrece los formatos válidos de la red elegida.
+
+| Red | Formatos disponibles | Feed |
+|---|---|---|
+| Instagram / Facebook | `feed`, `story`, `reel`, `user_clip_reel`, `universal` | 1080×1350 |
+| LinkedIn | `feed`, `universal` | 1200×627 |
+| TikTok | `story`, `reel`, `user_clip_reel`, `universal` | vertical 1080×1920 |
+| X (Twitter) | `feed`, `reel`, `universal` | 1200×675 |
+
+`universal` es una pieza **1080×1080** idéntica en todas las redes — el encuadre que ninguna recorta de forma agresiva — pensada para cuando el mismo post va a varias redes a la vez. Internamente se comporta como `feed` (mismo layout, misma ruta de publicación).
+
+**TikTok y X solo generan.** No hay publicación automática: al aprobar, `_publish_run` responde `unavailable` con un mensaje explícito en lugar de mandar la pieza a un sidecar que no soporta esas plataformas.
 
 ## Estructura
 
@@ -170,7 +189,7 @@ python -m alembic upgrade head
 
 En **Windows (PowerShell)**, si `alembic` no se reconoce, usa siempre `python -m alembic ...` (o `.\.venv\Scripts\python.exe -m alembic ...` con tu venv).
 
-Esto crea todas las tablas y columnas versionadas (`briefs`, `agent_runs` incluye `content_format` feed/story, `generated_assets`, `publications`, `campaign_schedules`).
+Esto crea todas las tablas y columnas versionadas (`briefs`, `agent_runs` con `content_format`, `generated_assets`, `publications`, `campaign_schedules`, `oauth_tokens` multi-cuenta).
 
 ### Iniciar la API contra Postgres
 
@@ -195,6 +214,8 @@ Con `DATABASE_URL` apuntando a Postgres, la API **no ejecuta** `create_all` — 
 ### Stack completo (Postgres + Redis + Worker + Frontend + Go + ngrok)
 
 Guía paso a paso con rutas Windows: [`infra/arranque-stack.md`](infra/arranque-stack.md)
+
+**Producción (VPS Hostinger, coexistencia con InsightFlow):** [`infra/deploy/vps-hostinger.md`](infra/deploy/vps-hostinger.md) — Caddy del host, loopback `8000`/`8081`, sin Caddy en el compose.
 
 ```bash
 # 1. Infraestructura (desde la raíz del repo)
@@ -310,7 +331,9 @@ LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/callback/linkedin
 GO_PUBLISHER_URL=http://localhost:8088
 ```
 
-Conecta la cuenta en el dashboard. Publicación con imagen: `registerUpload` → PUT → `ugcPosts` (Go o Python).
+Conecta la cuenta en el dashboard. Publicación con imagen **solo desde Python** (el sidecar Go responde 400 para `platform=linkedin`): API versionada `/rest/images?action=initializeUpload` → PUT → `/rest/posts` con header `LinkedIn-Version` (`LINKEDIN_API_VERSION`, default `202401`). `/v2/assets` y `/v2/ugcPosts` están deprecados y ya no se usan.
+
+Limitaciones: solo perfil personal (falta `w_organization_social` para páginas) y solo imagen — `reel`/`user_clip_reel` dan error explícito. El token dura ~60 días sin refresh automático; Integraciones muestra la columna **Token** y avisa a ≤7 días.
 
 **Meta / Instagram Business** (publicación en feed o **historia** con Graph API; imagen en URL HTTPS pública):
 
@@ -322,7 +345,7 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 ```
 
 - Comprueba credenciales sin exponer secretos: `GET /api/social/publish-status`.
-- Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"`, `"story"` o `"reel"`, y opcionalmente `user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`.
+- Al crear un run (`POST /api/runs/sync` o `/async`), envía `content_format`: `"feed"`, `"story"`, `"reel"`, `"user_clip_reel"` o `"universal"`, y opcionalmente `user_asset_url`, `alter_image_with_ai`, `visual_instructions`, `archetype_override`. Los formatos válidos por red están en `GET /api/image/formats`.
 - **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional.
 - Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (`PUBLIC_IMAGE_BASE_URL` con ngrok en dev).
 - **Reels** (`content_format="reel"`) son **async-only**: `/runs/sync` responde `422`; usa siempre `/runs/async` con un segundo worker Celery en la cola `video_render` (`python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render`). Requiere `VIDEO_PROVIDER`/`SHOTSTACK_API_KEY` (`SHOTSTACK_ENV=stage` para sandbox) y `VOICE_PROVIDER=fal` (o elevenlabs). Con fal.ai, Shotstack descarga fondos/voz desde `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) es obligatorio para **publicar en Meta** y para assets locales (overlays / `user_clip_reel`). Ver sección **PASO 3D** en `.env.example`.
@@ -434,7 +457,9 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
   - `POST /api/runs/async` — async (cola `video_render` para video)
   - `POST /api/runs/{id}/approve|reject|revise` — HITL
   - `GET /api/runs`, `/api/runs/{id}`
-  - `GET /api/image/archetypes`, `/api/image/providers`
+  - `GET /api/image/archetypes`, `/api/image/providers`, `/api/image/formats`
+  - `GET /api/video/options` — modos y modelos de video Venice
+  - `GET /api/thoughts/{trace_id}`, `POST /api/thoughts/{trace_id}/reply` — hilo de pensamiento y checkpoints
   - `GET /api/auth/accounts` — multi-cuenta OAuth
   - `POST /api/campaigns`, `POST /api/campaigns/{id}/fire`
 - **Estado del proyecto (canónico):** [`estado-actual.txt`](estado-actual.txt)
@@ -442,4 +467,5 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
 - **Pipeline:** [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Referencia visual de marca:** [`docs/references/README.md`](docs/references/README.md)
 - **Prueba de Fuego del Scheduler:** [`infra/prueba-de-fuego-scheduler.md`](infra/prueba-de-fuego-scheduler.md)
-- **Arranque del stack completo:** [`infra/arranque-stack.md`](infra/arranque-stack.md)
+- **Arranque del stack completo (local):** [`infra/arranque-stack.md`](infra/arranque-stack.md)
+- **Despliegue producción VPS (coexistencia InsightFlow):** [`infra/deploy/vps-hostinger.md`](infra/deploy/vps-hostinger.md)

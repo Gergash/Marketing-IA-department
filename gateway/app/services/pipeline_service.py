@@ -118,9 +118,11 @@ _OAUTH_PROVIDER_MAP = {
     "ig": "meta",
     "facebook": "meta",
     "linkedin": "linkedin",
+    "x": "x",
+    "twitter": "x",
 }
 
-_NATIVE_PYTHON_PLATFORMS: frozenset[str] = frozenset({"linkedin"})
+_NATIVE_PYTHON_PLATFORMS: frozenset[str] = frozenset({"linkedin", "x", "twitter"})
 
 
 def _resolve_publish_token(
@@ -176,6 +178,14 @@ def _assert_token_not_expired(token_row: OAuthToken) -> None:
     )
 
 
+def _public_image_url(image_url: str) -> str:
+    """Sustituye localhost por PUBLIC_IMAGE_BASE_URL cuando hay túnel público."""
+    public_base = get_settings().public_image_base_url.rstrip("/")
+    if image_url.startswith("http://localhost:8000") and public_base != "http://localhost:8000":
+        return image_url.replace("http://localhost:8000", public_base, 1)
+    return image_url
+
+
 def _publish_via_linkedin(
     db: Session,
     result: dict,
@@ -207,10 +217,7 @@ def _publish_via_linkedin(
             "Publica el video manualmente o cambia la red social del brief."
         )
 
-    # Normalizar URL: si apunta a localhost, usar PUBLIC_IMAGE_BASE_URL
-    public_base = get_settings().public_image_base_url.rstrip("/")
-    if image_url.startswith("http://localhost:8000") and public_base != "http://localhost:8000":
-        image_url = image_url.replace("http://localhost:8000", public_base, 1)
+    image_url = _public_image_url(image_url)
 
     pub = publish_post(
         brief.red_social,
@@ -226,6 +233,59 @@ def _publish_via_linkedin(
     return "success"
 
 
+def _publish_via_x(
+    db: Session,
+    result: dict,
+    brief: Brief,
+    run: AgentRun,
+    idempotency_key: str | None,
+) -> str:
+    """Publicación nativa en X (texto + imagen) con OAuth 1.0a user context."""
+    from agents.marketing_agents.social_providers import publish_post
+
+    s = get_settings()
+    if not (s.x_api_key or "").strip() or not (s.x_api_secret or "").strip():
+        raise ValueError(
+            "X_API_KEY / X_API_SECRET no están en .env. "
+            "Configúralos con las Consumer Keys de la app en developer.x.com."
+        )
+
+    token_row = _resolve_publish_token(db, run, "x")
+    if not token_row:
+        raise ValueError(
+            "No hay cuenta de X conectada para este tenant. "
+            "Conéctala desde el dashboard en Integraciones → Conectar X."
+        )
+    if not (token_row.refresh_token or "").strip():
+        raise ValueError(
+            "La cuenta de X no tiene access token secret. "
+            "Desconéctala y vuelve a Conectar X (OAuth 1.0a)."
+        )
+    _assert_token_not_expired(token_row)
+
+    copy_text = result["copy"]["copy_final"]
+    image_url = result["design"].get("image_url")
+    if not image_url:
+        raise ValueError(
+            "La publicación nativa en X requiere imagen (feed). "
+            f"Este run es '{getattr(run, 'content_format', None) or 'video'}' y no generó imagen."
+        )
+    image_url = _public_image_url(image_url)
+
+    pub = publish_post(
+        "x",
+        copy_text,
+        image_url,
+        idempotency_key,
+        content_format=_normalize_content_format(getattr(run, "content_format", None)),
+        x_access_token=token_row.access_token,
+        x_access_token_secret=token_row.refresh_token,
+    )
+    result["publish_result"] = pub
+    logger.info("x.publish.ok", post_id=pub.get("platform_post_id"))
+    return "success"
+
+
 def _publish_run(
     db: Session,
     result: dict,
@@ -233,9 +293,17 @@ def _publish_run(
     run: AgentRun,
     idempotency_key: str | None,
 ) -> str:
-    """Enruta publicación: LinkedIn nativo (Python) o Go sidecar (Meta/IG)."""
+    """Enruta publicación: LinkedIn/X nativo (Python) o Go sidecar (Meta/IG)."""
     platform = brief.red_social.lower()
-    if platform in _NATIVE_PYTHON_PLATFORMS:
+    # TikTok se puede diseñar pero no publicar automáticamente: sin este corte, el
+    # sidecar Go recibiría una plataforma que no soporta y el run reportaría un falso éxito.
+    if platform not in _OAUTH_PROVIDER_MAP and platform not in _NATIVE_PYTHON_PLATFORMS:
+        run.error_message = f"publicacion_no_soportada_para:{platform}"
+        logger.info("publish.platform_unsupported", platform=platform, run_id=run.id)
+        return "unavailable"
+    if platform in ("x", "twitter"):
+        return _publish_via_x(db, result, brief, run, idempotency_key)
+    if platform == "linkedin":
         return _publish_via_linkedin(db, result, brief, run, idempotency_key)
     return _publish_via_go(result, brief, idempotency_key, run, db)
 
@@ -352,9 +420,11 @@ def _run_with_thoughts(
 
 
 def _normalize_content_format(value: str | None) -> str:
-    """Normaliza el formato de publicación a `feed`/`story`/`reel`/`user_clip_reel` (desconocido → feed)."""
+    """Normaliza el formato de publicación a `feed`/`story`/`reel`/`user_clip_reel`/`universal` (desconocido → feed)."""
+    from agents.marketing_agents.image_specs import CONTENT_FORMATS
+
     v = (value or "feed").lower()
-    return v if v in ("feed", "story", "reel", "user_clip_reel") else "feed"
+    return v if v in CONTENT_FORMATS else "feed"
 
 
 def create_run(

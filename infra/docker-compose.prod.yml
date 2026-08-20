@@ -1,0 +1,182 @@
+# Producción compartida (Hostinger KVM 4 + InsightFlow)
+#
+# Caddy vive en el HOST (/etc/caddy/Caddyfile), no en este compose.
+# API y frontend solo en loopback; Postgres/Redis/go-publisher sin ports al host.
+#
+# Uso (en la VPS, desde la raíz del repo):
+#   docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Guía: infra/deploy/vps-hostinger.md
+
+name: marketing-depa-prod
+
+services:
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.frontend
+      args:
+        # Misma origen HTTPS (Caddy del host) → rutas relativas /api
+        VITE_API_URL: ""
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:80"
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-marketing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-marketing_mvp}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.api
+    restart: unless-stopped
+    env_file: [../.env.production]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-marketing}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-marketing_mvp}
+      REDIS_URL: redis://redis:6379/0
+      GO_PUBLISHER_URL: http://go-publisher:8088
+      PUBLIC_IMAGE_BASE_URL: https://${DOMAIN}
+      OAUTH_SUCCESS_REDIRECT_URL: https://${DOMAIN}/
+      META_REDIRECT_URI: https://${DOMAIN}/api/auth/callback/meta
+      LINKEDIN_REDIRECT_URI: https://${DOMAIN}/api/auth/callback/linkedin
+      GOOGLE_REDIRECT_URI: https://${DOMAIN}/api/auth/callback/google
+      X_REDIRECT_URI: https://${DOMAIN}/api/auth/callback/x
+      APP_ENV: production
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - static_images:/app/static/images
+      - static_audio:/app/static/audio
+      - static_videos:/app/static/videos
+      - static_uploads:/app/static/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        python -m alembic upgrade head &&
+        uvicorn gateway.app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health').read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.worker
+    restart: unless-stopped
+    env_file: [../.env.production]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-marketing}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-marketing_mvp}
+      REDIS_URL: redis://redis:6379/0
+      GO_PUBLISHER_URL: http://go-publisher:8088
+      PUBLIC_IMAGE_BASE_URL: https://${DOMAIN}
+    volumes:
+      - static_images:/app/static/images
+      - static_audio:/app/static/audio
+      - static_videos:/app/static/videos
+      - static_uploads:/app/static/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    command:
+      [
+        "python",
+        "-m",
+        "celery",
+        "-A",
+        "workers.celery_app.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "-Q",
+        "celery",
+        "-c",
+        "2",
+      ]
+
+  video-worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.worker
+    restart: unless-stopped
+    env_file: [../.env.production]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-marketing}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-marketing_mvp}
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_IMAGE_BASE_URL: https://${DOMAIN}
+    volumes:
+      - static_images:/app/static/images
+      - static_audio:/app/static/audio
+      - static_videos:/app/static/videos
+      - static_uploads:/app/static/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    command:
+      [
+        "python",
+        "-m",
+        "celery",
+        "-A",
+        "workers.celery_app.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "-Q",
+        "video_render",
+        "-c",
+        "1",
+      ]
+
+  go-publisher:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.go-publisher
+    restart: unless-stopped
+    expose:
+      - "8088"
+
+volumes:
+  postgres_data:
+  static_images:
+  static_audio:
+  static_videos:
+  static_uploads:

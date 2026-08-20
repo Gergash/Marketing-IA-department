@@ -44,8 +44,9 @@ class RunRequest(BaseModel):
     idempotency_key: str | None = None
     # Instagram/Meta: story = historia; reel = video corto vertical generado con IA (solo async);
     # user_clip_reel = reel armado con clips reales del usuario desde Google Drive (solo async);
-    # linkedin suele publicar como post de feed
-    content_format: Literal["feed", "story", "reel", "user_clip_reel"] = "feed"
+    # linkedin suele publicar como post de feed;
+    # universal = pieza 1:1 pensada para publicarse en varias redes a la vez sin recortes
+    content_format: Literal["feed", "story", "reel", "user_clip_reel", "universal"] = "feed"
     # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
     image_provider: Literal["stable_diffusion", "fal", "venice"] | None = None
     # Override manual del arquetipo visual (si None, el agente lo elige automáticamente)
@@ -144,6 +145,14 @@ class ImageProvidersResponse(BaseModel):
     providers: list[dict[str, str]]
 
 
+class ContentFormatsResponse(BaseModel):
+    """Catálogo de formatos de publicación por red social, con dimensiones resueltas."""
+
+    networks: list[dict[str, str]]
+    formats_by_network: dict[str, list[dict]]
+    universal_format: str = "universal"
+
+
 class VideoOptionsResponse(BaseModel):
     """Opciones de generación de video (Venice) expuestas al frontend."""
 
@@ -231,11 +240,14 @@ class SocialPublishStatusResponse(BaseModel):
     linkedin_oauth_connected: bool = False
     meta_oauth_connected: bool = False
     meta_instagram_ready: bool
+    x_app_configured: bool = False
+    x_oauth_connected: bool = False
     go_publisher_url: str = "http://localhost:8088"
     hint: str = (
         "Configura SOCIAL_PROVIDER y las credenciales en .env. "
         "LinkedIn nativo: conecta con OAuth en el dashboard y usa SOCIAL_PROVIDER=meta o brief red_social=linkedin. "
-        "Instagram/Facebook: meta + Go sidecar en :8088."
+        "Instagram/Facebook: meta + Go sidecar en :8088. "
+        "X: X_API_KEY/SECRET + Conectar X (OAuth 1.0a) en Integraciones."
     )
 
 

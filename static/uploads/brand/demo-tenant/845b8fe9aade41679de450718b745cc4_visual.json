@@ -1,12 +1,4 @@
 {
-  "id": "845b8fe9aade41679de450718b745cc4",
-  "original_filename": "Ejemplo_Identidad_Corporativa_Tres_Amores.pdf",
-  "pdf_filename": "845b8fe9aade41679de450718b745cc4.pdf",
-  "txt_filename": "845b8fe9aade41679de450718b745cc4.txt",
-  "visual_filename": "845b8fe9aade41679de450718b745cc4_visual.json",
-  "char_count": 965,
-  "extraction_method": "pypdf",
-  "url": "http://localhost:8000/static/uploads/brand/demo-tenant/845b8fe9aade41679de450718b745cc4.pdf",
   "palette_hex": [
     "#AD6C34",
     "#D29F66",
@@ -41,5 +33,10 @@
   ],
   "suggested_archetype": "brand_campaign_piece",
   "pages_scanned": 2,
-  "embedded_images": 2
+  "embedded_images": 2,
+  "notes": [
+    "pdf_fonts:2",
+    "text_fonts:2",
+    "palette_swatch:845b8fe9aade41679de450718b745cc4_palette.png"
+  ]
 }

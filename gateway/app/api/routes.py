@@ -30,6 +30,7 @@ from gateway.app.schemas.contracts import (
     CampaignFireResponse,
     CampaignScheduleCreate,
     CampaignScheduleResponse,
+    ContentFormatsResponse,
     ImageProvidersResponse,
     JobStatusResponse,
     RejectRequest,
@@ -75,10 +76,13 @@ def social_publish_status(
     oauth_set = set(oauth_rows)
     linkedin_oauth = "linkedin" in oauth_set
     meta_oauth = "meta" in oauth_set
+    x_oauth = "x" in oauth_set
     return SocialPublishStatusResponse(
         social_provider=s.social_provider,
         linkedin_ready=bool(s.linkedin_access_token.strip()) or linkedin_oauth,
         linkedin_oauth_connected=linkedin_oauth,
+        x_app_configured=bool(s.x_api_key.strip() and s.x_api_secret.strip()),
+        x_oauth_connected=x_oauth,
         meta_oauth_connected=meta_oauth,
         meta_instagram_ready=bool(
             s.meta_page_access_token.strip() and s.instagram_business_account_id.strip()
@@ -123,6 +127,20 @@ def image_providers(
     return ImageProvidersResponse(
         default_provider=s.image_provider,
         providers=providers,
+    )
+
+
+@router.get("/image/formats", response_model=ContentFormatsResponse)
+def content_formats(
+    tenant_id: str = Depends(require_auth),
+) -> ContentFormatsResponse:
+    """Formatos de publicación disponibles por red social (dimensiones incluidas)."""
+    _ = tenant_id
+    from agents.marketing_agents.image_specs import NETWORKS, formats_for_network
+
+    return ContentFormatsResponse(
+        networks=[{"id": net_id, "label": label} for net_id, label in NETWORKS],
+        formats_by_network={net_id: formats_for_network(net_id) for net_id, _label in NETWORKS},
     )
 
 

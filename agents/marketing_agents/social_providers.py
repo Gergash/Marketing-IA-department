@@ -19,8 +19,10 @@ def publish_post(
     content_format: str = "feed",
     linkedin_token: str | None = None,
     linkedin_urn: str | None = None,
+    x_access_token: str | None = None,
+    x_access_token_secret: str | None = None,
 ) -> dict:
-    """Enruta la publicación según plataforma y tokens disponibles (LinkedIn, Meta/IG o mock)."""
+    """Enruta la publicación según plataforma y tokens disponibles (LinkedIn, X, Meta/IG o mock)."""
     from gateway.app.core.settings import get_settings
     s = get_settings()
     cf = (content_format or "feed").lower()
@@ -29,6 +31,14 @@ def publish_post(
 
     if platform.lower() in ("linkedin",) and linkedin_token:
         return _linkedin(copy_text, image_url, linkedin_token, linkedin_urn or "", content_format=cf)
+    if platform.lower() in ("x", "twitter") and x_access_token and x_access_token_secret:
+        return _x_twitter(
+            copy_text,
+            image_url,
+            x_access_token,
+            x_access_token_secret,
+            content_format=cf,
+        )
     if (
         s.social_provider == "meta"
         and s.meta_page_access_token
@@ -270,3 +280,120 @@ def _linkedin_fetch_urn(token: str) -> str:
         )
         r_me.raise_for_status()
         return f"urn:li:person:{r_me.json()['id']}"
+
+
+# ---------------------------------------------------------------------------
+# X (Twitter) — media upload v1.1 + create tweet v2 (OAuth 1.0a user context)
+# Docs: https://developer.x.com/en/docs/twitter-api/tweets/manage-tweets/api-reference/post-tweets
+# ---------------------------------------------------------------------------
+
+def _x_oauth1_auth_header(
+    method: str,
+    url: str,
+    *,
+    access_token: str,
+    access_token_secret: str,
+    body: str | None = None,
+    content_type: str | None = None,
+) -> dict[str, str]:
+    """Firma OAuth 1.0a con Consumer Keys del .env + token de usuario."""
+    from oauthlib.oauth1 import Client as OAuth1Client
+
+    from gateway.app.core.settings import get_settings
+
+    s = get_settings()
+    client = OAuth1Client(
+        client_key=(s.x_api_key or "").strip(),
+        client_secret=(s.x_api_secret or "").strip(),
+        resource_owner_key=access_token,
+        resource_owner_secret=access_token_secret,
+        signature_type="AUTH_HEADER",
+    )
+    headers: dict[str, str] = {}
+    if content_type:
+        headers["Content-Type"] = content_type
+    _uri, signed_headers, _body = client.sign(
+        url,
+        http_method=method,
+        body=body,
+        headers=headers or None,
+    )
+    return {k: v for k, v in dict(signed_headers).items() if k.lower() == "authorization"}
+
+
+def _x_twitter(
+    copy_text: str,
+    image_url: str,
+    access_token: str,
+    access_token_secret: str,
+    content_format: str,
+) -> dict:
+    """Publica en X: descarga imagen → upload.twitter.com → POST /2/tweets."""
+    import httpx
+
+    text = (copy_text or "").strip()[:280]
+    if not text and not image_url:
+        raise ValueError("X: se necesita texto o imagen para publicar")
+
+    with httpx.Client(timeout=60) as client:
+        media_id: str | None = None
+        if image_url:
+            img_resp = client.get(image_url)
+            img_resp.raise_for_status()
+            image_bytes = img_resp.content
+            content_type = (img_resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+            upload_url = "https://upload.twitter.com/1.1/media/upload.json"
+            auth = _x_oauth1_auth_header(
+                "POST",
+                upload_url,
+                access_token=access_token,
+                access_token_secret=access_token_secret,
+            )
+            # Multipart: firmar sin body (Twitter espera solo params OAuth en el header).
+            r_up = client.post(
+                upload_url,
+                headers=auth,
+                files={"media": ("image", image_bytes, content_type)},
+            )
+            if not r_up.is_success:
+                logger.warning("x.media_upload_failed", status=r_up.status_code, body=r_up.text[:400])
+                raise ValueError(f"X media upload HTTP {r_up.status_code}: {r_up.text[:300]}")
+            media_id = str(r_up.json().get("media_id_string") or r_up.json().get("media_id") or "")
+            if not media_id:
+                raise ValueError(f"X media upload sin media_id: {r_up.text[:300]}")
+
+        tweet_url = "https://api.twitter.com/2/tweets"
+        payload: dict = {}
+        if text:
+            payload["text"] = text
+        if media_id:
+            payload["media"] = {"media_ids": [media_id]}
+        import json as _json
+
+        body = _json.dumps(payload)
+        # OAuth 1.0a de X: firmar solo la URL (sin body JSON; no usan oauth_body_hash).
+        auth = _x_oauth1_auth_header(
+            "POST",
+            tweet_url,
+            access_token=access_token,
+            access_token_secret=access_token_secret,
+        )
+        r_tw = client.post(
+            tweet_url,
+            content=body,
+            headers={**auth, "Content-Type": "application/json"},
+        )
+        if not r_tw.is_success:
+            logger.warning("x.tweet_failed", status=r_tw.status_code, body=r_tw.text[:400])
+            raise ValueError(f"X crear tweet HTTP {r_tw.status_code}: {r_tw.text[:300]}")
+        tweet_id = str((r_tw.json().get("data") or {}).get("id") or "")
+        if not tweet_id:
+            raise ValueError(f"X respuesta sin id de tweet: {r_tw.text[:300]}")
+
+        logger.info("x.published", tweet_id=tweet_id, content_format=content_format)
+        return {
+            "status": "published",
+            "publication_url": f"https://x.com/i/web/status/{tweet_id}",
+            "platform_post_id": tweet_id,
+            "content_format": content_format,
+        }

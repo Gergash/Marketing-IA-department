@@ -24,12 +24,12 @@ ContentStrategistAgent          ← lineal (LLM o stub; inbound + brand manual)
 │   (hasta max_attempts)       │
 └─────────────────────────────┘
   │
-  ├─ feed / story ───────────► DesignerAgent
+  ├─ feed / story / universal ► DesignerAgent
   │                              (brand_campaign_piece si hay manual;
   │                               fal / Venice / SD + overlay + logo)
   │
   ├─ content_format = reel ──► VideoScriptAgent → VideoDesignerAgent
-  │                              (escenas still o VIDEO_SCENE_PROVIDER=venice)
+  │                              (video_gen_mode: full | scenes | still)
   │
   └─ user_clip_reel ─────────► ClipReelDesigner     ← Drive → Whisper → Shotstack
   │
@@ -37,8 +37,10 @@ ContentStrategistAgent          ← lineal (LLM o stub; inbound + brand manual)
 HITL (Aprobar / Rechazar / Solicitar cambios → POST /runs/{id}/revise)
   │  social_account_id del run → token+account_id de esa cuenta (multi-cuenta)
   ▼
-PublisherAgent (si QA aprobó) ← lineal (Go sidecar Meta/LinkedIn)
+PublisherAgent (si QA aprobó) ← lineal (Go sidecar Meta/IG; LinkedIn nativo en Python)
 ```
+
+Todo el pipeline emite eventos al **hilo de pensamiento** (`thought_stream.py`) bajo el `trace_id` del run. En modo interactivo se detiene en checkpoints (estrategia, copy, arte) y espera `continue` / `adjust` / `cancel` por `POST /api/thoughts/{trace_id}/reply`.
 
 Fuera del pipeline: **CreativeAdvisorAgent** (`POST /api/advisor/chat`) — coach de marca con contexto del brief y del manual.
 
@@ -53,6 +55,10 @@ Marca: `brand_manual` + `ocr_paddle` + `brand_scan` + `brand_visual` → `BriefI
 | `strategist.py` | Estrategia de contenido (inbound + brand) | `BriefInput` | `StrategyOutput` |
 | `copywriter.py` | Redacción (revisiones QA; inbound + brand) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
 | `designer.py` | Imagen: fal/Venice/SD, foto usuario, logo marca | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
+| `image_specs.py` | Dimensiones y formatos válidos por red (fuente única) | `red_social`, `content_format` | `ImageSpec` / catálogo |
+| `visual_prompt_guards.py` | Sufijo y negativos anti-texto para los generadores | prompt | prompt reforzado |
+| `text_contrast.py` | Color de texto según luminancia del fondo | imagen + caja | colores de overlay |
+| `thought_stream.py` | Eventos en vivo + checkpoints interactivos | `trace_id` | stream Redis/memoria |
 | `brand_manual.py` / `brand_scan.py` / `brand_visual.py` | PDF → texto/OCR/paleta/logos → cues | tenant PDF | assets + cues |
 | `advisor.py` | Chat asesor (fuera del pipeline) | mensaje + brief | reply |
 | `video_script.py` | Guion reel 3-5 escenas (inbound) | brief, copy, strategy | guion escenas |
@@ -92,10 +98,22 @@ Controla cuántas rondas de copy como máximo se permiten antes de salir del gra
 - `strategy`, `copy`, `design`, `quality`, `publish_result` (como antes).
 - **`copy_qa_trace`**: lista ordenada de eventos del grafo (auditoría / debugging / UI futura).
 
+## Formatos de contenido (`content_format`)
+
+| Formato | Rama | Notas |
+|---------|------|-------|
+| `feed` | DesignerAgent | Dimensión según `red_social` (IG/FB 1080×1350, LinkedIn 1200×627, X 1200×675) |
+| `story` | DesignerAgent (layout centrado) | 9:16; no existe en LinkedIn ni X |
+| `universal` | DesignerAgent | 1080×1080 idéntico en todas las redes; se comporta como `feed` en layout y publicación |
+| `reel` | VideoScript + VideoDesigner | Async-only, cola `video_render` |
+| `user_clip_reel` | ClipReelDesigner | Async-only, requiere `drive_folder_id` + ffmpeg |
+
+El catálogo de qué formatos ofrece cada red vive en `image_specs._NETWORK_FORMATS` y se sirve por `GET /api/image/formats`. Redes sin provider de publicación (TikTok, X) generan la pieza pero `_publish_run` corta con `unavailable`.
+
 ## Rama Reels (`content_format="reel"`)
 
 - Tras copy/QA, `MarketingPipeline` delega a `VideoScriptAgent` + `VideoDesignerAgent` en lugar de `DesignerAgent`.
-- Escenas: stills fal/Venice + Ken Burns, o `VIDEO_SCENE_PROVIDER=venice` (image-to-video por escena, degrada a still si falla).
+- `video_gen_mode`: `full` (Venice genera un clip completo), `scenes` (Venice anima cada toma + Shotstack las une) o `still` (stills + Ken Burns, sin video AI). Modelos resueltos por `venice_video_models.py`; degrada a still si Venice falla.
 - Render async vía Celery cola `video_render` (no usar `/runs/sync`).
 - Con fal.ai, fondos/voz → Shotstack como URLs `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) para Meta y assets locales.
 - `result["design"]` incluye `video_url` (reels) o `image_url` (feed/story).

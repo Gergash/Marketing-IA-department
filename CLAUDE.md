@@ -96,7 +96,10 @@ agents/marketing_agents/
   overlay_text.py       — tipografía OFL + Windows fonts
   social_providers.py
   schemas.py
-  image_specs.py
+  image_specs.py        — dimensiones + catálogo de formatos por red (fuente única)
+  text_contrast.py      — color de texto según luminancia del fondo
+  visual_prompt_guards.py — sufijo/negativos anti-texto para fal/Venice/SD
+  venice_video_models.py  — aliases UI/.env → model IDs Venice
   knowledge/            — doctrina inbound
 
 gateway/app/
@@ -157,6 +160,9 @@ Referencia visual: `docs/references/README.md`. Fonts OFL: `static/fonts/README.
 | Reel (video, `content_format=reel`) | 1080×1920, 30fps | 9:16 |
 | Reel con clips propios (`content_format=user_clip_reel`) | 1080×1920, 30fps | 9:16 (duración 6-60s, no 15-30s del reel generado) |
 | LinkedIn feed | 1200×627 | — |
+| X (Twitter) feed | 1200×675 | 16:9 |
+| TikTok (imagen/video) | 1080×1920 | 9:16 |
+| Universal (`content_format=universal`) | 1080×1080 | 1:1 |
 
 fal.ai escala proporcionalmente si altura > 1440px.
 
@@ -227,7 +233,8 @@ Tras cambiar `.env` o código de video, **reinicia el worker**.
 
 ## Cómo levantar el stack (7-8 terminales)
 
-Ver `infra/arranque-stack.md`. Resumen:
+Ver `infra/arranque-stack.md` (local).  
+**Producción en Hostinger KVM 4 (junto a InsightFlow):** `infra/deploy/vps-hostinger.md` — un Caddy en el host, compose sin 80/443, puertos loopback.
 
 ```bash
 # 1 - Infra
@@ -269,7 +276,7 @@ ngrok http 8000
 - `POST /api/thoughts/{trace_id}/reply` — respuesta del usuario en un checkpoint (`continue` | `adjust` | `cancel`)
 - `GET /api/auth/accounts` / `DELETE /api/auth/accounts/{id}`
 - `POST /api/campaigns/{id}/fire`
-- `GET /api/image/archetypes` / `/image/providers`
+- `GET /api/image/archetypes` / `/image/providers` / `/image/formats` (formatos válidos por red)
 
 ---
 
@@ -279,11 +286,14 @@ ngrok http 8000
 pytest tests/ -v
 ```
 
-~**214 tests** collected. Archivos clave además de pipeline/video/clips:
+~**271 tests** collected. Archivos clave además de pipeline/video/clips:
 
 - `tests/test_brand_and_advisor.py`, `test_brand_scan.py`, `test_brand_visual.py`
 - `tests/test_venice.py`, `test_premium_fonts.py`, `test_caption.py`
 - `tests/test_revise_run.py`, `test_multi_account.py`, `test_llm_keep_alive.py`
+- `tests/test_format_normalization.py` (formatos por red + universal), `test_thought_stream.py`, `test_text_contrast_and_video_models.py`, `test_linkedin_native.py`
+
+3 fallos preexistentes en `test_venice.py` / `test_video_timeline_clips.py` (estructura del edit Shotstack).
 
 Estado canónico: [`estado-actual.txt`](estado-actual.txt).  
 NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).
@@ -305,6 +315,9 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 - **LLM stub silencioso** si Ollama apagado — mitigado con `keep_alive`/timeout; falta error en UI
 - **Imagen fail-loudly** (fal/Venice/SD); mock solo con `IMAGE_PROVIDER=mock`
 - **HITL revise** nunca publica; multi-cuenta vía `social_account_id`
+- **Formatos por red:** catálogo único en `image_specs.py` (`_NETWORK_FORMATS`), servido por `GET /api/image/formats`; el dashboard nunca hardcodea dimensiones
+- **`content_format=universal`** = 1080×1080 idéntico en todas las redes (para publicar la misma pieza en varias); se comporta como `feed` en layout y publicación
+- **TikTok / X:** solo generación. `_publish_run` corta con `unavailable` porque ni el sidecar Go ni el publisher Python los soportan
 
 ---
 

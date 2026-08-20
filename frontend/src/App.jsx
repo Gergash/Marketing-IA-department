@@ -27,6 +27,47 @@ const FORM_PLACEHOLDERS = {
   tono_marca: "profesional y cercano",
 };
 
+// Espejo de agents/marketing_agents/image_specs.py — solo se usa si GET /image/formats falla.
+const FALLBACK_NETWORKS = [
+  { id: "instagram", label: "Instagram" },
+  { id: "facebook", label: "Facebook" },
+  { id: "linkedin", label: "LinkedIn" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "x", label: "X (Twitter)" },
+];
+
+const FALLBACK_FORMATS = {
+  instagram: [
+    { id: "feed", label: "Post en feed", width: 1080, height: 1350, is_video: false },
+    { id: "story", label: "Historia (vertical)", width: 1080, height: 1920, is_video: false },
+    { id: "reel", label: "Reel — video generado con IA", width: 1080, height: 1920, is_video: true },
+    { id: "user_clip_reel", label: "Video con mis clips (Drive)", width: 1080, height: 1920, is_video: true },
+    { id: "universal", label: "Universal — encaja en todas las redes", width: 1080, height: 1080, is_video: false },
+  ],
+  facebook: [
+    { id: "feed", label: "Post en feed", width: 1080, height: 1350, is_video: false },
+    { id: "story", label: "Historia (vertical)", width: 1080, height: 1920, is_video: false },
+    { id: "reel", label: "Reel — video generado con IA", width: 1080, height: 1920, is_video: true },
+    { id: "user_clip_reel", label: "Video con mis clips (Drive)", width: 1080, height: 1920, is_video: true },
+    { id: "universal", label: "Universal — encaja en todas las redes", width: 1080, height: 1080, is_video: false },
+  ],
+  linkedin: [
+    { id: "feed", label: "Post en feed", width: 1200, height: 627, is_video: false },
+    { id: "universal", label: "Universal — encaja en todas las redes", width: 1080, height: 1080, is_video: false },
+  ],
+  tiktok: [
+    { id: "story", label: "Historia (vertical)", width: 1080, height: 1920, is_video: false },
+    { id: "reel", label: "Reel — video generado con IA", width: 1080, height: 1920, is_video: true },
+    { id: "user_clip_reel", label: "Video con mis clips (Drive)", width: 1080, height: 1920, is_video: true },
+    { id: "universal", label: "Universal — encaja en todas las redes", width: 1080, height: 1080, is_video: false },
+  ],
+  x: [
+    { id: "feed", label: "Post en feed", width: 1200, height: 675, is_video: false },
+    { id: "reel", label: "Reel — video generado con IA", width: 1080, height: 1920, is_video: true },
+    { id: "universal", label: "Universal — encaja en todas las redes", width: 1080, height: 1080, is_video: false },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // API key — almacenada en sessionStorage (no persiste entre sesiones)
 // ---------------------------------------------------------------------------
@@ -43,9 +84,11 @@ function saveApiKey(key) {
 // ---------------------------------------------------------------------------
 function apiOrigin() {
   const explicit = import.meta.env.VITE_API_URL;
+  // "" o unset en build prod (Caddy same-origin) → rutas relativas /api
+  if (explicit === "" || explicit === "/") return "";
   if (explicit) return String(explicit).replace(/\/$/, "");
   if (import.meta.env.DEV) return "";
-  return "http://localhost:8000";
+  return "";
 }
 
 const API_BASE = `${apiOrigin()}/api`;
@@ -125,6 +168,8 @@ export default function App() {
   const [socialAccounts, setSocialAccounts] = useState([]);
   const [socialAccountId, setSocialAccountId] = useState("");
   const [contentFormat, setContentFormat] = useState("feed");
+  const [networks, setNetworks] = useState(FALLBACK_NETWORKS);
+  const [formatsByNetwork, setFormatsByNetwork] = useState(FALLBACK_FORMATS);
   const [imageProvider, setImageProvider] = useState("fal");
   const [imageProviders, setImageProviders] = useState([]);
   const [videoGenMode, setVideoGenMode] = useState("scenes");
@@ -184,14 +229,43 @@ export default function App() {
     }
   };
 
+  const loadContentFormats = async () => {
+    try {
+      const data = await api("/image/formats");
+      if (Array.isArray(data.networks) && data.networks.length > 0) setNetworks(data.networks);
+      if (data.formats_by_network && Object.keys(data.formats_by_network).length > 0) {
+        setFormatsByNetwork(data.formats_by_network);
+      }
+    } catch {
+      setNetworks(FALLBACK_NETWORKS);
+      setFormatsByNetwork(FALLBACK_FORMATS);
+    }
+  };
+
+  const currentNetwork = (form.red_social || "instagram").toLowerCase();
+  const availableFormats =
+    formatsByNetwork[currentNetwork] || formatsByNetwork.instagram || FALLBACK_FORMATS.instagram;
+
+  // Cambiar de red puede dejar seleccionado un formato inexistente (p. ej. story en LinkedIn)
+  useEffect(() => {
+    if (!availableFormats.some((f) => f.id === contentFormat)) {
+      setContentFormat(availableFormats[0]?.id || "feed");
+    }
+  }, [currentNetwork, formatsByNetwork]);
+
   // red_social del brief → provider de oauth_tokens
   const providerForNetwork = (network) =>
-    ({ instagram: "meta", ig: "meta", facebook: "meta", linkedin: "linkedin" }[
-      (network || "").toLowerCase()
-    ] || null);
+    ({
+      instagram: "meta",
+      ig: "meta",
+      facebook: "meta",
+      linkedin: "linkedin",
+      x: "x",
+      twitter: "x",
+    }[(network || "").toLowerCase()] || null);
 
   const providerShortLabel = (provider) =>
-    ({ meta: "IG", linkedin: "LinkedIn", google: "Drive" }[provider] || provider);
+    ({ meta: "IG", linkedin: "LinkedIn", google: "Drive", x: "X" }[provider] || provider);
 
   /** Etiqueta legible: "Negocio 1 — IG", "Mi página — LinkedIn" */
   const formatAccountLabel = (account) => {
@@ -281,6 +355,7 @@ export default function App() {
     loadSocialStatus();
     loadSocialAccounts();
     loadImageProviders();
+    loadContentFormats();
     loadVideoOptions();
     loadArchetypes();
     loadBrandManual();
@@ -531,19 +606,42 @@ export default function App() {
         )}
         <p style={{ fontSize: "0.8rem", color: "#888" }}>{socialStatus?.hint}</p>
         <label>
+          Red social
+          <select
+            value={currentNetwork}
+            disabled={loading}
+            onChange={(e) => setForm((prev) => ({ ...prev, red_social: e.target.value }))}
+          >
+            {networks.map((n) => (
+              <option key={n.id} value={n.id}>{n.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
           Formato de publicación
-          <select value={contentFormat} onChange={(e) => setContentFormat(e.target.value)}>
-            <option value="feed">Post en feed (Instagram 1080×1350, 4:5)</option>
-            <option value="story">Historia (Instagram 1080×1920)</option>
-            <option value="reel">Reel (Instagram 1080×1920, video)</option>
-            <option value="user_clip_reel">Video con mis clips (Drive)</option>
+          <select
+            value={contentFormat}
+            disabled={loading}
+            onChange={(e) => setContentFormat(e.target.value)}
+          >
+            {availableFormats.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label} ({f.width}×{f.height})
+              </option>
+            ))}
           </select>
         </label>
         <p className="hint">
-          La cuenta destino se elige en el brief (debajo), justo antes de Sync/Async.
-          Las dimensiones de la imagen se ajustan según <code>red_social</code> del brief y este formato.
+          Cada red muestra solo sus formatos válidos; las dimensiones se aplican al generar la pieza.
+          {contentFormat === "universal" &&
+            " Universal: pieza cuadrada 1080×1080 que entra sin recortes en Instagram, Facebook, LinkedIn y X, y centrada en TikTok — úsala cuando el mismo post va a varias redes."}
           {(contentFormat === "reel" || contentFormat === "user_clip_reel") &&
             " Los reels son async-only: se envían siempre con \"Enviar Async\"."}
+        </p>
+        <p className="hint">
+          La cuenta destino se elige en el brief (debajo), justo antes de Sync/Async.
+          {!providerForNetwork(currentNetwork) &&
+            ` Publicación automática en ${currentNetwork} aún no implementada: la pieza se genera y queda para descargar/publicar a mano.`}
         </p>
         {contentFormat === "user_clip_reel" && (
           <label>
@@ -845,7 +943,8 @@ export default function App() {
           </p>
         </div>
 
-        {Object.keys(form).map((key) => (
+        {/* red_social se elige arriba, junto al formato de publicación */}
+        {Object.keys(form).filter((key) => key !== "red_social").map((key) => (
           <label key={key}>
             {FORM_LABELS[key] || key}
             {key === "tema" ? (
@@ -895,7 +994,7 @@ export default function App() {
         </label>
         <p className="hint">
           Filtrado por <code>red_social</code> del brief (Instagram/Facebook → Meta/IG,
-          LinkedIn → LinkedIn). Al aprobar, se publica en esta cuenta.
+          LinkedIn → LinkedIn, X → X). Al aprobar, se publica en esta cuenta.
           {(() => {
             const selected = accountsForNetwork.find((a) => String(a.id) === socialAccountId);
             return selected ? ` Seleccionada: ${formatAccountLabel(selected)}.` : "";

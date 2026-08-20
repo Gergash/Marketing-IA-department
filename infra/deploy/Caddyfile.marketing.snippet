@@ -1,0 +1,21 @@
+# Fragmento para el Caddy del HOST (/etc/caddy/Caddyfile).
+# NO usar este archivo dentro de docker-compose: en la VPS compartida
+# solo hay un Caddy (systemd), compartido con InsightFlow.
+#
+# Sustituye el hostname si usas otro subdominio.
+# Tras editar: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+marketing.powerupsecosistem.online {
+	encode gzip
+
+	# API, OAuth, estáticos, legales TikTok, verify .txt
+	@backend path /api* /static* /docs* /openapi.json /terminos* /privacidad* /terms* /privacy* /tiktok*.txt
+	handle @backend {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Dashboard SPA (nginx del contenedor frontend)
+	handle {
+		reverse_proxy 127.0.0.1:8081
+	}
+}

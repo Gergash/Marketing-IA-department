@@ -2,7 +2,7 @@
 
 **Proyecto:** Marketing DEPA IA (PowerUps)  
 **Tipo:** MVP de automatización de marketing con agentes de IA  
-**Actualizado:** 2026-08-04  
+**Actualizado:** 2026-08-11  
 **Idioma:** español  
 
 Este documento es **autocontenido**: súbelo como única fuente (o como fuente principal) a NotebookLM. No depende de enlaces internos del repositorio.
@@ -11,7 +11,7 @@ Este documento es **autocontenido**: súbelo como única fuente (o como fuente p
 
 ## 1. En una frase
 
-Marketing DEPA IA genera piezas de redes (feed, story, Reel) a partir de un brief y un manual de marca PDF, pasa por aprobación humana y publica en Instagram (Meta) o LinkedIn mediante un sidecar en Go.
+Marketing DEPA IA genera piezas de redes (feed, story, Reel o formato universal multi-red) a partir de un brief y un manual de marca PDF, pasa por aprobación humana y publica en Instagram (Meta) o LinkedIn.
 
 ---
 
@@ -85,6 +85,7 @@ Infra local típica: Docker Compose solo para Postgres y Redis; el resto corre e
 | ClipReelDesigner | Clips de Google Drive → Whisper → selección → Shotstack |
 | PublisherAgent | Publicación (imagen); video vía Go al aprobar |
 | CreativeAdvisorAgent | Chat de asesoría (fuera del pipeline) |
+| Hilo de pensamiento (`thought_stream`) | Eventos en vivo de cada agente por `trace_id`; en modo interactivo el pipeline se detiene en checkpoints y espera `continue` / `adjust` / `cancel` |
 
 Doctrina de marketing inbound: pirámide **Entretener → Información → Conexión**; el contenido debe apuntar a la comunidad del brief (`publico_objetivo`), no a audiencia genérica.
 
@@ -94,10 +95,26 @@ Doctrina de marketing inbound: pirámide **Entretener → Información → Conex
 
 | Formato | Qué produce | Restricción |
 |--------|-------------|-------------|
-| `feed` | Imagen editorial (p. ej. Instagram 1080×1350) | Sync o async |
-| `story` | Imagen 9:16 con tipografía centrada | Sync o async |
+| `feed` | Imagen editorial, dimensión según la red | Sync o async |
+| `story` | Imagen 9:16 con tipografía centrada | Sync o async; no existe en LinkedIn ni X |
+| `universal` | Imagen **1080×1080** idéntica en todas las redes | Sync o async; para publicar el mismo post en varias redes |
 | `reel` | Video 9:16 generado (script → escenas → voz → Shotstack) | Solo async + worker `video_render` |
 | `user_clip_reel` | Video desde clips del usuario en Drive | Solo async; requiere `drive_folder_id` y `ffmpeg` |
+
+### Formatos por red social
+
+El catálogo vive en `image_specs.py` y se sirve por `GET /api/image/formats`; el dashboard solo ofrece los formatos válidos de la red elegida.
+
+| Red | Formatos | Dimensión de feed |
+|-----|----------|-------------------|
+| Instagram / Facebook | feed, story, reel, user_clip_reel, universal | 1080×1350 |
+| LinkedIn | feed, universal | 1200×627 |
+| TikTok | story, reel, user_clip_reel, universal | vertical 1080×1920 |
+| X (Twitter) | feed, reel, universal | 1200×675 |
+
+**Por qué 1:1 es el universal:** es el único encuadre que ninguna red recorta de forma agresiva. Internamente `universal` se comporta como `feed` (mismo layout, misma ruta de publicación), así que no toca el pipeline de video.
+
+**TikTok y X solo generan la pieza.** No hay publicación automática: al aprobar, el sistema responde "publicación no soportada" en lugar de mandar la pieza a un publisher que no soporta esas plataformas. Descargar y publicar a mano es el camino actual.
 
 ---
 
@@ -142,7 +159,8 @@ Doctrina de marketing inbound: pirámide **Entretener → Información → Conex
 
 ### Video
 - Render: Shotstack (`stage` sandbox o `v1` producción).
-- Escenas de Reel: `still` (Ken Burns) o `venice` (image-to-video por escena).
+- Modos de generación (`video_gen_mode`): `full` = Venice genera un clip completo; `scenes` = Venice anima cada toma y Shotstack las une; `still` = stills + Ken Burns sin video AI.
+- Modelos Venice: Seedance 2.5 / 2.0, Kling O3, MiniMax H3 (aliases resueltos en `venice_video_models.py`).
 - Voz: fal Kokoro Spanish (típico en dev), ElevenLabs u OpenAI TTS.
 - URLs públicas: ngrok / `PUBLIC_IMAGE_BASE_URL` obligatorio para Meta y assets locales; fondos fal pueden ir a Shotstack como URLs `fal.media`.
 
@@ -151,8 +169,9 @@ Doctrina de marketing inbound: pirámide **Entretener → Información → Conex
 ## 9. Publicación social y HITL
 
 ### Redes
-- Instagram / Meta (feed, stories, Reels) vía Graph API y Go.
-- LinkedIn nativo (imagen + UGC).
+- Instagram / Meta (feed, stories, Reels) vía Graph API y sidecar Go.
+- LinkedIn nativo **solo desde Python**: API versionada `/rest/images` + `/rest/posts` con header `LinkedIn-Version`. Solo imagen y solo perfil personal; el token dura ~60 días sin refresh automático (la UI avisa a ≤7 días).
+- TikTok y X: **sin publicación automática** — se genera la pieza y se publica a mano.
 - Multi-cuenta: N cuentas por proveedor; el run elige `social_account_id` (Cuenta destino).
 
 ### Human-in-the-loop
@@ -169,8 +188,8 @@ La UI y el endpoint están conectados, pero las notas de revisión:
 
 Por eso a veces el usuario siente que “los cambios no se aplican”.
 
-### Limitación de contraste de texto
-Hoy la legibilidad se apoya en viñetas oscuras y sombras, no en muestreo de luminancia del fondo. El color del texto viene del arquetipo o del manual de marca; no se adapta automáticamente a cada foto.
+### Contraste de texto (resuelto)
+`text_contrast.py` muestrea la luminancia de la región donde va el texto (`region_luminance`, `text_safe_box`) y elige color y viñeta en consecuencia (`pick_text_colors`). Ya no depende solo de sombras fijas del arquetipo.
 
 ---
 
@@ -182,6 +201,9 @@ Prefijo típico: `/api`.
 |--------|------|-----|
 | GET | `/health`, `/health/background` | Salud API / Redis+Celery |
 | GET | `/image/providers`, `/image/archetypes` | Generadores y layouts |
+| GET | `/image/formats` | Formatos válidos por red + dimensiones |
+| GET | `/video/options` | Modos y modelos de video Venice |
+| GET/POST | `/thoughts/{trace_id}`, `/thoughts/{trace_id}/reply` | Hilo de pensamiento y checkpoints |
 | POST | `/briefs/upload-asset` | Foto del usuario |
 | POST | `/briefs/upload-brand-manual` | PDF de marca |
 | GET/DELETE | `/briefs/brand-manual` | Manual activo |
@@ -200,11 +222,13 @@ Swagger local: `http://127.0.0.1:8000/docs`.
 ## 11. Frontend (dashboard)
 
 - Campo de brief: “Descripción del producto o evento”.
-- Formato: feed / story / reel / video con clips Drive.
+- **Red social** y **Formato de publicación**: dos selects acoplados alimentados por `/image/formats`; al cambiar de red se corrige el formato si dejó de ser válido.
+- Video (solo en `reel`): modo de generación y modelo Venice.
 - Selector de generador de imagen (fal / Venice / SD según keys).
 - Upload de manual de marca con preview de paleta y logos.
 - Upload de foto + toggle alterar con IA.
 - Selector de cuenta destino, enlace opcional, CTA en imagen opcional.
+- Modo interactivo + hilo de pensamiento en vivo de los agentes.
 - Sync / Async, historial, Integraciones OAuth, burbuja del Asesor.
 
 ---
@@ -237,9 +261,10 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 
 ## 13. Tests y calidad
 
-- Suite pytest del orden de **~214 tests** (documentado 2026-08-03).
-- Cobertura fuerte: pipeline, layouts, video, clips, revise, multi-cuenta, marca, Venice, captions.
+- Suite pytest de **271 tests** (2026-08-11).
+- Cobertura fuerte: pipeline, layouts, formatos por red, video, clips, revise, multi-cuenta, marca, Venice, captions, hilo de pensamiento, LinkedIn nativo.
 - Migraciones Alembic relevantes: `0005` video_url, `0006` revise fields, `0007` multi-cuenta OAuth.
+- 3 fallos conocidos y preexistentes en `test_venice.py` y `test_video_timeline_clips.py` (estructura del edit Shotstack).
 
 ---
 
@@ -255,10 +280,12 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 | Venice.ai imagen / escenas | Hecho |
 | Asesor creativo | Hecho |
 | Sidecar Go | Hecho |
+| Hilo de pensamiento + modo interactivo | Hecho |
+| Contraste tipográfico adaptativo | Hecho |
+| Formatos por red + universal 1:1 | Hecho (diseño) |
 | Kubernetes / Skaffold | Escrito, sin clúster real |
 | Canva / Figma MCP | Pendiente |
-| TikTok | Fase 2 (requiere auditoría de app) |
-| Contraste tipográfico adaptativo | Pendiente |
+| Publicación nativa TikTok / X | Pendiente (TikTok requiere auditoría de app) |
 | Revise que mueva copy + overlay de verdad | Pendiente |
 | Error de LLM visible en UI | Pendiente |
 
@@ -272,6 +299,9 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 4. Canva OAuth y plantillas MCP no implementados.
 5. CI/CD K8s no estrenado en GKE real.
 6. Video v2 pendiente: música de fondo, captions por palabra en clips de usuario.
+7. TikTok y X: la pieza se genera pero hay que publicarla a mano.
+8. El formato `universal` cubre solo imagen; los reels siguen siendo 9:16 por red.
+9. LinkedIn: sin refresh automático del token (~60 días) y sin páginas de empresa.
 
 ---
 
@@ -285,6 +315,8 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 | video_render | Cola Celery dedicada a renders de video |
 | Design-as-Code | Foto del usuario como capa base + overlay programático |
 | Inbound | Marco Attract→Convert→Close→Delight + pirámide de fines en redes |
+| Formato universal | Pieza 1080×1080 que encaja en todas las redes sin recortes |
+| Hilo de pensamiento | Stream de eventos de los agentes por `trace_id`, con checkpoints interactivos |
 
 ---
 
@@ -298,9 +330,12 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 - ¿Qué arquetipo se usa con brand book?
 - ¿Qué proveedores de imagen existen y cuál es el principal?
 - ¿Qué es multi-cuenta y cómo se elige la cuenta destino?
+- ¿Qué formato uso si voy a publicar el mismo post en varias redes?
+- ¿Por qué LinkedIn no ofrece historias ni reels en el dashboard?
+- ¿Qué pasa al aprobar una pieza de TikTok o X?
 
 ---
 
 ## 18. Resumen ejecutivo
 
-Marketing DEPA IA es un MVP local completo para generar copy e identidades visuales con agentes, respetar un brand book (OCR + paleta + logos), producir Reels o clips, y publicar con control humano en Meta o LinkedIn. Lo más maduro es generación + marca + HITL + multi-cuenta. Lo más débil hoy para la experiencia creativa es la **revisión de piezas** (notas que no mandan del todo en copy/overlay) y el **contraste automático del texto** sobre fondos variables.
+Marketing DEPA IA es un MVP local completo para generar copy e identidades visuales con agentes, respetar un brand book (OCR + paleta + logos), producir Reels o clips, elegir el formato correcto de cada red (o uno universal para publicar en varias a la vez) y publicar con control humano en Meta o LinkedIn. Lo más maduro es generación + marca + formatos + HITL + multi-cuenta. Lo más débil hoy es la **revisión de piezas** (notas que no mandan del todo en copy/overlay) y la **publicación fuera de Meta/LinkedIn**: TikTok y X se diseñan pero se publican a mano.

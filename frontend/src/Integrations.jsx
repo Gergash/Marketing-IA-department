@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 
 const API_BASE = (() => {
   const explicit = import.meta.env.VITE_API_URL;
+  if (explicit === "" || explicit === "/") return "/api";
   if (explicit) return String(explicit).replace(/\/$/, "") + "/api";
   if (import.meta.env.DEV) return "/api";
-  return "http://localhost:8000/api";
+  return "/api";
 })();
 
 async function apiFetch(path, apiKey, method = "GET", body = null) {
@@ -100,6 +101,7 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
       <p style={{ fontSize: "0.85rem", color: "#888" }}>
         Conecta tus cuentas para publicación nativa. Meta/Instagram: OAuth + Go sidecar (:8088).
         LinkedIn: OAuth (Community Management API) + publisher nativo con imagen.
+        X: OAuth 1.0a (Consumer Keys en .env) + tweet con imagen.
       </p>
 
       {error && <p style={{ color: "red", fontSize: "0.85rem" }}>{error}</p>}
@@ -134,6 +136,21 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
           }}
         >
           {connectedProviders.includes("linkedin") ? "＋ Conectar otra cuenta LinkedIn" : "Conectar LinkedIn"}
+        </button>
+
+        <button
+          onClick={() => handleConnect("x")}
+          style={{
+            background: connectedProviders.includes("x") ? "#111" : "#444",
+            color: "#fff",
+            border: connectedProviders.includes("x") ? "1px solid #eee" : "none",
+            padding: "0.6rem 1.2rem",
+            borderRadius: "6px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          {connectedProviders.includes("x") ? "＋ Conectar otra cuenta X" : "Conectar X"}
         </button>
 
         <button onClick={load} disabled={loading} style={{ background: "transparent", border: "1px solid #666", padding: "0.6rem 1rem", borderRadius: "6px", cursor: "pointer" }}>
@@ -196,6 +213,12 @@ META_REDIRECT_URI=http://localhost:8000/api/auth/callback/meta
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
 LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/callback/linkedin
+
+# X (Twitter) — Consumer Keys + Callback URI exacto en developer.x.com
+X_API_KEY=...
+X_API_SECRET=...
+X_BEARER_TOKEN=...
+X_REDIRECT_URI=http://localhost:8000/api/auth/callback/x
 
 # URL pública de imágenes (ngrok para Meta; LinkedIn imagen también si localhost)
 PUBLIC_IMAGE_BASE_URL=https://xxxx.ngrok-free.dev`}</pre>

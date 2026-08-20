@@ -1,4 +1,4 @@
-"""Flujo OAuth 2.0 nativo para Meta (Instagram/Facebook) y LinkedIn."""
+"""Flujo OAuth nativo: Meta/LinkedIn/Google (OAuth 2.0) y X/Twitter (OAuth 1.0a)."""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ import secrets
 from datetime import datetime, timedelta
 from math import ceil
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qsl, quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
+from oauthlib.oauth1 import Client as OAuth1Client
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,8 +22,10 @@ from gateway.app.models import OAuthToken
 
 router = APIRouter(prefix="/api/auth")
 
-# CSRF state store en memoria (un solo proceso, dev)
+# CSRF state store en memoria (un solo proceso, dev) — OAuth 2.0
 _pending_states: dict[str, str] = {}
+# OAuth 1.0a request tokens de X: oauth_token → {tenant_id, oauth_token_secret}
+_pending_x_request_tokens: dict[str, dict[str, str]] = {}
 
 _INSTAGRAM_GRANULAR_SCOPES = frozenset({"instagram_basic", "instagram_content_publish"})
 
@@ -32,8 +35,25 @@ def oauth_login(
     provider: str,
     tenant_id: str = Depends(require_auth),
 ) -> RedirectResponse:
-    """Redirige al usuario a la URL de autorización de Meta o LinkedIn."""
+    """Redirige al usuario a la URL de autorización de Meta, LinkedIn, Google o X."""
     s = get_settings()
+    if provider == "twitter":
+        provider = "x"
+
+    if provider == "x":
+        if not (s.x_api_key or "").strip() or not (s.x_api_secret or "").strip():
+            raise HTTPException(status_code=400, detail="X_API_KEY / X_API_SECRET no configurados en .env")
+        request_tok = _x_request_token(s)
+        _pending_x_request_tokens[request_tok["oauth_token"]] = {
+            "tenant_id": tenant_id,
+            "oauth_token_secret": request_tok["oauth_token_secret"],
+        }
+        auth_url = (
+            "https://api.twitter.com/oauth/authorize?"
+            + urlencode({"oauth_token": request_tok["oauth_token"]})
+        )
+        return RedirectResponse(auth_url)
+
     state = secrets.token_urlsafe(16)
     _pending_states[state] = tenant_id
 
@@ -82,7 +102,10 @@ def oauth_login(
             f"&state={state}"
         )
     else:
-        raise HTTPException(status_code=400, detail=f"Proveedor '{provider}' no soportado. Usa: meta | linkedin | google")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Proveedor '{provider}' no soportado. Usa: meta | linkedin | google | x",
+        )
 
     return RedirectResponse(auth_url)
 
@@ -90,13 +113,29 @@ def oauth_login(
 @router.get("/callback/{provider}")
 def oauth_callback(
     provider: str,
-    state: str,
     db: Session = Depends(get_db),
+    state: str | None = None,
     code: str | None = None,
+    oauth_token: str | None = None,
+    oauth_verifier: str | None = None,
+    denied: str | None = None,
     error: str | None = None,
     error_description: str | None = None,
 ):
-    """Recibe el authorization code, lo intercambia por token y lo persiste en oauth_tokens."""
+    """Recibe el authorization code (OAuth2) o oauth_verifier (X OAuth1) y persiste tokens."""
+    if provider == "twitter":
+        provider = "x"
+
+    if provider == "x":
+        return _oauth_callback_x(
+            db,
+            oauth_token=oauth_token,
+            oauth_verifier=oauth_verifier,
+            denied=denied,
+            error=error,
+            error_description=error_description,
+        )
+
     if error:
         return _oauth_frontend_redirect(
             provider,
@@ -111,7 +150,7 @@ def oauth_callback(
             message="No se recibió código de autorización.",
         )
 
-    tenant_id = _pending_states.pop(state, None)
+    tenant_id = _pending_states.pop(state or "", None)
     if not tenant_id:
         # Siempre volver al frontend: un 400 JSON en la pestaña de Meta/ngrok
         # deja al usuario sin retorno al dashboard.
@@ -163,6 +202,70 @@ def oauth_callback(
             "provider": provider,
             "account_id": account_id,
             "message": f"Cuenta {provider} vinculada correctamente. Ya puedes cerrar esta ventana.",
+        },
+    )
+
+
+def _oauth_callback_x(
+    db: Session,
+    *,
+    oauth_token: str | None,
+    oauth_verifier: str | None,
+    denied: str | None,
+    error: str | None,
+    error_description: str | None,
+):
+    """Completa el 3-legged OAuth 1.0a de X y guarda access token + secret."""
+    if denied is not None or error:
+        return _oauth_frontend_redirect(
+            "x",
+            oauth="error",
+            message=error_description or error or "Autorización denegada en X.",
+        )
+    if not oauth_token or not oauth_verifier:
+        return _oauth_frontend_redirect(
+            "x",
+            oauth="error",
+            message="X no devolvió oauth_token/oauth_verifier. Vuelve a Conectar X.",
+        )
+
+    pending = _pending_x_request_tokens.pop(oauth_token, None)
+    if not pending:
+        return _oauth_frontend_redirect(
+            "x",
+            oauth="error",
+            message="Request token de X inválido o expirado. Vuelve a pulsar Conectar X.",
+        )
+
+    s = get_settings()
+    try:
+        token_data, account = _x_access_token(
+            s,
+            oauth_token=oauth_token,
+            oauth_token_secret=pending["oauth_token_secret"],
+            oauth_verifier=oauth_verifier,
+        )
+        _upsert_oauth_account(db, pending["tenant_id"], "x", token_data, account, datetime.utcnow())
+        db.commit()
+    except HTTPException as exc:
+        return _oauth_frontend_redirect("x", oauth="error", message=str(exc.detail))
+    except Exception as exc:
+        db.rollback()
+        return _oauth_frontend_redirect(
+            "x",
+            oauth="error",
+            message=f"No se pudo guardar la cuenta X: {exc}",
+        )
+
+    return _oauth_frontend_redirect(
+        "x",
+        oauth="success",
+        account_id=account["account_id"],
+        fallback_payload={
+            "status": "connected",
+            "provider": "x",
+            "account_id": account["account_id"],
+            "message": "Cuenta X vinculada correctamente. Ya puedes cerrar esta ventana.",
         },
     )
 
@@ -588,3 +691,91 @@ def _fetch_linkedin_account(token: str) -> dict:
             part for part in (me.get("localizedFirstName"), me.get("localizedLastName")) if part
         )
         return {"account_id": f"urn:li:person:{me['id']}", "account_name": name or None}
+
+
+# ---------------------------------------------------------------------------
+# X (Twitter) — OAuth 1.0a 3-legged
+# Docs: https://developer.x.com/en/docs/authentication/oauth-1-0a
+# ---------------------------------------------------------------------------
+
+def _x_oauth1_client(
+    s,
+    *,
+    resource_owner_key: str | None = None,
+    resource_owner_secret: str | None = None,
+    verifier: str | None = None,
+    callback_uri: str | None = None,
+) -> OAuth1Client:
+    """Cliente OAuth1 firmado con Consumer Key/Secret (y tokens de usuario si aplica)."""
+    return OAuth1Client(
+        client_key=(s.x_api_key or "").strip(),
+        client_secret=(s.x_api_secret or "").strip(),
+        resource_owner_key=resource_owner_key,
+        resource_owner_secret=resource_owner_secret,
+        verifier=verifier,
+        callback_uri=callback_uri,
+        signature_type="AUTH_HEADER",
+    )
+
+
+def _x_signed_post(url: str, client: OAuth1Client) -> str:
+    """POST form-urlencoded firmado; devuelve el body de texto (querystring)."""
+    uri, headers, body = client.sign(url, http_method="POST")
+    with httpx.Client(timeout=20) as http:
+        r = http.post(uri, content=body or b"", headers=dict(headers))
+    if not r.is_success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"X OAuth HTTP {r.status_code}: {r.text[:300]}",
+        )
+    return r.text
+
+
+def _x_request_token(s) -> dict[str, str]:
+    """Paso 1: obtiene request token + secret con callback_uri = X_REDIRECT_URI."""
+    client = _x_oauth1_client(s, callback_uri=(s.x_redirect_uri or "").strip())
+    raw = _x_signed_post("https://api.twitter.com/oauth/request_token", client)
+    data = dict(parse_qsl(raw, keep_blank_values=True))
+    token = data.get("oauth_token") or ""
+    secret = data.get("oauth_token_secret") or ""
+    if not token or not secret:
+        raise HTTPException(status_code=400, detail=f"X request_token incompleto: {raw[:200]}")
+    if data.get("oauth_callback_confirmed") not in (None, "true"):
+        raise HTTPException(status_code=400, detail="X no confirmó oauth_callback")
+    return {"oauth_token": token, "oauth_token_secret": secret}
+
+
+def _x_access_token(
+    s,
+    *,
+    oauth_token: str,
+    oauth_token_secret: str,
+    oauth_verifier: str,
+) -> tuple[dict, dict]:
+    """Paso 3: intercambia request token + verifier por access token de usuario."""
+    client = _x_oauth1_client(
+        s,
+        resource_owner_key=oauth_token,
+        resource_owner_secret=oauth_token_secret,
+        verifier=oauth_verifier,
+    )
+    raw = _x_signed_post("https://api.twitter.com/oauth/access_token", client)
+    data = dict(parse_qsl(raw, keep_blank_values=True))
+    access = data.get("oauth_token") or ""
+    secret = data.get("oauth_token_secret") or ""
+    user_id = data.get("user_id") or ""
+    screen_name = data.get("screen_name") or ""
+    if not access or not secret or not user_id:
+        raise HTTPException(status_code=400, detail=f"X access_token incompleto: {raw[:200]}")
+    # access_token = user oauth_token; refresh_token reutilizado para oauth_token_secret
+    token_data = {
+        "access_token": access,
+        "refresh_token": secret,
+        "expires_at": None,
+    }
+    account = {
+        "account_id": user_id,
+        "account_name": f"@{screen_name}" if screen_name else user_id,
+    }
+    return token_data, account
+

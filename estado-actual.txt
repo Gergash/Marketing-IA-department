@@ -1,13 +1,34 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-08-09
-Último foco: LinkedIn nativo — API versionada `/rest`, expiry de token visible y guard de video.
+Actualizado: 2026-08-11
+Último foco: formatos de publicación por red social + formato universal multi-red.
 
 **NotebookLM:** fuente lista para subir en [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) — guía [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md).
 
 ---
 
 ### Cronología reciente
+
+#### 2026-08-11 — Formatos por red social + universal
+
+| Entrega | Detalle |
+|---------|---------|
+| **Catálogo por red** | `image_specs.py` gana `_NETWORK_FORMATS`, `NETWORKS`, `CONTENT_FORMATS`, `VIDEO_FORMATS` y `formats_for_network()`: cada red expone solo sus formatos válidos (LinkedIn = feed + universal; TikTok sin feed horizontal; X sin historias) |
+| **`content_format=universal`** | Pieza **1080×1080** idéntica en todas las redes, para publicar el mismo post en varias a la vez. En layout y publicación se comporta como `feed`, así que no toca video ni Shotstack |
+| **Specs nuevas** | X 1200×675 (feed) y 1080×1920 (video); TikTok 1080×1920 |
+| **Endpoint** | `GET /api/image/formats` → redes + formatos con `width`/`height`/`is_video`; el dashboard ya no hardcodea dimensiones (fallback local si la API cae) |
+| **Dashboard** | Selects **Red social** + **Formato de publicación** juntos; al cambiar de red se sanea el formato seleccionado (elegir LinkedIn con `story` ya no manda un formato inválido). `red_social` sale del loop del brief |
+| **Corte de publicación** | `_publish_run` devuelve `unavailable` para plataformas sin provider (TikTok/X): sin ese corte el sidecar Go recibía una plataforma que no soporta y `_mock` reportaba un falso éxito |
+| **Tests** | 9 nuevos en `test_format_normalization.py` → **271 collected** |
+
+#### 2026-08-09..10 — Hilo de pensamiento, contraste y video Venice
+
+| Entrega | Detalle |
+|---------|---------|
+| **Hilo de pensamiento** | `thought_stream.py`: cada agente publica eventos en vivo por `trace_id` (Redis con degradado a memoria). `GET /api/thoughts/{trace_id}` + `POST /api/thoughts/{trace_id}/reply`; **modo interactivo** detiene el pipeline en checkpoints (`continue`/`adjust`/`cancel`). UI: `AgentThoughtThread.jsx` |
+| **Contraste adaptativo** | `text_contrast.py` (`region_luminance`, `pick_text_colors`, `text_safe_box`) muestrea la luminancia del fondo → cierra la deuda "contraste no adaptativo" |
+| **Guard anti-texto** | `visual_prompt_guards.py`: sufijo y negativos compartidos por fal/Venice/SD para que el modelo genere solo foto (la tipografía la pone Pillow) |
+| **Modos de video** | `video_gen_mode` = `full` (clip AI completo) / `scenes` (Venice por escena + Shotstack) / `still` (Ken Burns); catálogo de modelos en `venice_video_models.py` (Seedance 2.5/2.0, Kling O3, MiniMax H3) vía `GET /api/video/options` |
 
 #### 2026-08-09 — LinkedIn nativo: API versionada, expiry y guard de video
 
@@ -93,6 +114,8 @@ Go sidecar social-publisher (:8088) → Meta Graph / LinkedIn UGC
 | Video | Shotstack + voz fal/ElevenLabs/OpenAI; escenas still o Venice i2v | ✅ |
 | Clips usuario | Drive + Whisper + ClipEditor + Shotstack | ✅ |
 | HITL | pending_approval → approve/reject/revise | ✅ |
+| Hilo de pensamiento | Eventos en vivo + checkpoints interactivos | ✅ |
+| Formatos por red | Catálogo `image_specs` + `GET /image/formats` + universal 1:1 | ✅ |
 | CI/CD K8s | Skaffold/Cloud Deploy escritos, **sin clúster real** | 🟡 |
 
 ---
@@ -113,9 +136,13 @@ Strategist (+ brand + inbound)
 | `strategist.py` / `copywriter.py` / `quality.py` / `graph_copy_qa.py` | Estrategia + copy con bucle QA |
 | `brand_manual.py` / `ocr_paddle.py` / `brand_scan.py` / `brand_visual.py` | Manual PDF → texto + paleta + logos → cues |
 | `designer.py` / `layout_archetypes.py` / `design_layouts.py` | Pieza visual + overlays |
+| `image_specs.py` | Dimensiones y catálogo de formatos por red (fuente única) |
+| `text_contrast.py` / `overlay_text.py` | Color de texto según luminancia del fondo + tipografía OFL |
+| `visual_prompt_guards.py` | Sufijo/negativos anti-texto compartidos por los proveedores de imagen |
 | `image_providers.py` / `venice_client.py` | fal / Venice / SD / DALL·E |
 | `advisor.py` | Asesor creativo conversacional |
-| `video_*` / `clip_*` / `drive_source.py` / `voice_providers.py` | Reels y clips |
+| `thought_stream.py` | Hilo de pensamiento: eventos en vivo + checkpoints interactivos |
+| `video_*` / `venice_video_models.py` / `clip_*` / `drive_source.py` / `voice_providers.py` | Reels, modelos de video y clips |
 | `knowledge/inbound_marketing.py` | Doctrina inbound |
 | `caption.py` | Caption publicable (hashtags + link) |
 
@@ -142,7 +169,24 @@ Strategist (+ brand + inbound)
 3. Brief carga `brand_context` + `brand_palette` + `brand_logo_paths`  
 4. Designer fuerza campaña de marca, colores del scan, fonts OFL/Windows, pega logo  
 
-**Stories:** overlay Pillow centrado. **CTA en imagen:** solo con `cta_on_image=true` (salvo pieza de campaña con marca). Hashtags/`link_url` van al caption.
+**Stories:** overlay Pillow centrado. **CTA en imagen:** solo con `cta_on_image=true` (salvo pieza de campaña con marca). Hashtags/`link_url` van al caption. **Contraste:** `text_contrast.py` mide la luminancia de la zona del texto y elige color/viñeta.
+
+---
+
+### Formatos de publicación por red
+
+Fuente única: `image_specs.py` (`_NETWORK_FORMATS` + `_SPECS`), expuesta por `GET /api/image/formats`.
+
+| Red | Formatos | Feed |
+|-----|----------|------|
+| Instagram / Facebook | feed, story, reel, user_clip_reel, universal | 1080×1350 |
+| LinkedIn | feed, universal | 1200×627 |
+| TikTok | story, reel, user_clip_reel, universal | — (solo vertical 1080×1920) |
+| X (Twitter) | feed, reel, universal | 1200×675 |
+
+**`universal` = 1080×1080** idéntico en todas las redes: el encuadre que ninguna recorta agresivamente, para cuando la misma pieza va a varias redes. En layout y publicación se comporta como `feed`.
+
+**TikTok y X: solo generación.** No hay publicación automática (ni el sidecar Go ni el publisher Python los soportan); `_publish_run` corta con `unavailable` y el dashboard lo avisa.
 
 ---
 
@@ -150,15 +194,18 @@ Strategist (+ brand + inbound)
 
 | Formato | Camino | Notas |
 |---------|--------|-------|
-| `reel` | VideoScript → stills fal/Venice → TTS → Shotstack | Async-only; cola `video_render`; `VIDEO_SCENE_PROVIDER=still\|venice` |
+| `reel` | VideoScript → escenas → TTS → Shotstack | Async-only; cola `video_render`; `video_gen_mode=full\|scenes\|still` |
 | `user_clip_reel` | Drive → ffmpeg → Whisper → ClipEditor → Shotstack | Requiere `drive_folder_id` + ffmpeg |
+
+Modos (`GET /api/video/options`): `full` = clip AI completo con Venice; `scenes` = Venice anima cada toma y Shotstack las une; `still` = stills + Ken Burns sin video AI. Modelos vía `venice_video_models.py` (Seedance 2.5/2.0, Kling O3, MiniMax H3).
 
 ---
 
 ### API principal
 
 - `GET /health`, `/health/background`, `/social/publish-status`
-- `GET /image/providers`, `/image/archetypes`
+- `GET /image/providers`, `/image/archetypes`, `/image/formats`, `/video/options`
+- `GET /thoughts/{trace_id}`, `POST /thoughts/{trace_id}/reply` — hilo de pensamiento y checkpoints
 - `POST /briefs/upload-asset`, `POST/GET/DELETE /briefs/brand-manual`, `POST /briefs/upload-brand-manual`
 - `POST /advisor/chat`
 - `POST/GET /briefs`
@@ -174,19 +221,23 @@ Estáticos: `static/uploads/`, `static/uploads/brand/`, `static/images/`, `stati
 
 ### Frontend (dashboard)
 
-- Brief: descripción producto/evento, público, red, objetivo, tono  
-- Formatos: feed / story / reel / user_clip_reel (+ Drive folder)  
-- Generador: fal / Venice / SD (según API)  
-- Manual de marca: upload PDF, swatches, logos, quitar  
-- Foto usuario + alterar con IA  
-- Cuenta destino, enlace, CTA en imagen opcional  
-- Sync/Async, historial HITL, Integraciones, burbuja Asesor  
+- Brief: descripción producto/evento, público, objetivo, tono
+- Red social + Formato: selects acoplados servidos por `/image/formats` (+ Drive folder en `user_clip_reel`)
+- Video: modo de generación y modelo Venice (solo en `reel`)
+- Generador: fal / Venice / SD (según API)
+- Manual de marca: upload PDF, swatches, logos, quitar
+- Foto usuario + alterar con IA
+- Cuenta destino, enlace, CTA en imagen opcional
+- Modo interactivo + hilo de pensamiento (`AgentThoughtThread`)
+- Sync/Async, historial HITL, Integraciones, burbuja Asesor
 
 ---
 
-### Tests (214 collected — 2026-08-03)
+### Tests (271 collected — 2026-08-11)
 
-Suite anterior + `test_brand_and_advisor.py`, `test_brand_scan.py`, `test_brand_visual.py`, `test_venice.py`, `test_premium_fonts.py`, `test_caption.py`, …
+Suite anterior + `test_format_normalization.py` (formatos por red + universal), `test_thought_stream.py`, `test_text_contrast_and_video_models.py`, `test_linkedin_native.py`, `test_brand_*`, `test_venice.py`, `test_premium_fonts.py`, `test_caption.py`, …
+
+> 3 fallos conocidos y preexistentes en `test_venice.py` y `test_video_timeline_clips.py` (estructura del edit Shotstack); no bloquean el pipeline.
 
 ```bash
 python -m pytest tests/ -q
@@ -251,19 +302,21 @@ VOICE_PROVIDER=fal
 | 15 Manual de marca (OCR + scan + campaña) | ✅ |
 | 16 Venice.ai (imagen + escenas i2v) | ✅ |
 | 17 Asesor creativo (chat) | ✅ |
-| 18 TikTok | ⬜ Fase 2 (auditoría app) |
+| 18 Hilo de pensamiento + modo interactivo | ✅ |
+| 19 Formatos por red + universal 1:1 | ✅ Diseño; publicación TikTok/X pendiente |
+| 20 TikTok / X publicación nativa | ⬜ Fase 2 (auditoría app) |
 
 ---
 
 ### Pendientes conocidos
 
-1. Canva OAuth / Canva-Figma MCP  
-2. Video v2: música de fondo, captions por palabra  
-3. TikTok (Login Kit + Content Posting; auditoría)  
-4. CI/CD contra GKE real + Secret Manager  
-5. Fallback LLM stub → propagar error a la UI  
-6. Revise v2: historial de versiones **y** notas que manden en copy + overlay Pillow (hoy solo refuerzan el prompt de imagen/guion)  
-7. Contraste tipográfico adaptativo (texto vs luminancia del fondo)
+1. Canva OAuth / Canva-Figma MCP
+2. Video v2: música de fondo, captions por palabra
+3. TikTok y X: publicación nativa (hoy solo se genera la pieza; TikTok exige Login Kit + Content Posting con auditoría)
+4. CI/CD contra GKE real + Secret Manager
+5. Fallback LLM stub → propagar error a la UI
+6. Revise v2: historial de versiones **y** notas que manden en copy + overlay Pillow (hoy solo refuerzan el prompt de imagen/guion)
+7. Formato `universal` en video: hoy solo cubre imagen (los reels siguen siendo 9:16 por red)
 8. Meta: scopes IG + dominio ngrok fijo (cambiar el túnel obliga a actualizar `.env` **y** el portal de cada proveedor)
 9. LinkedIn: solo perfil personal (falta scope `w_organization_social` para páginas de empresa) y solo imagen (sin video nativo)
 10. LinkedIn: sin refresh automático del token — a los ~60 días hay que reconectar a mano (la UI ya avisa)
@@ -273,7 +326,7 @@ VOICE_PROVIDER=fal
 
 ### Resumen
 
-MVP **end-to-end**: brief con **manual de marca** (OCR + paleta + logos), copy con QA e inbound, piezas tipo campaña, generadores **fal / Venice / SD**, Reels y clips Drive, asesor, HITL con revise (API lista; efecto visual aún parcial), publicación multi-cuenta Meta/LinkedIn vía Go.
+MVP **end-to-end**: brief con **manual de marca** (OCR + paleta + logos), copy con QA e inbound, piezas tipo campaña con formato por red (Instagram, Facebook, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento con checkpoints, HITL con revise (API lista; efecto visual aún parcial), publicación multi-cuenta Meta/LinkedIn vía Go.
 
 **NotebookLM:** `docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`  
-Docs operativas: este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md`.
+Docs operativas: este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md` (local) + **`infra/deploy/vps-hostinger.md`** (producción VPS / InsightFlow).

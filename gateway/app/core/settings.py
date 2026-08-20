@@ -139,8 +139,24 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/api/auth/callback/google"
 
+    # X (Twitter) — Consumer Keys (OAuth 1.0a) + Bearer (app-only, lectura)
+    # Publicar requiere conectar cuenta vía OAuth 1.0a (token+secret de usuario).
+    # Callback URL en el portal debe coincidir EXACTO con X_REDIRECT_URI.
+    x_api_key: str = ""
+    x_api_secret: str = ""
+    x_bearer_token: str = ""
+    x_redirect_uri: str = "http://localhost:8000/api/auth/callback/x"
+
     # URL pública base para imágenes — Meta exige HTTPS accesible públicamente (ej. ngrok en dev)
     public_image_base_url: str = "http://localhost:8000"
+
+    # TikTok Developers — verificación de URL properties (método archivo .txt)
+    # El archivo debe quedar en la raíz del dominio ngrok (FastAPI :8000), p.ej.:
+    #   https://TU.ngrok-free.dev/tiktokXXXX.txt  → cuerpo exacto "tiktokXXXX"
+    # Opción A: TIKTOK_VERIFY_FILENAME + TIKTOK_VERIFY_CONTENT
+    # Opción B: dejar el .txt en static/tiktok-verify/
+    tiktok_verify_filename: str = ""
+    tiktok_verify_content: str = ""
 
     # Seguridad — Paso 4
     # Vacío = auth desactivada (dev local). En producción, pon un valor aleatorio largo.

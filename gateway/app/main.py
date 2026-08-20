@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from gateway.app.api.auth_social import router as auth_social_router
+from gateway.app.api.legal import router as legal_router
 from gateway.app.api.routes import router
+from gateway.app.api.tiktok_verify import router as tiktok_verify_router
 from gateway.app.core.logging import configure_logging
 from gateway.app.core.settings import get_settings
 from gateway.app.db.session import Base, engine
@@ -27,6 +29,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Legales + verificación TikTok en la raíz del dominio ngrok (:8000), antes de /api.
+app.include_router(legal_router)
+app.include_router(tiktok_verify_router)
 app.include_router(router)
 app.include_router(auth_social_router)
 

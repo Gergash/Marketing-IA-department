@@ -215,7 +215,8 @@ Con `DATABASE_URL` apuntando a Postgres, la API **no ejecuta** `create_all` — 
 
 Guía paso a paso con rutas Windows: [`infra/arranque-stack.md`](infra/arranque-stack.md)
 
-**Producción (VPS Hostinger, coexistencia con InsightFlow):** [`infra/deploy/vps-hostinger.md`](infra/deploy/vps-hostinger.md) — Caddy del host, loopback `8000`/`8081`, sin Caddy en el compose.
+**Producción (VPS Hostinger, coexistencia con InsightFlow):** [`infra/deploy/vps-hostinger.md`](infra/deploy/vps-hostinger.md) — Caddy del host, loopback `8000`/`8081`, sin Caddy en el compose.  
+**Proceso OAuth/redes en prod:** [`infra/deploy/proceso-integracion-redes.md`](infra/deploy/proceso-integracion-redes.md) (Meta, X, TikTok App Review, OpenRouter).
 
 ```bash
 # 1. Infraestructura (desde la raíz del repo)
@@ -261,12 +262,18 @@ LLM_MODEL=claude-haiku-4-5-20251001   # más rápido y económico; cambiar a cla
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-O con OpenAI:
+O con OpenAI / OpenRouter (misma interfaz):
 
 ```env
 LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=sk-or-v1-...          # key de OpenRouter (o sk-... de OpenAI)
+OPENAI_API_BASE=https://openrouter.ai/api/v1
+OPENAI_MODEL=google/gemini-2.0-flash-001
+OPENROUTER_HTTP_REFERER=https://marketing.powerupsecosistem.online
+OPENROUTER_APP_TITLE=Marketing DEPA IA
 ```
+
+Sin `OPENAI_API_BASE`, el cliente apunta a la API oficial de OpenAI. Si la key es de OpenRouter, mantén `IMAGE_PROVIDER=fal` / `VOICE_PROVIDER=fal` (DALL·E, TTS y Whisper oficiales no usan esa key).
 
 Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto estático (stub).
 

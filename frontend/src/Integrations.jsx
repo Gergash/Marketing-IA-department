@@ -203,25 +203,23 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
 
       <details style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "#888" }}>
         <summary>Configuración necesaria (.env)</summary>
-        <pre style={{ marginTop: "0.5rem", background: "#1a1a2e", padding: "0.75rem", borderRadius: "4px" }}>{`# Meta OAuth
+        <pre style={{ marginTop: "0.5rem", background: "#1a1a2e", padding: "0.75rem", borderRadius: "4px" }}>{`# Meta OAuth (producción)
 META_CLIENT_ID=...
 META_CLIENT_SECRET=...
-META_REDIRECT_URI=http://localhost:8000/api/auth/callback/meta
+META_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/meta
+OAUTH_SUCCESS_REDIRECT_URL=https://marketing.powerupsecosistem.online/
 
-# LinkedIn OAuth (Community Management API + OpenID)
-# Redirect URI en LinkedIn Developers debe coincidir EXACTO
+# LinkedIn OAuth
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
-LINKEDIN_REDIRECT_URI=http://localhost:8000/api/auth/callback/linkedin
+LINKEDIN_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/linkedin
 
-# X (Twitter) — Consumer Keys + Callback URI exacto en developer.x.com
+# X OAuth
 X_API_KEY=...
 X_API_SECRET=...
-X_BEARER_TOKEN=...
-X_REDIRECT_URI=http://localhost:8000/api/auth/callback/x
+X_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/x
 
-# URL pública de imágenes (ngrok para Meta; LinkedIn imagen también si localhost)
-PUBLIC_IMAGE_BASE_URL=https://xxxx.ngrok-free.dev`}</pre>
+PUBLIC_IMAGE_BASE_URL=https://marketing.powerupsecosistem.online`}</pre>
       </details>
     </section>
   );

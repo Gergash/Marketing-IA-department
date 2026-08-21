@@ -186,7 +186,7 @@ Fuente única: `image_specs.py` (`_NETWORK_FORMATS` + `_SPECS`), expuesta por `G
 
 **`universal` = 1080×1080** idéntico en todas las redes: el encuadre que ninguna recorta agresivamente, para cuando la misma pieza va a varias redes. En layout y publicación se comporta como `feed`.
 
-**TikTok y X: solo generación.** No hay publicación automática (ni el sidecar Go ni el publisher Python los soportan); `_publish_run` corta con `unavailable` y el dashboard lo avisa.
+**X:** publicación nativa (OAuth 1.0a + tweet con imagen) vía `social_providers.py`. **TikTok:** solo generación; app en App Review; publish nativo pendiente post-aprobación.
 
 ---
 
@@ -213,7 +213,7 @@ Modos (`GET /api/video/options`): `full` = clip AI completo con Venice; `scenes`
 - `POST /runs/{id}/approve`, `/reject`, `/revise`
 - `GET /runs`, `/runs/{id}`
 - `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
-- OAuth: `/auth/login|callback/{meta,linkedin,google}`, `/auth/status`, `/auth/accounts`, `DELETE /auth/accounts/{id}`
+- OAuth: `/auth/login|callback/{meta,linkedin,google,x}`, `/auth/status`, `/auth/accounts`, `DELETE /auth/accounts/{id}`
 
 Estáticos: `static/uploads/`, `static/uploads/brand/`, `static/images/`, `static/videos/`, `static/fonts/`.
 
@@ -303,8 +303,10 @@ VOICE_PROVIDER=fal
 | 16 Venice.ai (imagen + escenas i2v) | ✅ |
 | 17 Asesor creativo (chat) | ✅ |
 | 18 Hilo de pensamiento + modo interactivo | ✅ |
-| 19 Formatos por red + universal 1:1 | ✅ Diseño; publicación TikTok/X pendiente |
-| 20 TikTok / X publicación nativa | ⬜ Fase 2 (auditoría app) |
+| 19 Formatos por red + universal 1:1 | ✅ |
+| 20 X publicación nativa | ✅ OAuth + publish (prod: configurar portal) |
+| 21 TikTok publicación nativa | ⏳ App Review; código OAuth/publish fase 2 |
+| 22 Deploy VPS + InsightFlow | 🔄 Live en marketing.powerupsecosistem.online |
 
 ---
 
@@ -312,12 +314,12 @@ VOICE_PROVIDER=fal
 
 1. Canva OAuth / Canva-Figma MCP
 2. Video v2: música de fondo, captions por palabra
-3. TikTok y X: publicación nativa (hoy solo se genera la pieza; TikTok exige Login Kit + Content Posting con auditoría)
+3. TikTok: publicación nativa tras App Review (Login Kit + Content Posting); X ya implementado — falta portal prod + prueba
 4. CI/CD contra GKE real + Secret Manager
 5. Fallback LLM stub → propagar error a la UI
 6. Revise v2: historial de versiones **y** notas que manden en copy + overlay Pillow (hoy solo refuerzan el prompt de imagen/guion)
 7. Formato `universal` en video: hoy solo cubre imagen (los reels siguen siendo 9:16 por red)
-8. Meta: scopes IG + dominio ngrok fijo (cambiar el túnel obliga a actualizar `.env` **y** el portal de cada proveedor)
+8. Meta: migrado a dominio prod `marketing.powerupsecosistem.online` (local dev puede seguir con ngrok)
 9. LinkedIn: solo perfil personal (falta scope `w_organization_social` para páginas de empresa) y solo imagen (sin video nativo)
 10. LinkedIn: sin refresh automático del token — a los ~60 días hay que reconectar a mano (la UI ya avisa)
 11. OAuth `_pending_states` en memoria: reiniciar el gateway a mitad del flujo da "State inválido" (rompe con réplicas en K8s)
@@ -329,4 +331,4 @@ VOICE_PROVIDER=fal
 MVP **end-to-end**: brief con **manual de marca** (OCR + paleta + logos), copy con QA e inbound, piezas tipo campaña con formato por red (Instagram, Facebook, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento con checkpoints, HITL con revise (API lista; efecto visual aún parcial), publicación multi-cuenta Meta/LinkedIn vía Go.
 
 **NotebookLM:** `docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`  
-Docs operativas: este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md` (local) + **`infra/deploy/vps-hostinger.md`** (producción VPS / InsightFlow).
+Docs operativas: este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md` (local) + **`infra/deploy/vps-hostinger.md`** (VPS) + **`infra/deploy/proceso-integracion-redes.md`** (Meta/X/TikTok en prod).

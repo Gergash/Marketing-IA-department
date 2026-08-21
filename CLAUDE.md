@@ -234,7 +234,8 @@ Tras cambiar `.env` o código de video, **reinicia el worker**.
 ## Cómo levantar el stack (7-8 terminales)
 
 Ver `infra/arranque-stack.md` (local).  
-**Producción en Hostinger KVM 4 (junto a InsightFlow):** `infra/deploy/vps-hostinger.md` — un Caddy en el host, compose sin 80/443, puertos loopback.
+**Producción en Hostinger KVM 4 (junto a InsightFlow):** `infra/deploy/vps-hostinger.md` — un Caddy en el host, compose sin 80/443, puertos loopback.  
+**Integración redes (estado del proceso):** `infra/deploy/proceso-integracion-redes.md` · Meta: `meta-oauth-production.md` · X: `x-oauth-production.md` · TikTok: `tiktok-app-review.md`.
 
 ```bash
 # 1 - Infra

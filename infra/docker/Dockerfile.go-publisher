@@ -3,7 +3,11 @@ WORKDIR /src
 COPY microservices/social-publisher-go/go.mod ./go.mod
 COPY microservices/social-publisher-go/cmd ./cmd
 COPY microservices/social-publisher-go/internal ./internal
+<<<<<<< HEAD
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/social-publisher ./cmd/server
+=======
+RUN go build -o /out/social-publisher ./cmd/server
+>>>>>>> e464e00 (fix: copiar internal/ en el build del go-publisher)
 
 FROM alpine:3.20
 RUN apk add --no-cache wget

@@ -251,17 +251,27 @@ def _publish_via_x(
         )
 
     token_row = _resolve_publish_token(db, run, "x")
-    if not token_row:
-        raise ValueError(
-            "No hay cuenta de X conectada para este tenant. "
-            "Conéctala desde el dashboard en Integraciones → Conectar X."
-        )
-    if not (token_row.refresh_token or "").strip():
-        raise ValueError(
-            "La cuenta de X no tiene access token secret. "
-            "Desconéctala y vuelve a Conectar X (OAuth 1.0a)."
-        )
-    _assert_token_not_expired(token_row)
+    access_token = ""
+    access_secret = ""
+    if token_row:
+        if not (token_row.refresh_token or "").strip():
+            raise ValueError(
+                "La cuenta de X no tiene access token secret. "
+                "Desconéctala y vuelve a Conectar X (OAuth 1.0a)."
+            )
+        _assert_token_not_expired(token_row)
+        access_token = token_row.access_token
+        access_secret = token_row.refresh_token
+    else:
+        access_token = (s.x_access_token or "").strip()
+        access_secret = (s.x_access_token_secret or "").strip()
+        if not access_token or not access_secret:
+            raise ValueError(
+                "No hay cuenta de X conectada para este tenant. "
+                "Conéctala desde Integraciones → Conectar X, "
+                "o define X_ACCESS_TOKEN y X_ACCESS_TOKEN_SECRET en .env."
+            )
+        logger.info("x.publish.using_env_tokens")
 
     copy_text = result["copy"]["copy_final"]
     image_url = result["design"].get("image_url")
@@ -278,8 +288,8 @@ def _publish_via_x(
         image_url,
         idempotency_key,
         content_format=_normalize_content_format(getattr(run, "content_format", None)),
-        x_access_token=token_row.access_token,
-        x_access_token_secret=token_row.refresh_token,
+        x_access_token=access_token,
+        x_access_token_secret=access_secret,
     )
     result["publish_result"] = pub
     logger.info("x.publish.ok", post_id=pub.get("platform_post_id"))

@@ -20,10 +20,18 @@ class Settings(BaseSettings):
     )
 
     # LLM — provider: ollama | anthropic | openai
+    # openai + OPENAI_API_BASE=https://openrouter.ai/api/v1 → OpenRouter (pasarela)
     llm_provider: str = "ollama"
     llm_model: str = "claude-haiku-4-5-20251001"  # usado si provider=anthropic
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    # Vacío = api.openai.com. OpenRouter: https://openrouter.ai/api/v1
+    openai_api_base: str = ""
+    # Modelo chat cuando LLM_PROVIDER=openai (ids OpenAI u OpenRouter, ej. google/gemini-2.0-flash-001)
+    openai_model: str = "gpt-4o-mini"
+    # Headers opcionales de atribución OpenRouter
+    openrouter_http_referer: str = ""
+    openrouter_app_title: str = "Marketing DEPA IA"
     # Ollama (IA local)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
@@ -146,6 +154,12 @@ class Settings(BaseSettings):
     x_api_secret: str = ""
     x_bearer_token: str = ""
     x_redirect_uri: str = "http://localhost:8000/api/auth/callback/x"
+    # OAuth 1.0a user tokens (alternativa a Conectar X en Integraciones)
+    x_access_token: str = ""
+    x_access_token_secret: str = ""
+    # OAuth 2.0 (User authentication settings) — reservado; publish usa OAuth 1.0a
+    x_client_id: str = ""
+    x_client_secret: str = ""
 
     # URL pública base para imágenes — Meta exige HTTPS accesible públicamente (ej. ngrok en dev)
     public_image_base_url: str = "http://localhost:8000"

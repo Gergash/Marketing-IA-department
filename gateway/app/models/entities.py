@@ -58,6 +58,21 @@ class AgentRun(Base):
     )
 
 
+class UserAsset(Base):
+    """Foto subida por el tenant: biblioteca reutilizable como capa base de diseño."""
+
+    __tablename__ = "user_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    filename: Mapped[str] = mapped_column(String(256))  # uuid.ext en disco
+    original_filename: Mapped[str] = mapped_column(String(512), default="")
+    url: Mapped[str] = mapped_column(Text)
+    content_type: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class GeneratedAsset(Base):
     """Imagen generada vinculada a un run (URL servida y prompt usado)."""
 

@@ -113,25 +113,52 @@ class AnthropicLLM:
 
 
 class OpenAILLM:
-    """Cliente Chat Completions de OpenAI con `response_format` json_object."""
+    """Cliente Chat Completions compatible con OpenAI (API oficial u OpenRouter)."""
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
-        """Crea el cliente OpenAI con API key y modelo de chat."""
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        *,
+        base_url: str | None = None,
+        default_headers: dict[str, str] | None = None,
+    ) -> None:
+        """Crea el cliente OpenAI; `base_url` apunta a OpenRouter u otro proxy compatible."""
         from openai import OpenAI
-        self._client = OpenAI(api_key=api_key)
+
+        kwargs: dict[str, Any] = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url.rstrip("/")
+        if default_headers:
+            kwargs["default_headers"] = default_headers
+        self._client = OpenAI(**kwargs)
         self._model = model
+        self._base_url = (base_url or "").rstrip("/")
 
     def complete_json(self, system: str, user: str, *, max_tokens: int = 1024) -> dict[str, Any]:
         """Obtiene un objeto JSON del asistente y lo parsea."""
-        resp = self._client.chat.completions.create(
-            model=self._model,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system},
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system + "\n\nRespond ONLY with valid JSON. No markdown, no code fences.",
+                },
                 {"role": "user", "content": user},
             ],
-        )
+        }
+        # Algunos modelos vía OpenRouter no soportan response_format=json_object.
+        if not self._base_url or "openrouter.ai" not in self._base_url:
+            kwargs["response_format"] = {"type": "json_object"}
+        try:
+            resp = self._client.chat.completions.create(**kwargs)
+        except Exception:
+            if "response_format" in kwargs:
+                kwargs.pop("response_format", None)
+                resp = self._client.chat.completions.create(**kwargs)
+            else:
+                raise
         return _parse_json(resp.choices[0].message.content)
 
     def complete_text(self, system: str, user: str, *, max_tokens: int = 1024) -> str:
@@ -168,5 +195,22 @@ def get_llm() -> OllamaLLM | AnthropicLLM | OpenAILLM | None:
     if s.llm_provider == "anthropic" and s.anthropic_api_key:
         return AnthropicLLM(s.anthropic_api_key, s.llm_model)
     if s.llm_provider == "openai" and s.openai_api_key:
-        return OpenAILLM(s.openai_api_key)
+        base = (s.openai_api_base or "").strip() or None
+        model = (s.openai_model or "").strip() or "gpt-4o-mini"
+        headers: dict[str, str] | None = None
+        if base and "openrouter.ai" in base:
+            # OpenRouter recomienda estos headers para ranking/attribution de apps.
+            referer = (s.openrouter_http_referer or s.public_image_base_url or "").strip()
+            title = (s.openrouter_app_title or "Marketing DEPA IA").strip()
+            headers = {}
+            if referer:
+                headers["HTTP-Referer"] = referer
+            if title:
+                headers["X-Title"] = title
+        return OpenAILLM(
+            s.openai_api_key,
+            model=model,
+            base_url=base,
+            default_headers=headers or None,
+        )
     return None

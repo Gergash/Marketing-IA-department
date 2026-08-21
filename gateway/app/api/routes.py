@@ -82,7 +82,8 @@ def social_publish_status(
         linkedin_ready=bool(s.linkedin_access_token.strip()) or linkedin_oauth,
         linkedin_oauth_connected=linkedin_oauth,
         x_app_configured=bool(s.x_api_key.strip() and s.x_api_secret.strip()),
-        x_oauth_connected=x_oauth,
+        x_oauth_connected=x_oauth
+        or bool(s.x_access_token.strip() and s.x_access_token_secret.strip()),
         meta_oauth_connected=meta_oauth,
         meta_instagram_ready=bool(
             s.meta_page_access_token.strip() and s.instagram_business_account_id.strip()

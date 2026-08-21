@@ -3,7 +3,7 @@
 Referencia de **comandos exactos** para levantar el MVP en Windows (Git Bash / PowerShell).  
 Todos los servicios asumen que ya activaste el venv y estás en la raíz del repo salvo donde se indique otra ruta.
 
-**Producción en la VPS (Hostinger + InsightFlow):** no uses esta guía. Ve a [`deploy/vps-hostinger.md`](deploy/vps-hostinger.md).
+**Producción en la VPS (Hostinger + InsightFlow):** no uses esta guía. Ve a [`deploy/vps-hostinger.md`](deploy/vps-hostinger.md) y el estado del proceso en [`deploy/proceso-integracion-redes.md`](deploy/proceso-integracion-redes.md).
 
 **Raíz del proyecto:** `~/Desktop/PowerUps/Marketing DEPA IA`
 

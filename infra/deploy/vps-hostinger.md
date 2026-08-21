@@ -22,6 +22,8 @@ Guía para subir el backend y el dashboard a la VPS Hostinger KVM 4 **sin tocar*
 
 Detalle abajo. Archivo de compose: [`../docker-compose.prod.yml`](../docker-compose.prod.yml).
 
+**Proceso vivo (estado Meta / X / TikTok / OpenRouter):** [`proceso-integracion-redes.md`](proceso-integracion-redes.md)
+
 ---
 
 ## Reglas de oro
@@ -109,7 +111,7 @@ nano .env.production
 | `POSTGRES_PASSWORD` | Fuerte y **distinto** al de InsightFlow |
 | `API_KEY` | Obligatorio en prod (dashboard) |
 | `CORS_ORIGINS` | `https://marketing.powerupsecosistem.online` |
-| `LLM_PROVIDER` | `openai` o `anthropic` (preferir cloud; no Ollama en VPS compartida) |
+| `LLM_PROVIDER` | `openai` + OpenRouter (`OPENAI_API_BASE`) o `anthropic` — no Ollama en VPS compartida |
 | `IMAGE_PROVIDER` / `FAL_API_KEY` | fal.ai |
 | `VIDEO_PROVIDER` / `SHOTSTACK_*` | Shotstack |
 | OAuth secrets | Meta, LinkedIn, Google, X |
@@ -182,15 +184,17 @@ curl -sI https://api.powerupsecosistem.online/health
 
 Sustituye `DOMAIN` por el hostname real.
 
-| Proveedor | Qué actualizar |
-|-----------|----------------|
-| **Meta** | Redirect URI `https://DOMAIN/api/auth/callback/meta` |
-| **LinkedIn** | `https://DOMAIN/api/auth/callback/linkedin` |
-| **Google** | `https://DOMAIN/api/auth/callback/google` |
-| **X** | Callback `https://DOMAIN/api/auth/callback/x` + Website URL; permisos Read and write → Integraciones → Conectar X |
-| **TikTok** | Terms `https://DOMAIN/terminos`, Privacy `https://DOMAIN/privacidad`, URL property + archivo `https://DOMAIN/<tiktokXXXX>.txt` (`TIKTOK_VERIFY_*` en `.env.production`) |
+| Proveedor | Qué actualizar | Guía |
+|-----------|----------------|------|
+| **Meta** | Redirect URI `https://DOMAIN/api/auth/callback/meta`; Basic Settings (dominio, privacy, terms) | [`meta-oauth-production.md`](meta-oauth-production.md) |
+| **LinkedIn** | `https://DOMAIN/api/auth/callback/linkedin` | Fase 7 arriba |
+| **Google** | `https://DOMAIN/api/auth/callback/google` | Fase 7 arriba |
+| **X** | Callback `https://DOMAIN/api/auth/callback/x`; Read and write; keys en `.env.production` | [`x-oauth-production.md`](x-oauth-production.md) |
+| **TikTok** | Terms, Privacy, verify `.txt`, App Review (Login Kit + Content Posting) | [`tiktok-app-review.md`](tiktok-app-review.md) |
 
-**Alcance actual:** publicación nativa en **X** (y Meta/LinkedIn ya existentes). TikTok: legales + verify de dominio; Content Posting API es trabajo posterior.
+**Alcance actual:** publicación nativa **Meta / LinkedIn / X**. TikTok: legales + verify + app **en evaluación**; OAuth/publish en código tras aprobación.
+
+**Migración ngrok → prod:** quitar URIs `*.ngrok-free.dev` de todos los portales; en VPS `.env.production` usar solo `marketing.powerupsecosistem.online` y reiniciar `api` + `worker` + `video-worker`.
 
 ---
 
@@ -229,6 +233,10 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d
 
 | Archivo | Rol |
 |---------|-----|
+| [`proceso-integracion-redes.md`](proceso-integracion-redes.md) | **Estado del proceso** y orden de trabajo |
+| [`meta-oauth-production.md`](meta-oauth-production.md) | Meta / Instagram OAuth en prod |
+| [`x-oauth-production.md`](x-oauth-production.md) | X OAuth + publicación |
+| [`tiktok-app-review.md`](tiktok-app-review.md) | TikTok App Review + verify |
 | [`../docker-compose.prod.yml`](../docker-compose.prod.yml) | Servicios prod (sin Caddy) |
 | [`Caddyfile.marketing.snippet`](Caddyfile.marketing.snippet) | Bloque para `/etc/caddy/Caddyfile` |
 | [`../../.env.production.example`](../../.env.production.example) | Plantilla de secretos |
@@ -238,4 +246,4 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d
 
 ## Siguiente paso
 
-Tras el checklist: Conectar X/Meta/LinkedIn en el dashboard, publicar un feed de prueba, y configurar el `.txt` de TikTok. Si hace falta Content Posting de TikTok, abrir issue/tarea aparte — no forma parte de este despliegue.
+Seguir [`proceso-integracion-redes.md`](proceso-integracion-redes.md): Conectar Meta y X en el dashboard, post de prueba, y esperar TikTok App Review antes de implementar publish nativo TikTok.

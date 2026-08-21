@@ -3,7 +3,7 @@ WORKDIR /src
 COPY microservices/social-publisher-go/go.mod ./go.mod
 COPY microservices/social-publisher-go/cmd ./cmd
 COPY microservices/social-publisher-go/internal ./internal
-RUN go build -o /out/social-publisher ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/social-publisher ./cmd/server
 
 FROM alpine:3.20
 RUN apk add --no-cache wget

@@ -58,6 +58,7 @@ def build_copy_qa_graph(
             )
         copy = copywriter.run(
             state["strategy"],
+            brief=state["brief"],
             qa_feedback=feedback or None,
             brand_context=getattr(state["brief"], "brand_context", "") or "",
         )
@@ -89,6 +90,7 @@ def build_copy_qa_graph(
             state["copy"].copy_final,
             state["brief"].tono_marca,
             overlay_headline=state["copy"].headline_for_image,
+            overlay_subline=state["copy"].subline_for_image,
         )
         if thoughts is not None:
             thoughts.output(

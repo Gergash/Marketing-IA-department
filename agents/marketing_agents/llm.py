@@ -140,6 +140,7 @@ class OpenAILLM:
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": max_tokens,
+            "temperature": 0.85,
             "messages": [
                 {
                     "role": "system",

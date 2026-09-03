@@ -175,6 +175,18 @@ class Settings(BaseSettings):
     # Seguridad — Paso 4
     # Vacío = auth desactivada (dev local). En producción, pon un valor aleatorio largo.
     api_key: str = ""
+
+    # Staging SaaS — landing + login + Bold + créditos (local / pre-prod)
+    staging_saas_enabled: bool = False
+    jwt_secret: str = ""
+    jwt_ttl_minutes: int = 10080  # 7 días
+    # Bold — botón de pagos (misma llave secreta firma webhook X-Bold-Signature)
+    bold_api_key: str = ""
+    bold_integrity_secret: str = ""
+    bold_webhook_secret: str = ""
+    pack_amount_cop: int = 99000
+    credits_per_pack: int = 100
+    staging_success_redirect_url: str = "http://localhost:5173/app?paid=1"
     # Slack Incoming Webhook para notificaciones human-in-the-loop
     slack_webhook_url: str = ""
 

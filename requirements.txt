@@ -16,6 +16,8 @@ prometheus-fastapi-instrumentator
 apscheduler
 alembic
 anthropic
+PyJWT
+pydantic[email]
 openai
 fal-client
 pytest

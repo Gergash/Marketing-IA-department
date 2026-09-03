@@ -296,6 +296,28 @@ def _publish_via_x(
     return "success"
 
 
+def _maybe_debit_publish_credits(
+    db: Session,
+    tenant_id: str,
+    *,
+    content_format: str,
+    user_asset_url: str | None,
+    alter_image_with_ai: bool,
+) -> None:
+    """Descuenta créditos antes de publicar cuando staging SaaS está activo."""
+    settings = get_settings()
+    if not settings.staging_saas_enabled:
+        return
+    from gateway.app.services.credits_service import debit_for_publish, publish_credit_cost
+
+    cost = publish_credit_cost(
+        content_format=content_format,
+        user_asset_url=user_asset_url,
+        alter_image_with_ai=alter_image_with_ai,
+    )
+    debit_for_publish(db, tenant_id, cost)
+
+
 def _publish_run(
     db: Session,
     result: dict,
@@ -572,6 +594,13 @@ def execute_pipeline(
     result = _run_with_thoughts(pipeline, brief_in, thoughts, db, run, publish=False, **pipeline_kwargs)
 
     if publish and result.get("quality", {}).get("approved", False):
+        _maybe_debit_publish_credits(
+            db,
+            run.tenant_id,
+            content_format=content_format,
+            user_asset_url=user_asset_url,
+            alter_image_with_ai=alter_image_with_ai,
+        )
         _publish_run(db, result, brief, run, idempotency_key)
 
     _persist_result(db, run, result, brief.red_social)
@@ -610,6 +639,15 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
     db.commit()
 
     try:
+        stored_params = json.loads(run.run_params_json) if run.run_params_json else {}
+        content_format = _normalize_content_format(getattr(run, "content_format", None))
+        _maybe_debit_publish_credits(
+            db,
+            run.tenant_id,
+            content_format=content_format,
+            user_asset_url=stored_params.get("user_asset_url"),
+            alter_image_with_ai=bool(stored_params.get("alter_image_with_ai", False)),
+        )
         go_outcome = _publish_run(db, result, brief, run, run.idempotency_key)
 
         if go_outcome == "unavailable" and not result.get("publish_result"):

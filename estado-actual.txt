@@ -1,13 +1,30 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-08-11
-Último foco: formatos de publicación por red social + formato universal multi-red.
+Actualizado: 2026-08-30
+Último foco: producción VPS (InsightFlow), integración X en prod, OpenRouter LLM, documentación OAuth/redes.
 
-**NotebookLM:** fuente lista para subir en [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) — guía [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md).
+**Producción:** `https://marketing.powerupsecosistem.online` · VPS `insightflow@2.25.107.229` · compose `marketing-depa-prod`  
+**InsightFlow (no tocar):** `https://api.powerupsecosistem.online`
+
+**NotebookLM:** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) · [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)
 
 ---
 
 ### Cronología reciente
+
+#### 2026-08-30 — Producción, X y documentación operativa
+
+| Entrega | Detalle |
+|---------|---------|
+| **VPS live** | Stack en `~/apps/marketing-depa-ia`; Caddy del host; loopback `8000`/`8081`; coexistencia con InsightFlow |
+| **Dominio prod** | `marketing.powerupsecosistem.online` — Meta/X callbacks y `PUBLIC_IMAGE_BASE_URL` migrados desde ngrok |
+| **X OAuth 1.0a + publish** | `auth_social.py` (login/callback), `social_providers.py` (media v1.1 + POST `/2/tweets`), UI **Conectar X** |
+| **X tokens en `.env`** | `X_ACCESS_TOKEN` / `X_ACCESS_TOKEN_SECRET` como fallback si no hay cuenta en Integraciones; `X_CLIENT_ID` / `X_CLIENT_SECRET` (OAuth 2.0, reservados) |
+| **VPS credenciales X** | `.env.production` sincronizado; `api` + `worker` + `video-worker` reconstruidos |
+| **OpenRouter LLM** | `OPENAI_API_BASE` + `OPENAI_MODEL` en `llm.py`/`settings.py`; recomendado en VPS (`LLM_PROVIDER=openai`) |
+| **Legales + TikTok verify** | `/terminos`, `/privacidad`, `tiktok*.txt` vía FastAPI; app TikTok **en App Review** |
+| **Docs deploy** | `proceso-integracion-redes.md`, `x-oauth-production.md`, `tiktok-app-review.md`, `meta-oauth-production.md`, `vps-hostinger.md` |
+| **Go publisher prod** | Fixes Dockerfile: `internal/` + build estático `CGO_ENABLED=0` |
 
 #### 2026-08-11 — Formatos por red social + universal
 
@@ -83,12 +100,14 @@ MVP de automatización de marketing con agentes de IA:
 
 ```
 brief (+ manual de marca) → estrategia → copy con QA → diseño (imagen / reel / clips)
-  → aprobación humana (approve / reject / revise) → publicación Meta o LinkedIn
+  → aprobación humana (approve / reject / revise) → publicación Meta, LinkedIn o X
 ```
 
 ---
 
 ### Arquitectura operativa
+
+**Local (dev):**
 
 ```
 Frontend (React/Vite :5173)  + AdvisorChatBubble
@@ -99,23 +118,29 @@ Celery (default) + Celery (`video_render`) + APScheduler
         ↓
 Pipeline Python (agents/marketing_agents/)
         ↓
-Go sidecar social-publisher (:8088) → Meta Graph / LinkedIn UGC
+Go sidecar (:8088) → Meta Graph  |  Python nativo → LinkedIn, X
 ```
+
+**Producción (VPS):** mismo stack en Docker (`infra/docker-compose.prod.yml`); Caddy del **host** termina TLS; API `:8000` y frontend `:8081` solo en loopback. Guía: `infra/deploy/vps-hostinger.md`.
 
 | Capa | Tecnología | Estado |
 |------|------------|--------|
 | API | FastAPI + Alembic | ✅ |
 | Agentes | LangGraph Copy/QA + pipeline lineal | ✅ |
-| LLM | Ollama / Anthropic / OpenAI + stub | ✅ |
+| LLM | Ollama (local) / Anthropic / OpenAI / **OpenRouter** + stub | ✅ |
 | Imágenes | **fal.ai**, **Venice.ai**, SD (A1111), DALL·E, mock | ✅ |
 | Marca | PDF + PaddleOCR + scan paleta/logos + fonts OFL | ✅ |
 | Asesor | Chat LLM con contexto de brief/marca | ✅ |
-| Social | Meta/IG + LinkedIn OAuth multi-cuenta + Go | ✅ |
-| Video | Shotstack + voz fal/ElevenLabs/OpenAI; escenas still o Venice i2v | ✅ |
+| Social Meta/IG | OAuth multi-cuenta + Go sidecar | ✅ prod en curso |
+| Social LinkedIn | OAuth + publish nativo Python (imagen) | ✅ |
+| Social **X** | OAuth 1.0a + publish nativo Python (tweet + imagen) | ✅ prod configurado; post prueba pendiente |
+| Social TikTok | Generación + legales/verify; publish nativo | ⏳ App Review |
+| Video | Shotstack + voz fal/ElevenLabs/OpenAI; Venice i2v | ✅ |
 | Clips usuario | Drive + Whisper + ClipEditor + Shotstack | ✅ |
 | HITL | pending_approval → approve/reject/revise | ✅ |
 | Hilo de pensamiento | Eventos en vivo + checkpoints interactivos | ✅ |
-| Formatos por red | Catálogo `image_specs` + `GET /image/formats` + universal 1:1 | ✅ |
+| Formatos por red | Catálogo `image_specs` + universal 1:1 | ✅ |
+| Deploy VPS | Hostinger + InsightFlow | ✅ live |
 | CI/CD K8s | Skaffold/Cloud Deploy escritos, **sin clúster real** | 🟡 |
 
 ---
@@ -186,7 +211,22 @@ Fuente única: `image_specs.py` (`_NETWORK_FORMATS` + `_SPECS`), expuesta por `G
 
 **`universal` = 1080×1080** idéntico en todas las redes: el encuadre que ninguna recorta agresivamente, para cuando la misma pieza va a varias redes. En layout y publicación se comporta como `feed`.
 
-**X:** publicación nativa (OAuth 1.0a + tweet con imagen) vía `social_providers.py`. **TikTok:** solo generación; app en App Review; publish nativo pendiente post-aprobación.
+**X:** publicación nativa OAuth 1.0a (`social_providers.py`): tweet + imagen. Conectar vía Integraciones **o** `X_ACCESS_TOKEN` + `X_ACCESS_TOKEN_SECRET` en `.env`. Portal: permisos **Read and write**, tipo **Web App**, callback prod. **TikTok:** solo generación; app en App Review; OAuth/publish fase 2.
+
+---
+
+### Integración redes — producción
+
+Estado vivo: **`infra/deploy/proceso-integracion-redes.md`**
+
+| Red | Publish | Estado prod (2026-08-30) |
+|-----|---------|-------------------------|
+| Meta / IG / FB | Go sidecar | Portal migrado a dominio prod; Conectar Meta → prueba pendiente |
+| LinkedIn | Python nativo | Redirect prod; conectar cuenta en dashboard |
+| **X** | Python nativo | Portal + `.env.production` en VPS; post de prueba pendiente |
+| TikTok | — | App Review; legales + verify `.txt` listos |
+
+Variables X en prod: `X_API_KEY`, `X_API_SECRET`, `X_REDIRECT_URI`, opcional `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `X_BEARER_TOKEN`, `X_CLIENT_ID`, `X_CLIENT_SECRET`. Tras cambios: `docker compose … up -d api worker video-worker`.
 
 ---
 
@@ -259,33 +299,33 @@ pip install pypdf pymupdf paddlepaddle paddleocr   # si OCR_PROVIDER=paddle
 
 ### Variables de entorno mínimas (ampliadas)
 
+**Local (dev):**
+
 ```env
-IMAGE_PROVIDER=fal          # o venice
+IMAGE_PROVIDER=fal
 FAL_API_KEY=...
-VENICE_API_KEY=...          # opcional
-VENICE_API_BASE=https://api.venice.ai/api/v1
-VIDEO_SCENE_PROVIDER=still  # o venice
-
-OCR_PROVIDER=paddle
-OCR_LANG=es
-OCR_USE_GPU=true
-
-LLM_PROVIDER=ollama
-OLLAMA_MODEL=llama3.1
-OLLAMA_KEEP_ALIVE=30m
-LLM_TIMEOUT_SECONDS=300
-
+LLM_PROVIDER=ollama          # o anthropic / openai+OpenRouter
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
-REDIS_URL=redis://localhost:6379/0
-GO_PUBLISHER_URL=http://localhost:8088
-PUBLIC_IMAGE_BASE_URL=https://TU-NGROK
-
-VIDEO_PROVIDER=shotstack
-SHOTSTACK_ENV=stage
-VOICE_PROVIDER=fal
+PUBLIC_IMAGE_BASE_URL=https://TU-NGROK   # Meta + assets locales
 ```
 
-**No commitear `.env`.**
+**Producción (VPS — `.env.production`):**
+
+```env
+DOMAIN=marketing.powerupsecosistem.online
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-or-v1-...
+OPENAI_API_BASE=https://openrouter.ai/api/v1
+OPENAI_MODEL=google/gemini-2.0-flash-001
+X_API_KEY=...
+X_API_SECRET=...
+X_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/x
+PUBLIC_IMAGE_BASE_URL=https://marketing.powerupsecosistem.online
+```
+
+Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d api worker video-worker`
+
+**No commitear `.env` ni `.env.production`.**
 
 ---
 
@@ -304,9 +344,12 @@ VOICE_PROVIDER=fal
 | 17 Asesor creativo (chat) | ✅ |
 | 18 Hilo de pensamiento + modo interactivo | ✅ |
 | 19 Formatos por red + universal 1:1 | ✅ |
-| 20 X publicación nativa | ✅ OAuth + publish (prod: configurar portal) |
+| 20 X publicación nativa | ✅ OAuth + publish; prod configurado |
 | 21 TikTok publicación nativa | ⏳ App Review; código OAuth/publish fase 2 |
-| 22 Deploy VPS + InsightFlow | 🔄 Live en marketing.powerupsecosistem.online |
+| 22 Deploy VPS + InsightFlow | ✅ Live |
+| 23 OpenRouter LLM en prod | 🔄 Key + validar que no caiga a stub |
+| 24 Biblioteca multi-imagen | ⬜ Modelo `UserAsset` iniciado; API/UI pendiente |
+| 25 Copy sin eco del brief | ⬜ Endurecer strategist/copywriter/QA + overlay |
 
 ---
 
@@ -314,21 +357,24 @@ VOICE_PROVIDER=fal
 
 1. Canva OAuth / Canva-Figma MCP
 2. Video v2: música de fondo, captions por palabra
-3. TikTok: publicación nativa tras App Review (Login Kit + Content Posting); X ya implementado — falta portal prod + prueba
-4. CI/CD contra GKE real + Secret Manager
-5. Fallback LLM stub → propagar error a la UI
-6. Revise v2: historial de versiones **y** notas que manden en copy + overlay Pillow (hoy solo refuerzan el prompt de imagen/guion)
-7. Formato `universal` en video: hoy solo cubre imagen (los reels siguen siendo 9:16 por red)
-8. Meta: migrado a dominio prod `marketing.powerupsecosistem.online` (local dev puede seguir con ngrok)
-9. LinkedIn: solo perfil personal (falta scope `w_organization_social` para páginas de empresa) y solo imagen (sin video nativo)
-10. LinkedIn: sin refresh automático del token — a los ~60 días hay que reconectar a mano (la UI ya avisa)
-11. OAuth `_pending_states` en memoria: reiniciar el gateway a mitad del flujo da "State inválido" (rompe con réplicas en K8s)
+3. TikTok: publicación nativa tras App Review
+4. **X:** post de prueba en prod (Integraciones o tokens en env)
+5. **Meta:** verificar Conectar Meta tras Basic Settings en dominio prod
+6. **Biblioteca de fotos:** subir varias imágenes reutilizables por tenant (WIP `UserAsset`)
+7. **Copy/overlay:** evitar que texto del brief (tema, público, objetivo, tono) aparezca literal en imagen/caption
+8. CI/CD contra GKE real + Secret Manager
+9. Fallback LLM stub → propagar error a la UI
+10. Revise v2: historial de versiones y notas en copy + overlay Pillow
+11. Formato `universal` en video: hoy solo cubre imagen
+12. LinkedIn: solo perfil personal; solo imagen; token ~60 d sin refresh auto
+13. OAuth `_pending_states` en memoria (rompe con réplicas K8s)
+14. OpenRouter en prod: confirmar agentes usan LLM real, no stub
 
 ---
 
 ### Resumen
 
-MVP **end-to-end**: brief con **manual de marca** (OCR + paleta + logos), copy con QA e inbound, piezas tipo campaña con formato por red (Instagram, Facebook, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento con checkpoints, HITL con revise (API lista; efecto visual aún parcial), publicación multi-cuenta Meta/LinkedIn vía Go.
+MVP **end-to-end**: brief con **manual de marca**, copy con QA e inbound, piezas por red (IG, FB, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento, HITL con revise, publicación **Meta/LinkedIn/X** (multi-cuenta donde aplica).
 
-**NotebookLM:** `docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`  
-Docs operativas: este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md` (local) + **`infra/deploy/vps-hostinger.md`** (VPS) + **`infra/deploy/proceso-integracion-redes.md`** (Meta/X/TikTok en prod).
+**Producción:** `marketing.powerupsecosistem.online` en VPS Hostinger junto a InsightFlow.  
+**Docs:** este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md` (local) + `infra/deploy/vps-hostinger.md` + `infra/deploy/proceso-integracion-redes.md`.

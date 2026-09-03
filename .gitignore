@@ -19,6 +19,11 @@ microservices/**/server.exe
 microservices/social-publisher-go/server
 microservices/mcp-connect-go/server
 
+# Archivos .env de todos los entornos (NUNCA al repositorio)
+.env.local
+frontend/.env.local
+.env.staging.local
+
 # Base de datos SQLite local
 *.db
 *.db-shm

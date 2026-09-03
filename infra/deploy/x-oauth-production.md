@@ -81,11 +81,10 @@ Pipeline: media upload v1.1 + `POST /2/tweets` (OAuth 1.0a user context).
 
 ## 5. Checklist
 
-- [ ] User auth: Read and write
-- [ ] Callback URI exacta (prod)
-- [ ] `X_API_KEY` + `X_API_SECRET` en VPS
-- [ ] API reiniciada
-- [ ] Conectar X OK
+- [ ] Portal: Read and write + Web App + callback prod
+- [ ] `X_API_KEY` + `X_API_SECRET` en VPS `.env.production`
+- [ ] API + workers reiniciados tras cambio de env
+- [ ] Conectar X OK **o** tokens en env
 - [ ] Post de prueba con URL en `x.com`
 
 ---

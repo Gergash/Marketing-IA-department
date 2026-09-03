@@ -118,6 +118,50 @@ class CampaignSchedule(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AppUser(Base):
+    """Usuario SaaS staging: email único, tenant aislado y hash de contraseña."""
+
+    __tablename__ = "app_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(512))
+    tenant_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CreditWallet(Base):
+    """Saldo de créditos por tenant para publicaciones en redes."""
+
+    __tablename__ = "credit_wallets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    balance: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+class PaymentRecord(Base):
+    """Registro idempotente de pagos Bold (referencia única)."""
+
+    __tablename__ = "payment_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    reference: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="bold")
+    amount_cop: Mapped[int] = mapped_column(Integer, default=0)
+    credits_added: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    payer_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class OAuthToken(Base):
     """Cuenta social conectada: token OAuth 2.0 por tenant, proveedor y cuenta.
 

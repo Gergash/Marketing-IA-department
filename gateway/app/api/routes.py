@@ -59,6 +59,13 @@ from workers.tasks import execute_pipeline_task, execute_video_pipeline_task
 router = APIRouter(prefix="/api")
 
 
+def _raise_from_domain_error(exc: ValueError) -> None:
+    msg = str(exc)
+    if "Créditos insuficientes" in msg:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=msg) from exc
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg) from exc
+
+
 @router.get("/social/publish-status", response_model=SocialPublishStatusResponse)
 def social_publish_status(
     tenant_id: str = Depends(require_auth),
@@ -456,6 +463,8 @@ def run_pipeline_sync(
         # Detener desde un checkpoint es decisión del usuario, no un fallo: el run ya
         # quedó `rejected` en el servicio, así que se responde 200 en vez de 500.
         return RunResponse(run_id=run.id, status="rejected")
+    except ValueError as exc:
+        _raise_from_domain_error(exc)
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
         run.error_message = str(exc)
@@ -544,7 +553,7 @@ def approve_run_endpoint(
     try:
         result = approve_run(db, run_id, approved_by=payload.approved_by)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        _raise_from_domain_error(exc)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

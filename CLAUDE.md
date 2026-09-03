@@ -45,18 +45,19 @@ Pirámide: **Entretener → Informacion → Conexion**.
 |------|-----------|
 | API | FastAPI + Alembic (Python 3.10) |
 | Agentes | LangGraph + LangChain |
-| LLM | Ollama / Anthropic / OpenAI — configurable vía `.env` |
+| LLM | Ollama / Anthropic / OpenAI / **OpenRouter** — configurable vía `.env` |
 | Imágenes | **fal.ai** (principal) + **Venice.ai** + SD / DALL·E |
 | Marca | PDF + PaddleOCR + `brand_scan` (paleta/logos) + fonts OFL |
 | Video (Reels) | **Shotstack**; escenas `still` o Venice i2v (`VIDEO_SCENE_PROVIDER`) |
 | Voz (voiceover) | **fal.ai Kokoro Spanish** (dev) / ElevenLabs / OpenAI TTS |
 | Transcripción (clips usuario) | **Whisper** (`whisper-1`) |
 | Fuente de clips | Google Drive (OAuth `drive.readonly`) |
-| Social | Meta/IG + LinkedIn OAuth multi-cuenta + Go publisher |
+| Social | Meta/IG + LinkedIn + **X** OAuth; Go (Meta) + Python nativo (LinkedIn, X) |
 | Async | Celery + Redis (default + `-Q video_render`) |
 | Scheduler | APScheduler |
 | Frontend | React + Vite (+ AdvisorChatBubble) |
-| DB | PostgreSQL (Docker host **5433**) |
+| DB | PostgreSQL (Docker host **5433** local; contenedor en prod) |
+| Prod VPS | Hostinger KVM 4 + Caddy host — `infra/deploy/vps-hostinger.md` |
 
 ---
 
@@ -92,9 +93,9 @@ agents/marketing_agents/
   clip_assets.py / clip_editor.py / clip_reel_designer.py
   thought_stream.py     — hilo de pensamiento (eventos en vivo + checkpoints interactivos)
   pipeline.py           — MarketingPipeline
-  llm.py                — Ollama/Anthropic/OpenAI (+ keep_alive)
+  llm.py                — Ollama/Anthropic/OpenAI/OpenRouter (+ keep_alive)
   overlay_text.py       — tipografía OFL + Windows fonts
-  social_providers.py
+  social_providers.py   — Meta (Go), LinkedIn y X nativo (Python)
   schemas.py
   image_specs.py        — dimensiones + catálogo de formatos por red (fuente única)
   text_contrast.py      — color de texto según luminancia del fondo
@@ -104,7 +105,7 @@ agents/marketing_agents/
 
 gateway/app/
   api/routes.py          — endpoints principales
-  api/auth_social.py     — OAuth Meta/LinkedIn/Google; multi-cuenta (upsert por account_id) + /auth/accounts
+  api/auth_social.py     — OAuth Meta/LinkedIn/Google (2.0) + X (1.0a); multi-cuenta + /auth/accounts
   core/settings.py       — configuración (carga .env)
   core/auth.py           — dependencia require_auth usada por los endpoints
   core/logging.py        — configuración de logging

@@ -11,7 +11,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - Copy con bucle LangGraph Copywriter ↔ QA y doctrina inbound
 - Asesor creativo conversacional (burbuja en el dashboard)
 - Hilo de pensamiento en vivo de los agentes + modo interactivo con checkpoints
-- Publicación nativa Meta/Instagram y LinkedIn (OAuth multi-cuenta + sidecar Go)
+- Publicación nativa Meta/Instagram (OAuth + sidecar Go), LinkedIn (OAuth + Python) y **X/Twitter** (OAuth 1.0a + Python)
 - HITL: aprobar / rechazar / solicitar cambios (`revise`)
 
 ## Stack Tecnológico
@@ -43,9 +43,11 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 12** ✅ Venice.ai como proveedor de imagen (y escenas i2v opcionales); modos `full` / `scenes` / `still` en `GET /api/video/options`
 - **Paso 13** ✅ Asesor creativo (`POST /api/advisor/chat` + burbuja UI)
 - **Paso 14** ✅ Hilo de pensamiento (`GET /api/thoughts/{trace_id}`) + modo interactivo con checkpoints
-- **Paso 15** ✅ Formatos por red + `content_format=universal` (`GET /api/image/formats`). TikTok y X: generación sí, publicación automática no
+- **Paso 15** ✅ Formatos por red + `content_format=universal` (`GET /api/image/formats`). TikTok: generación sí; publish tras App Review. **X: publish nativo** (tweet + imagen)
+- **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
+- **Paso 17** 🔄 **OpenRouter** como LLM cloud en prod (`OPENAI_API_BASE`); integración OAuth Meta/X documentada en `infra/deploy/`
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-08-11).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-08-30).
 
 ## Formatos de publicación
 
@@ -60,7 +62,9 @@ Fuente única de dimensiones: `agents/marketing_agents/image_specs.py`, expuesta
 
 `universal` es una pieza **1080×1080** idéntica en todas las redes — el encuadre que ninguna recorta de forma agresiva — pensada para cuando el mismo post va a varias redes a la vez. Internamente se comporta como `feed` (mismo layout, misma ruta de publicación).
 
-**TikTok y X solo generan.** No hay publicación automática: al aprobar, `_publish_run` responde `unavailable` con un mensaje explícito en lugar de mandar la pieza a un sidecar que no soporta esas plataformas.
+**TikTok** solo genera contenido; la publicación automática llegará tras App Review (Login Kit + Content Posting).
+
+**X (Twitter)** publica de forma nativa (OAuth 1.0a, tweet + imagen en feed) vía Python. Requiere `X_API_KEY`/`X_API_SECRET` y cuenta conectada en Integraciones **o** `X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET` en `.env`. Guía prod: [`infra/deploy/x-oauth-production.md`](infra/deploy/x-oauth-production.md).
 
 ## Estructura
 
@@ -361,6 +365,20 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 - **HITL:** Aprobar / Rechazar / **Solicitar cambios** (`POST /runs/{id}/revise` regenera con notas y vuelve a `pending_approval`; nunca publica).
 - **Multi-cuenta:** selector **Cuenta destino** en el dashboard (`social_account_id`); Integraciones lista N cuentas por proveedor (`GET /api/auth/accounts`). Reconectar Meta/LinkedIn tras migración `0007` para poblar nombre/foto/Page token.
 - **Meta Instagram:** OAuth desde Integraciones con redirect URI **completo** (`…/api/auth/callback/meta`) y scopes `instagram_basic`, `instagram_content_publish`. Sin ellos, Graph API responde subcode 33.
+
+**X (Twitter)** (OAuth 1.0a + imagen en feed):
+
+```env
+X_API_KEY=...              # Consumer Key (API Key)
+X_API_SECRET=...           # Consumer Secret
+X_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/x
+# Opcional — publicar sin Conectar X en Integraciones:
+X_ACCESS_TOKEN=...
+X_ACCESS_TOKEN_SECRET=...
+X_BEARER_TOKEN=...         # app-only, lectura; no publica solo
+```
+
+Portal: permisos **Read and write**, tipo **Web App**. Flujo: Integraciones → **Conectar X** → brief con red **X** y formato **feed** → aprobar. Producción: [`infra/deploy/x-oauth-production.md`](infra/deploy/x-oauth-production.md).
 
 Si `SOCIAL_PROVIDER=mock` (por defecto), la publicación genera una URL falsa sin llamadas externas.
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import AdvisorChatBubble from "./AdvisorChatBubble";
 import AgentThoughtThread from "./AgentThoughtThread";
 import Integrations from "./Integrations";
+import { getAuthToken } from "./auth";
 
 /** Traza del hilo de pensamiento: el cliente la genera porque /runs/sync no devuelve el run_id hasta terminar. */
 function newTraceId() {
@@ -72,7 +73,7 @@ const FALLBACK_FORMATS = {
 // API key — almacenada en sessionStorage (no persiste entre sesiones)
 // ---------------------------------------------------------------------------
 function getApiKey() {
-  return sessionStorage.getItem("api_key") || import.meta.env.VITE_API_KEY || "";
+  return getAuthToken();
 }
 
 function saveApiKey(key) {

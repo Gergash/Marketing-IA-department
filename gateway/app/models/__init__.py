@@ -1,5 +1,27 @@
 """Modelos ORM SQLAlchemy reexportados para imports cortos."""
 
-from .entities import AgentRun, Brief, CampaignSchedule, GeneratedAsset, OAuthToken, Publication
+from .entities import (
+    AgentRun,
+    AppUser,
+    Brief,
+    CampaignSchedule,
+    CreditWallet,
+    GeneratedAsset,
+    OAuthToken,
+    PaymentRecord,
+    Publication,
+    UserAsset,
+)
 
-__all__ = ["Brief", "AgentRun", "GeneratedAsset", "Publication", "CampaignSchedule", "OAuthToken"]
+__all__ = [
+    "Brief",
+    "AgentRun",
+    "AppUser",
+    "CreditWallet",
+    "PaymentRecord",
+    "GeneratedAsset",
+    "Publication",
+    "CampaignSchedule",
+    "OAuthToken",
+    "UserAsset",
+]

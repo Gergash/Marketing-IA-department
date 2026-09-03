@@ -58,6 +58,49 @@ def apply_lightweight_migrations(engine: Engine) -> None:
                         text("ALTER TABLE agent_runs ADD COLUMN revision_count INTEGER DEFAULT 0")
                     )
             conn.execute(text(_CREATE_OAUTH_TOKENS_SQLITE))
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS app_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email VARCHAR(320) NOT NULL UNIQUE,
+    password_hash VARCHAR(512) NOT NULL,
+    tenant_id VARCHAR(64) NOT NULL UNIQUE,
+    full_name VARCHAR(256) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+"""
+                )
+            )
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS credit_wallets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id VARCHAR(64) NOT NULL UNIQUE,
+    balance INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+"""
+                )
+            )
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS payment_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id VARCHAR(64) NOT NULL,
+    reference VARCHAR(128) NOT NULL UNIQUE,
+    provider VARCHAR(32) NOT NULL DEFAULT 'bold',
+    amount_cop INTEGER NOT NULL DEFAULT 0,
+    credits_added INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    payer_email VARCHAR(320),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+"""
+                )
+            )
         elif dialect == "postgresql":
             conn.execute(
                 text(
@@ -77,3 +120,46 @@ def apply_lightweight_migrations(engine: Engine) -> None:
                 )
             )
             conn.execute(text(_CREATE_OAUTH_TOKENS_PG))
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS app_users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(320) NOT NULL UNIQUE,
+    password_hash VARCHAR(512) NOT NULL,
+    tenant_id VARCHAR(64) NOT NULL UNIQUE,
+    full_name VARCHAR(256) NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+)
+"""
+                )
+            )
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS credit_wallets (
+    id SERIAL PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL UNIQUE,
+    balance INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+)
+"""
+                )
+            )
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS payment_records (
+    id SERIAL PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL,
+    reference VARCHAR(128) NOT NULL UNIQUE,
+    provider VARCHAR(32) NOT NULL DEFAULT 'bold',
+    amount_cop INTEGER NOT NULL DEFAULT 0,
+    credits_added INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    payer_email VARCHAR(320),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+)
+"""
+                )
+            )

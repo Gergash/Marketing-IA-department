@@ -37,7 +37,7 @@ ContentStrategistAgent          ← lineal (LLM o stub; inbound + brand manual)
 HITL (Aprobar / Rechazar / Solicitar cambios → POST /runs/{id}/revise)
   │  social_account_id del run → token+account_id de esa cuenta (multi-cuenta)
   ▼
-PublisherAgent (si QA aprobó) ← lineal (Go sidecar Meta/IG; LinkedIn nativo en Python)
+PublisherAgent (si QA aprobó) ← Meta/IG vía Go sidecar; LinkedIn y X nativo en Python
 ```
 
 Todo el pipeline emite eventos al **hilo de pensamiento** (`thought_stream.py`) bajo el `trace_id` del run. En modo interactivo se detiene en checkpoints (estrategia, copy, arte) y espera `continue` / `adjust` / `cancel` por `POST /api/thoughts/{trace_id}/reply`.
@@ -108,7 +108,7 @@ Controla cuántas rondas de copy como máximo se permiten antes de salir del gra
 | `reel` | VideoScript + VideoDesigner | Async-only, cola `video_render` |
 | `user_clip_reel` | ClipReelDesigner | Async-only, requiere `drive_folder_id` + ffmpeg |
 
-El catálogo de qué formatos ofrece cada red vive en `image_specs._NETWORK_FORMATS` y se sirve por `GET /api/image/formats`. Redes sin provider de publicación (TikTok, X) generan la pieza pero `_publish_run` corta con `unavailable`.
+El catálogo de qué formatos ofrece cada red vive en `image_specs._NETWORK_FORMATS` y se sirve por `GET /api/image/formats`. **TikTok** genera pero no publica (App Review pendiente). **X** publica nativo (feed con imagen). `_publish_run` devuelve `unavailable` solo para plataformas sin provider.
 
 ## Rama Reels (`content_format="reel"`)
 

@@ -10,19 +10,19 @@ Guía de despliegue base: [`vps-hostinger.md`](vps-hostinger.md)
 
 ---
 
-## Estado del proceso (actualizado)
+## Estado del proceso (actualizado 2026-08-30)
 
 | Fase | Estado | Notas |
 |------|--------|-------|
 | DNS + Caddy host + Docker compose | ✅ Hecho | Loopback `8000`/`8081`, sin Caddy en compose |
 | Dashboard + API en HTTPS | ✅ Hecho | `/api/health`, SPA en `/` |
 | Legales (`/terminos`, `/privacidad`) | ✅ Hecho | Servidos por FastAPI (TikTok + Meta) |
-| LLM cloud (OpenRouter) | 🔄 En curso | `LLM_PROVIDER=openai` + `OPENAI_API_BASE=https://openrouter.ai/api/v1` |
-| Meta / Instagram OAuth | 🔄 En curso | Portal migrado de ngrok → dominio prod; Conectar Meta pendiente de prueba |
-| LinkedIn OAuth | ⬜ Pendiente portal | Redirect `…/api/auth/callback/linkedin` |
-| **X OAuth + publish** | 🔄 En curso | Código listo; configurar portal + `.env` + Conectar X |
-| **TikTok App Review** | ⏳ En evaluación | App enviada; Login Kit + Content Posting pendientes de aprobación |
-| TikTok publish (código) | ⬜ Fase 2 | Tras aprobación: implementar OAuth + Content Posting API |
+| LLM cloud (OpenRouter) | 🔄 En curso | Key en `.env.production`; validar que agentes no usen stub |
+| Meta / Instagram OAuth | 🔄 En curso | Portal en dominio prod; **Conectar Meta** → prueba pendiente |
+| LinkedIn OAuth | 🔄 En curso | Redirect prod; conectar en dashboard |
+| **X OAuth + publish** | 🔄 Casi listo | Portal **Read and write** + `.env.production` en VPS sincronizado; **post de prueba** pendiente |
+| **TikTok App Review** | ⏳ En evaluación | Login Kit + Content Posting solicitados |
+| TikTok publish (código) | ⬜ Fase 2 | Tras aprobación: OAuth + Content Posting API |
 
 Leyenda: ✅ listo · 🔄 en progreso · ⏳ esperando terceros · ⬜ pendiente
 
@@ -80,7 +80,7 @@ Plantilla: [`.env.production.example`](../../.env.production.example)
 | Dominio | `DOMAIN`, `OAUTH_SUCCESS_REDIRECT_URL`, `PUBLIC_IMAGE_BASE_URL`, `CORS_ORIGINS` |
 | LLM | `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_API_BASE`, `OPENAI_MODEL` |
 | Meta | `META_CLIENT_ID`, `META_CLIENT_SECRET`, `META_REDIRECT_URI` |
-| X | `X_API_KEY`, `X_API_SECRET`, `X_REDIRECT_URI` |
+| X | `X_API_KEY`, `X_API_SECRET`, `X_REDIRECT_URI`, opc. `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `X_BEARER_TOKEN`, `X_CLIENT_ID`, `X_CLIENT_SECRET` |
 | TikTok verify | `TIKTOK_VERIFY_FILENAME`, `TIKTOK_VERIFY_CONTENT` |
 
 El compose [`docker-compose.prod.yml`](../docker-compose.prod.yml) **sobrescribe** callbacks y `PUBLIC_IMAGE_BASE_URL` desde `DOMAIN`; aun así `.env.production` no debe contener ngrok (workers leen el archivo).
@@ -124,8 +124,10 @@ curl -sI https://api.powerupsecosistem.online/health   # InsightFlow intacto
 
 ## Próximos pasos inmediatos
 
-- [ ] Confirmar **Conectar Meta** tras actualizar Meta Developers Basic + redirect
-- [ ] Completar **X** en portal + `.env.production` + post de prueba
+- [ ] **Post de prueba en X** (brief red X, formato feed, aprobar)
+- [ ] Confirmar **Conectar Meta** tras Basic Settings en Meta Developers
+- [ ] OpenRouter: key en prod + logs sin `strategist.using_stub`
 - [ ] Esperar **TikTok App Review**; luego implementar OAuth/publish
-- [ ] OpenRouter: key en prod + validar que agentes no caen a stub
+- [ ] Biblioteca multi-imagen reutilizable (WIP)
+- [ ] Endurecer copy/overlay para no repetir texto del brief
 - [ ] Snapshot VPS en Hostinger tras integraciones estables

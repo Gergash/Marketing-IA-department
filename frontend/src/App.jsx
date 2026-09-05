@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import AdvisorChatBubble from "./AdvisorChatBubble";
 import AgentThoughtThread from "./AgentThoughtThread";
 import Integrations from "./Integrations";
+import { BrandMark } from "./BrandMark";
 import { getAuthToken } from "./auth";
 
 /** Traza del hilo de pensamiento: el cliente la genera porque /runs/sync no devuelve el run_id hasta terminar. */
@@ -171,7 +172,7 @@ export default function App() {
   const [contentFormat, setContentFormat] = useState("feed");
   const [networks, setNetworks] = useState(FALLBACK_NETWORKS);
   const [formatsByNetwork, setFormatsByNetwork] = useState(FALLBACK_FORMATS);
-  const [imageProvider, setImageProvider] = useState("fal");
+  const [imageProvider, setImageProvider] = useState("venice");
   const [imageProviders, setImageProviders] = useState([]);
   const [videoGenMode, setVideoGenMode] = useState("scenes");
   const [veniceVideoModel, setVeniceVideoModel] = useState("seedance-2.0");
@@ -562,8 +563,14 @@ export default function App() {
   // Render
   // ------------------------------------------------------------------
   return (
-    <main className="container">
-      <h1>Marketing DEPA IA — MVP Dashboard</h1>
+    <main className="container brand-theme">
+      <header className="app-brand-header">
+        <BrandMark size={48} to="/" />
+        <div>
+          <h1>Marketing Agéntico (Auto)</h1>
+          <p className="app-brand-sub">Estudio de marketing multiagente</p>
+        </div>
+      </header>
 
       {/* API Key */}
       <section className="card">
@@ -739,9 +746,9 @@ export default function App() {
           </div>
           <p className="hint">
             {imageProvider === "fal"
-              ? "Flux Pro vía API en la nube (requiere FAL_API_KEY en el servidor)."
+              ? "Flux Pro vía API. Para alterar fotos reales con personas, preferí Venice (gpt-image-2-edit)."
               : imageProvider === "venice"
-                ? "Venice.ai: modelo en VENICE_IMAGE_MODEL (venice-sd35 o nano-banana-pro). Reinicia API/Celery si cambias .env."
+                ? "Venice.ai + gpt-image-2 / gpt-image-2-edit. Si cambias .env, recarga esta página (settings se re-leen por mtime)."
                 : "Generación local con Automatic1111/Forge en :7860."}
           </p>
         </div>
@@ -899,6 +906,18 @@ export default function App() {
                   const up = await uploadAsset(file);
                   setUserAssetUrl(up.url);
                   setUserAssetName(up.filename);
+                  // Foto real del sitio: por defecto activar edición IA (Venice/fal)
+                  setAlterImageWithAi(true);
+                  setVisualInstructions((prev) =>
+                    prev.trim()
+                      ? prev
+                      : "Agrega dos personas realistas sentadas en las sillas vacías de la mesa, cena natural. No agregues ni modifiques texto."
+                  );
+                  // Preferir Venice para /image/edit (fal img2img suele deformar tipografía de la foto)
+                  setImageProvider((cur) => {
+                    const hasVenice = imageProviders.some((p) => p.id === "venice");
+                    return hasVenice ? "venice" : cur;
+                  });
                 } catch (err) {
                   setError(err.message);
                   setUserAssetUrl("");
@@ -926,21 +945,29 @@ export default function App() {
               disabled={!userAssetUrl || loading}
               onChange={(e) => setAlterImageWithAi(e.target.checked)}
             />
-            {" "}Alterar imagen con IA (requiere prompt; pasa por pending_approval)
+            {" "}Alterar foto real con IA (Venice gpt-image-2-edit / fal) — agrega personas, objetos, etc.
           </label>
+          {alterImageWithAi && userAssetUrl && imageProvider === "fal" && (
+            <p className="hint" style={{ color: "#b45309" }}>
+              Aviso: con fal la IA puede deformar textos ya presentes en la foto. Para editar foto real
+              usa <strong>Venice (gpt-image-2)</strong>.
+            </p>
+          )}
           {alterImageWithAi && userAssetUrl && (
             <label>
               Indicaciones visuales
               <textarea
                 rows={2}
-                placeholder="Ej: expandir fondo con nieve, estilo ilustración suave..."
+                placeholder="Ej: agrega una pareja sentada en las dos sillas, cena romántica realista. No agregues texto."
                 value={visualInstructions}
                 onChange={(e) => setVisualInstructions(e.target.value)}
               />
             </label>
           )}
           <p className="hint">
-            Sin IA: tu foto queda intacta como capa base; Pillow añade texto y diseño editorial.
+            Con IA (recomendado): Venice edita solo la escena (personas/objetos) y Pillow aplica tipografía limpia.
+            La IA no debe pintar letras — si ves texto ilegible, el editor recibió copy por error o hay un API viejo en :8000.
+            Sin IA: solo se pegan textos sobre la foto (las sillas vacías no cambian).
           </p>
         </div>
 
@@ -1080,7 +1107,17 @@ export default function App() {
                 <> · layout: {result.result.design.layout_label}</>
               )}
               {result.result.design.design_source && (
-                <> · fuente: {result.result.design.design_source}</>
+                <> · fuente: <code>{result.result.design.design_source}</code></>
+              )}
+              {result.result.design.design_source === "user_overlay" && (
+                <span style={{ color: "#b45309" }}>
+                  {" "}(solo overlay — la foto no se editó con IA; marca “Alterar foto real” y Venice)
+                </span>
+              )}
+              {result.result.design.design_source === "user_img2img" && (
+                <span style={{ color: "#047857" }}>
+                  {" "}(foto editada con IA + tipografía Pillow)
+                </span>
               )}
               :
             </p>

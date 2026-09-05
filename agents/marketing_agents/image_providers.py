@@ -355,10 +355,21 @@ def _venice(
     """Genera imagen con Venice.ai (/image/generate) y la guarda en static/images/."""
     from .user_assets import fit_image_to_spec
     from .venice_client import generate_image_bytes, truncate_prompt
-    from .visual_prompt_guards import NO_TEXT_NEGATIVE, with_photo_only_guard
+    from .visual_prompt_guards import (
+        NO_TEXT_NEGATIVE,
+        NO_TEXT_NEGATIVE_WITH_PEOPLE,
+        with_photo_only_guard,
+    )
 
-    # Prompt acotado al límite del modelo (sd35=1500; nano-banana≈7500).
-    guarded = with_photo_only_guard(f"{prompt}. Aspect ratio {spec.label}.")
+    want_people = "critical scene requirement" in (prompt or "").lower() or (
+        "includes the requested people" in (prompt or "").lower()
+    )
+    # Prompt acotado al límite del modelo (sd35=1500; gpt-image-2=4000; nano-banana≈7500).
+    # Si el diseñador ya antepuso CRITICAL REVISION, truncate corta la cola (base), no la revisión.
+    guarded = with_photo_only_guard(
+        f"{prompt}. Aspect ratio {spec.label}.",
+        allow_people=want_people,
+    )
     visual_prompt = truncate_prompt(guarded, model)
     try:
         raw = generate_image_bytes(
@@ -368,7 +379,7 @@ def _venice(
             model=model,
             width=spec.width,
             height=spec.height,
-            negative_prompt=NO_TEXT_NEGATIVE,
+            negative_prompt=NO_TEXT_NEGATIVE_WITH_PEOPLE if want_people else NO_TEXT_NEGATIVE,
             style_preset=style_preset,
             resolution=resolution,
             fmt="png",
@@ -488,6 +499,7 @@ def compose_from_user_asset(
     content_format: str = "feed",
     alter_with_ai: bool = False,
     visual_instructions: str | None = None,
+    revision_notes: str | None = None,
     image_provider: str | None = None,
     brand_archetype=None,
     preferred_font_paths: list[str] | None = None,
@@ -498,7 +510,8 @@ def compose_from_user_asset(
 ) -> tuple[str, int, int, str]:
     """
     Design-as-Code: foto del usuario como capa base + overlay Pillow.
-    Si alter_with_ai=True, pasa por fal img2img antes del overlay.
+    Si alter_with_ai=True, edita la foto con Venice (/image/edit) o fal img2img
+    antes del overlay tipográfico.
     Retorna (url, width, height, design_source).
     """
     from gateway.app.core.settings import get_settings
@@ -511,9 +524,33 @@ def compose_from_user_asset(
 
     design_source = "user_overlay"
     if alter_with_ai:
+        from .revision_prompt import build_scene_edit_prompt
+
         provider = (image_provider or s.image_provider).strip().lower()
-        if provider == "fal" and s.fal_api_key:
-            prompt = (visual_instructions or "Enhance for social media, keep subject recognizable").strip()
+        # Solo escena (personas/objetos). NUNCA el prompt Flux ni el copy tipográfico:
+        # si el modelo recibe headlines, pinta letras ilegibles en el bitmap.
+        prompt = build_scene_edit_prompt(
+            visual_instructions,
+            revision_notes=revision_notes,
+        )
+        logger.info(
+            "user_asset.scene_edit_prompt",
+            provider=provider,
+            prompt_preview=prompt[:220],
+        )
+        if provider == "venice" and s.venice_api_key:
+            fitted = _venice_edit(
+                fitted,
+                prompt,
+                api_key=s.venice_api_key,
+                base_url=s.venice_api_base,
+                generate_model=s.venice_image_model,
+                edit_model=(s.venice_image_edit_model or "").strip() or None,
+                resolution=(s.venice_image_resolution or "2K").strip() or "2K",
+                spec=spec,
+            )
+            design_source = "user_img2img"
+        elif provider == "fal" and s.fal_api_key:
             fitted = _fal_img2img(
                 fitted,
                 prompt,
@@ -526,8 +563,12 @@ def compose_from_user_asset(
         else:
             logger.warning(
                 "user_asset.img2img_skipped",
-                reason="img2img solo está implementado con fal",
+                reason="alter_with_ai requiere IMAGE_PROVIDER=venice (edit) o fal (img2img) con API key",
                 provider=provider,
+            )
+            raise RuntimeError(
+                "image_edit_unavailable: activa IMAGE_PROVIDER=venice (gpt-image-2-edit) "
+                "o fal para modificar fotos reales con IA."
             )
 
     if overlay_text:
@@ -552,6 +593,41 @@ def compose_from_user_asset(
     return url, w, h, design_source
 
 
+def _venice_edit(
+    img_bytes: bytes,
+    prompt: str,
+    *,
+    api_key: str,
+    base_url: str,
+    generate_model: str,
+    edit_model: str | None,
+    resolution: str,
+    spec,
+) -> bytes:
+    """Edita foto real vía Venice POST /image/edit (p.ej. gpt-image-2-edit)."""
+    from .venice_client import edit_image_bytes, edit_model_for_generate_model, venice_aspect_ratio
+
+    model = (edit_model or "").strip() or edit_model_for_generate_model(generate_model)
+    # El prompt ya viene de build_scene_edit_prompt (sin tipografía).
+    # No enviar quality: el schema vivo de /image/edit lo rechaza (400).
+    edit_prompt = (prompt or "").strip()
+    try:
+        out = edit_image_bytes(
+            img_bytes,
+            edit_prompt,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            resolution=resolution,
+            aspect_ratio=venice_aspect_ratio(spec.width, spec.height),
+        )
+        logger.info("image.venice_edit_ok", model=model, out_bytes=len(out))
+        return out
+    except Exception as exc:
+        logger.error("image.venice_edit_error", error=str(exc), model=model)
+        raise RuntimeError(f"image_gen_failed:venice_edit: {exc}") from exc
+
+
 def _fal_img2img(
     img_bytes: bytes,
     prompt: str,
@@ -571,9 +647,9 @@ def _fal_img2img(
 
     try:
         import fal_client
-    except ImportError:
+    except ImportError as exc:
         logger.error("image.fal_missing_sdk", hint="pip install fal-client")
-        return img_bytes
+        raise RuntimeError("image_gen_failed: fal_img2img: pip install fal-client") from exc
 
     tmp_path = ""
     try:
@@ -599,7 +675,9 @@ def _fal_img2img(
         return resp.content
     except Exception as exc:
         logger.error("image.fal_img2img_error", error=str(exc))
-        return img_bytes
+        # No devolver la foto original en silencio: el usuario cree que "alteró" y
+        # solo ve overlay tipográfico (sillas vacías + textos).
+        raise RuntimeError(f"image_gen_failed: fal_img2img: {exc}") from exc
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)

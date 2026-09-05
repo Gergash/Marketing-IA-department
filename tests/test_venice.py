@@ -178,6 +178,51 @@ def test_generate_image_bytes_nano_banana_pro(monkeypatch: pytest.MonkeyPatch) -
     assert raw == png_bytes
 
 
+def test_generate_image_bytes_gpt_image_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    """gpt-image-2 vía Venice: aspect_ratio + resolution (sin width/height)."""
+    from agents.marketing_agents import venice_client
+    import httpx
+
+    png_bytes = b"gpt-image-2"
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+
+    class _Resp:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return {"images": [b64]}
+
+    def _fake_post(url, **kwargs):
+        body = kwargs["json"]
+        assert body["model"] == "gpt-image-2"
+        assert body["aspect_ratio"] == "4:5"
+        assert body["resolution"] == "2K"
+        assert "width" not in body
+        assert "height" not in body
+        assert "negative_prompt" not in body
+        assert "style_preset" not in body
+        return _Resp()
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    raw = venice_client.generate_image_bytes(
+        "romantic dinner terrace fairy lights couples date night",
+        api_key="k",
+        model="gpt-image-2",
+        width=1080,
+        height=1350,
+        resolution="2K",
+        style_preset="cinematic",  # debe ignorarse en resolution-tier
+    )
+    assert raw == png_bytes
+
+
+def test_prompt_limit_gpt_image_2() -> None:
+    from agents.marketing_agents.venice_client import prompt_limit_for_model
+
+    assert prompt_limit_for_model("gpt-image-2") == 4000
+
+
 def test_prompt_limit_nano_vs_sd35() -> None:
     from agents.marketing_agents.venice_client import prompt_limit_for_model, truncate_prompt
 

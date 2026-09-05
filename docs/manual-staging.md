@@ -1,8 +1,8 @@
 # Manual de Staging — Marketing DEPA IA
 
-> **Versión:** 2026-09-03  
+> **Versión:** 2026-09-05  
 > **Autor:** PowerUps Ecosistema  
-> Cubre: levantar staging en local, estrategia multi-entorno y deploy a VPS sin conflictos de URLs.
+> Cubre: levantar staging en local, estrategia multi-entorno, deploy a VPS y foto real + Venice edit.
 
 ---
 
@@ -432,6 +432,10 @@ git status --ignored
 | Imagen estática | 1 |
 | Imagen generada con IA | 2 |
 | Foto propia con overlay/diseño | 2 |
+| Foto propia + alterar con IA (Venice/fal) | 2 |
+
+Guía de edición de foto real: [`foto-real-venice-edit.md`](foto-real-venice-edit.md).
+
 | Video con subtítulos | 5 |
 | Reel / clip con IA | 8 |
 
@@ -449,6 +453,15 @@ git status --ignored
 ---
 
 ## 10. FAQ y errores comunes
+
+### ❌ `Unrecognized key(s) in object: 'quality'` al alterar foto (Venice)
+El schema vivo de `POST /image/edit` **no acepta** `quality`. El cliente actual no lo envía. Si ves el error: (1) un solo Uvicorn en `:8000`, (2) reinicia API, (3) ver [`foto-real-venice-edit.md`](foto-real-venice-edit.md).
+
+### ❌ `_venice_edit() missing ... 'quality'`
+Firma/llamada desalineadas tras hot-reload. Reinicia Uvicorn limpio (mata procesos huérfanos en el puerto 8000).
+
+### ❌ Varios uvicorn y el dashboard usa settings viejos (`fal` / `venice-sd35`)
+En Windows, `--reload` puede dejar workers zombi. Comprueba `Get-NetTCPConnection -LocalPort 8000` y deja **un** proceso.
 
 ### ❌ `ModuleNotFoundError: No module named 'oauthlib'`
 ```bash

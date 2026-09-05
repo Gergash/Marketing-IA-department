@@ -81,20 +81,62 @@ def _normalize_base(base_url: str) -> str:
 
 
 def venice_aspect_ratio(width: int, height: int) -> str:
-    """Mapea dimensiones a un aspect_ratio Venice conocido."""
+    """Mapea dimensiones a un aspect_ratio Venice conocido (enum /image/edit)."""
     if height <= 0:
         return "1:1"
     ratio = width / height
+    # Debe coincidir con el enum del schema Venice (additionalProperties: false).
     candidates = {
         "9:16": 9 / 16,
         "16:9": 16 / 9,
+        "21:9": 21 / 9,
         "1:1": 1.0,
         "4:5": 4 / 5,
         "3:4": 3 / 4,
-        "4:3": 4 / 3,
+        "2:3": 2 / 3,
+        "3:2": 3 / 2,
     }
     best = min(candidates.items(), key=lambda kv: abs(kv[1] - ratio))
     return best[0]
+
+
+def _encode_edit_source(image_bytes: bytes) -> tuple[bytes, str]:
+    """Normaliza bytes de entrada a JPEG RGB que Venice /image/edit acepta."""
+    import io
+
+    from PIL import Image
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img = img.convert("RGB")
+    except Exception as exc:
+        raise RuntimeError(f"venice_image_edit_failed: cannot decode source image: {exc}") from exc
+
+    # Límites documentados: ≥65536 px y ≤33177600 px; <25MB.
+    w, h = img.size
+    pixels = w * h
+    if pixels < 65_536:
+        raise RuntimeError(
+            f"venice_image_edit_failed: image too small ({w}x{h}); need ≥65536 pixels"
+        )
+    if pixels > 33_177_600:
+        # Downscale manteniendo aspect
+        scale = (33_177_600 / pixels) ** 0.5
+        img = img.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            Image.Resampling.LANCZOS,
+        )
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=92, optimize=True)
+    out = buf.getvalue()
+    if len(out) >= 25 * 1024 * 1024:
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80, optimize=True)
+        out = buf.getvalue()
+    if len(out) >= 25 * 1024 * 1024:
+        raise RuntimeError("venice_image_edit_failed: encoded image exceeds 25MB")
+    return out, "image/jpeg"
 
 
 def _model_id(model: str) -> str:
@@ -264,6 +306,145 @@ def generate_image_bytes(
         return base64.b64decode(raw_b64)
     except Exception as exc:
         raise RuntimeError(f"venice_image_failed: invalid base64: {exc}") from exc
+
+
+def edit_image_bytes(
+    image_bytes: bytes,
+    prompt: str,
+    *,
+    api_key: str,
+    base_url: str = _DEFAULT_BASE,
+    model: str = "gpt-image-2-edit",
+    resolution: str | None = None,
+    quality: str | None = None,
+    aspect_ratio: str | None = None,
+    timeout_s: float = 240.0,
+) -> bytes:
+    """POST /image/edit — modifica una foto real con prompt (respuesta PNG/JPEG cruda).
+
+    Docs: https://docs.venice.ai/api-reference/endpoint/image/edit
+    Modelos típicos: gpt-image-2-edit | nano-banana-pro-edit | qwen-edit
+
+    Nota: el schema vivo tiene ``additionalProperties: false`` y hoy NO acepta
+    ``quality`` (400 Unrecognized key). ``resolution`` / ``aspect_ratio`` sí.
+    """
+    import httpx
+
+    if not api_key.strip():
+        raise RuntimeError("venice_image_edit_failed: missing API key")
+    if not image_bytes:
+        raise RuntimeError("venice_image_edit_failed: empty source image")
+
+    model_used = (model or "gpt-image-2-edit").strip()
+    base = _normalize_base(base_url)
+    # Misma familia de límites que generación; edit prompts suelen ser cortos.
+    safe_prompt = truncate_prompt(prompt, model_used.replace("-edit", "") or "gpt-image-2")
+
+    # Re-encode a JPEG válido: Venice rechaza algunos PNG/Pillow edge-cases
+    # con "Invalid or corrupt image" aunque el archivo abra en local.
+    encoded, mime = _encode_edit_source(image_bytes)
+    b64 = base64.b64encode(encoded).decode("ascii")
+    payload: dict[str, Any] = {
+        "model": model_used,
+        "prompt": safe_prompt,
+        "image": b64,
+        "safe_mode": True,
+    }
+    mid = model_used.lower()
+    # resolution-tier models (gpt-image-2-edit, nano-banana-*-edit)
+    if "gpt-image" in mid or "nano-banana" in mid:
+        if resolution:
+            payload["resolution"] = normalize_resolution(resolution)
+        # quality omitido a propósito: schema actual → 400 Unrecognized key(s): 'quality'
+        if quality:
+            logger.info(
+                "venice.image_edit_quality_skipped",
+                reason="API schema rejects quality on /image/edit",
+                requested=str(quality),
+            )
+    if aspect_ratio:
+        # Solo ratios del enum Venice; 'auto' deja que infieran del input
+        allowed = {
+            "auto",
+            "1:1",
+            "3:2",
+            "16:9",
+            "21:9",
+            "9:16",
+            "2:3",
+            "3:4",
+            "4:5",
+        }
+        ar = aspect_ratio.strip()
+        payload["aspect_ratio"] = ar if ar in allowed else "auto"
+
+    logger.info(
+        "venice.image_edit_request",
+        model=model_used,
+        prompt_chars=len(safe_prompt),
+        source_bytes=len(encoded),
+        source_mime=mime,
+        resolution=payload.get("resolution"),
+        aspect_ratio=payload.get("aspect_ratio"),
+    )
+
+    try:
+        resp = httpx.post(
+            f"{base}/image/edit",
+            headers=_auth_headers(api_key),
+            json=payload,
+            timeout=timeout_s,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        detail = _http_detail(exc)
+        logger.error("venice.image_edit_error", error=detail, model=model_used)
+        raise RuntimeError(f"venice_image_edit_failed: {detail}") from exc
+
+    ctype = (resp.headers.get("Content-Type") or "").lower()
+    raw = resp.content
+    if "image/" in ctype or (raw[:8] == b"\x89PNG\r\n\x1a\n") or raw[:2] == b"\xff\xd8":
+        if not raw:
+            raise RuntimeError("venice_image_edit_failed: empty image body")
+        return raw
+
+    # Algunos proxies devuelven JSON con base64 (compat).
+    try:
+        data = resp.json()
+        images = data.get("images") or data.get("data") or []
+        if images:
+            item = images[0]
+            raw_b64 = item if isinstance(item, str) else (item.get("b64_json") or item.get("base64") or "")
+            if isinstance(raw_b64, str) and raw_b64:
+                if raw_b64.startswith("data:"):
+                    raw_b64 = raw_b64.split(",", 1)[-1]
+                return base64.b64decode(raw_b64)
+    except Exception:
+        pass
+
+    raise RuntimeError(
+        f"venice_image_edit_failed: unexpected content-type={ctype!r} bytes={len(raw)}"
+    )
+
+
+def edit_model_for_generate_model(generate_model: str) -> str:
+    """Mapea modelo de generación → modelo de edición Venice."""
+    mid = (generate_model or "").strip().lower()
+    if mid.endswith("-edit"):
+        return mid
+    mapping = {
+        "gpt-image-2": "gpt-image-2-edit",
+        "gpt-image-1-5": "gpt-image-1-5-edit",
+        "nano-banana-pro": "nano-banana-pro-edit",
+        "nano-banana-2": "nano-banana-2-edit",
+        "nano-banana": "nano-banana-2-edit",
+        "qwen-image-2": "qwen-image-2-edit",
+        "flux-2-max": "flux-2-max-edit",
+    }
+    for key, edit_id in mapping.items():
+        if key in mid:
+            return edit_id
+    return "gpt-image-2-edit"
 
 
 def generate_video_bytes(

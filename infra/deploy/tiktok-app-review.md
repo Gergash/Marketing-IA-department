@@ -21,6 +21,32 @@ Estado: **app en evaluación** por TikTok (Login Kit + Content Posting solicitad
 
 App icon: 1024×1024 PNG/JPG.
 
+### Consistencia de icono (rechazo típico de review)
+
+TikTok exige el **mismo** icono en:
+1. TikTok Developers → Basic Info → App icon
+2. Sitio web (hero / logo visible)
+3. Favicon de la pestaña del navegador
+
+Asset canónico en el repo (usar el mismo archivo al resubmit):
+
+| Uso | Archivo |
+|-----|---------|
+| Subir a TikTok (1024) | `frontend/public/app-icon-1024.jpg` |
+| Sitio / OG | `frontend/public/logo-marketing-agentico.jpg` o `app-icon-512.png` |
+| Favicon | `frontend/public/favicon.ico` (+ `favicon-32.png`) |
+| Apple touch | `frontend/public/apple-touch-icon.png` |
+
+Tras deploy, verificar:
+
+```bash
+curl -sI https://marketing.powerupsecosistem.online/favicon.ico
+curl -sI https://marketing.powerupsecosistem.online/app-icon-512.png
+# Abrir la landing: el logo del robot "auto" debe verse igual que el App icon de TikTok
+```
+
+No uses un icono genérico distinto en el portal de TikTok.
+
 ---
 
 ## 2. Verificación de dominio (URL properties)

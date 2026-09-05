@@ -1,8 +1,12 @@
 """Carga de configuración desde entorno y `.env` (pydantic-settings)."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+_SETTINGS_MTIME: float | None = None
 
 
 class Settings(BaseSettings):
@@ -60,11 +64,14 @@ class Settings(BaseSettings):
     # Key: https://venice.ai/token — base real: https://api.venice.ai/api/v1
     venice_api_key: str = ""
     venice_api_base: str = "https://api.venice.ai/api/v1"
-    # Imagen: venice-sd35 (pixel ≤1280) | nano-banana-pro / nano-banana-2 (aspect+resolution)
-    venice_image_model: str = "venice-sd35"
+    # Imagen: gpt-image-2 (aspect+resolution) | venice-sd35 (pixel ≤1280) | nano-banana-*
+    venice_image_model: str = "gpt-image-2"
     venice_image_style_preset: str = ""
-    # Solo modelos resolution-tier (Nano Banana / GPT Image): 1K | 2K | 4K
+    # Solo modelos resolution-tier (gpt-image-2 / Nano Banana): 1K | 2K | 4K
     venice_image_resolution: str = "2K"
+    # Edición de foto del usuario (POST /image/edit). Default alineado a gpt-image-2.
+    venice_image_edit_model: str = "gpt-image-2-edit"
+    venice_image_edit_quality: str = "high"  # low | medium | high
     # Animación / generación de video Venice
     # video_gen_mode: full = un clip AI | scenes = unir tomas AI | still = stills+Ken Burns
     video_gen_mode: str = "scenes"
@@ -200,10 +207,44 @@ class Settings(BaseSettings):
     # Activar en producción con PROMETHEUS_ENABLED=true
     prometheus_enabled: bool = False
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_PATH) if _ENV_PATH.is_file() else ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Devuelve la instancia única de configuración (memoizada)."""
+def _cached_settings() -> Settings:
     return Settings()
+
+
+def get_settings() -> Settings:
+    """Devuelve settings; invalida el cache si cambió el mtime de `.env`.
+
+    Uvicorn --reload no reinicia al editar `.env`, y un proceso viejo en :8000
+    puede seguir sirviendo IMAGE_PROVIDER=fal mientras el archivo ya dice venice.
+    """
+    global _SETTINGS_MTIME
+    mtime: float | None = None
+    try:
+        if _ENV_PATH.is_file():
+            mtime = _ENV_PATH.stat().st_mtime
+    except OSError:
+        mtime = None
+    if mtime is not None and _SETTINGS_MTIME is not None and mtime != _SETTINGS_MTIME:
+        _cached_settings.cache_clear()
+    if mtime is not None:
+        _SETTINGS_MTIME = mtime
+    return _cached_settings()
+
+
+def _clear_settings_cache() -> None:
+    """Invalida cache (tests / hot-reload de .env)."""
+    global _SETTINGS_MTIME
+    _SETTINGS_MTIME = None
+    _cached_settings.cache_clear()
+
+
+# Compat: muchos tests llaman get_settings.cache_clear()
+get_settings.cache_clear = _clear_settings_cache  # type: ignore[attr-defined]

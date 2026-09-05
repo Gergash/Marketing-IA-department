@@ -130,4 +130,6 @@ curl -sI https://api.powerupsecosistem.online/health   # InsightFlow intacto
 - [ ] Esperar **TikTok App Review**; luego implementar OAuth/publish
 - [ ] Biblioteca multi-imagen reutilizable (WIP)
 - [ ] Endurecer copy/overlay para no repetir texto del brief
+- [x] Foto real + Venice edit (personas/escena; tipografía Pillow) — `docs/foto-real-venice-edit.md`
+
 - [ ] Snapshot VPS en Hostinger tras integraciones estables

@@ -1,8 +1,80 @@
+/* Brand — Marketing Agéntico (Auto) — alineado al App Icon de TikTok */
+:root {
+  --brand-navy: #0a114e;
+  --brand-navy-deep: #070b36;
+  --brand-cyan: #33d6ff;
+  --brand-cyan-hot: #00e5ff;
+  --brand-magenta: #c026ff;
+  --brand-green: #39ff14;
+  --brand-white: #ffffff;
+  --brand-surface: #f4f7fb;
+  --brand-ink: #12163a;
+  --brand-muted: #5b647a;
+  --brand-primary: #1a6fff;
+  --brand-radius: 12px;
+}
+
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f4f7fb;
-  color: #1f2937;
+  font-family: "Segoe UI", "Avenir Next", "Nunito Sans", system-ui, sans-serif;
+  background: var(--brand-surface);
+  color: var(--brand-ink);
+}
+
+.brand-mark-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.brand-mark-img {
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(51, 214, 255, 0.35);
+}
+
+.brand-mark-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.brand-mark-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: inherit;
+}
+
+.brand-mark-tag {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.app-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.app-brand-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--brand-navy);
+}
+
+.app-brand-sub {
+  margin: 0.15rem 0 0;
+  color: var(--brand-muted);
+  font-size: 0.9rem;
 }
 
 .container {
@@ -13,10 +85,11 @@ body {
 
 .card {
   background: white;
-  border-radius: 10px;
+  border-radius: var(--brand-radius);
   padding: 1rem;
   margin-bottom: 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(10, 17, 78, 0.08);
+  border: 1px solid rgba(10, 17, 78, 0.06);
 }
 
 label {
@@ -38,11 +111,15 @@ input {
 
 button {
   border: 0;
-  background: #111827;
+  background: var(--brand-navy);
   color: white;
   padding: 0.6rem 0.9rem;
   border-radius: 8px;
   cursor: pointer;
+}
+
+button:hover {
+  background: #121a6a;
 }
 
 pre {

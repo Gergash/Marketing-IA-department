@@ -150,12 +150,13 @@ El catálogo vive en `image_specs.py` y se sirve por `GET /api/image/formats`; e
 ## 8. Proveedores de imagen y video
 
 ### Imagen
-- **fal.ai** — principal (Flux); también img2img si el usuario sube foto y activa “Alterar con IA”.
-- **Venice.ai** — alternativa; base API `https://api.venice.ai/api/v1`.
+- **Venice.ai** — recomendado para evaluación y **edición de foto real** (`gpt-image-2` + `gpt-image-2-edit` vía `/image/edit`). Tipografía = Pillow, no la IA. Guía: `docs/foto-real-venice-edit.md`.
+- **fal.ai** — generación desde cero (Flux); img2img opcional (puede deformar textos ya en la foto).
 - **Stable Diffusion** — Automatic1111/Forge local.
 - **OpenAI DALL·E** — si hay key.
 - **mock** — solo desarrollo/tests.
 - Fallos de fal/Venice/SD: error explícito (no placeholder silencioso disfrazado de éxito).
+- `design_source`: `generated` | `user_overlay` | `user_img2img`.
 
 ### Video
 - Render: Shotstack (`stage` sandbox o `v1` producción).
@@ -171,7 +172,8 @@ El catálogo vive en `image_specs.py` y se sirve por `GET /api/image/formats`; e
 ### Redes
 - Instagram / Meta (feed, stories, Reels) vía Graph API y sidecar Go.
 - LinkedIn nativo **solo desde Python**: API versionada `/rest/images` + `/rest/posts` con header `LinkedIn-Version`. Solo imagen y solo perfil personal; el token dura ~60 días sin refresh automático (la UI avisa a ≤7 días).
-- TikTok y X: **sin publicación automática** — se genera la pieza y se publica a mano.
+- TikTok: **sin publicación automática** hasta App Review — se genera la pieza.
+- X: publicación nativa (OAuth 1.0a, tweet + imagen).
 - Multi-cuenta: N cuentas por proveedor; el run elige `social_account_id` (Cuenta destino).
 
 ### Human-in-the-loop
@@ -179,14 +181,13 @@ El catálogo vive en `image_specs.py` y se sirve por `GET /api/image/formats`; e
 - Acciones: Aprobar, Rechazar, Solicitar cambios (`revise`).
 - Una revisión **nunca publica sola**: vuelve a `pending_approval`.
 
-### Limitación actual de “Solicitar cambios” (importante)
-La UI y el endpoint están conectados, pero las notas de revisión:
-- se inyectan sobre todo en el **prompt** del generador de imagen / guion de video;
-- **no** se pasan al copywriter de forma específica;
-- **no** ajustan automáticamente tipografía, color ni contraste del overlay Pillow;
-- con foto de usuario sin “Alterar con IA”, el fondo puede no cambiar.
+### Limitación actual de “Solicitar cambios”
+La UI y el endpoint están conectados. Mejoras 2026-09:
 
-Por eso a veces el usuario siente que “los cambios no se aplican”.
+- notas de **escena/personas** van al inicio del prompt (`compose_visual_prompt`) y pueden **auto-activar** Venice/fal edit sobre foto real;
+- tipografía sigue siendo Pillow (la IA de edit no debe pintar letras).
+
+Pendiente: pasar notas al copywriter de forma específica; ajustar color/contraste del overlay solo con notas tipográficas.
 
 ### Contraste de texto (resuelto)
 `text_contrast.py` muestrea la luminancia de la región donde va el texto (`region_luminance`, `text_safe_box`) y elige color y viñeta en consecuencia (`pick_text_colors`). Ya no depende solo de sombras fijas del arquetipo.
@@ -226,7 +227,8 @@ Swagger local: `http://127.0.0.1:8000/docs`.
 - Video (solo en `reel`): modo de generación y modelo Venice.
 - Selector de generador de imagen (fal / Venice / SD según keys).
 - Upload de manual de marca con preview de paleta y logos.
-- Upload de foto + toggle alterar con IA.
+- Upload de foto + toggle alterar con IA (Venice edit preferido; `design_source` visible).
+- Indicaciones visuales solo de escena; tipografía vía Pillow.
 - Selector de cuenta destino, enlace opcional, CTA en imagen opcional.
 - Modo interactivo + hilo de pensamiento en vivo de los agentes.
 - Sync / Async, historial, Integraciones OAuth, burbuja del Asesor.
@@ -277,7 +279,7 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 | Reels + clips Drive | Hecho |
 | Revise API + multi-cuenta | Hecho (revise superficial en diseño) |
 | Manual de marca OCR + scan + campaña | Hecho |
-| Venice.ai imagen / escenas | Hecho |
+| Venice.ai imagen / escenas + **edit foto real** | Hecho (`user_img2img`; sin `quality` en `/image/edit`) |
 | Asesor creativo | Hecho |
 | Sidecar Go | Hecho |
 | Hilo de pensamiento + modo interactivo | Hecho |
@@ -285,8 +287,9 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 | Formatos por red + universal 1:1 | Hecho (diseño) |
 | Kubernetes / Skaffold | Escrito, sin clúster real |
 | Canva / Figma MCP | Pendiente |
-| Publicación nativa TikTok / X | Pendiente (TikTok requiere auditoría de app) |
-| Revise que mueva copy + overlay de verdad | Pendiente |
+| Publicación nativa TikTok | Pendiente (App Review) |
+| Publicación nativa X | Hecho (OAuth 1.0a) |
+| Revise que mueva copy + overlay / escena | Parcial (auto-edit si notas piden personas) |
 | Error de LLM visible en UI | Pendiente |
 
 ---
@@ -299,7 +302,7 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 4. Canva OAuth y plantillas MCP no implementados.
 5. CI/CD K8s no estrenado en GKE real.
 6. Video v2 pendiente: música de fondo, captions por palabra en clips de usuario.
-7. TikTok y X: la pieza se genera pero hay que publicarla a mano.
+7. TikTok: la pieza se genera; publish tras App Review. X ya publica nativo.
 8. El formato `universal` cubre solo imagen; los reels siguen siendo 9:16 por red.
 9. LinkedIn: sin refresh automático del token (~60 días) y sin páginas de empresa.
 
@@ -314,6 +317,7 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 | Brand campaign piece | Layout canónico cuando hay manual de marca |
 | video_render | Cola Celery dedicada a renders de video |
 | Design-as-Code | Foto del usuario como capa base + overlay programático |
+| `user_img2img` | Foto editada con Venice/fal (escena) + tipografía Pillow |
 | Inbound | Marco Attract→Convert→Close→Delight + pirámide de fines en redes |
 | Formato universal | Pieza 1080×1080 que encaja en todas las redes sin recortes |
 | Hilo de pensamiento | Stream de eventos de los agentes por `trace_id`, con checkpoints interactivos |
@@ -338,4 +342,4 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 
 ## 18. Resumen ejecutivo
 
-Marketing DEPA IA es un MVP local completo para generar copy e identidades visuales con agentes, respetar un brand book (OCR + paleta + logos), producir Reels o clips, elegir el formato correcto de cada red (o uno universal para publicar en varias a la vez) y publicar con control humano en Meta o LinkedIn. Lo más maduro es generación + marca + formatos + HITL + multi-cuenta. Lo más débil hoy es la **revisión de piezas** (notas que no mandan del todo en copy/overlay) y la **publicación fuera de Meta/LinkedIn**: TikTok y X se diseñan pero se publican a mano.
+Marketing DEPA IA es un MVP local completo para generar copy e identidades visuales con agentes, respetar un brand book (OCR + paleta + logos), **editar fotos reales del local con Venice** (escena) y tipografía Pillow, producir Reels o clips, elegir el formato correcto de cada red (o uno universal) y publicar con control humano en Meta, LinkedIn o X. Lo más maduro es generación + marca + foto real + formatos + HITL + multi-cuenta. TikTok se genera; publish tras App Review.

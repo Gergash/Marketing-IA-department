@@ -1,27 +1,52 @@
+/* Staging + brand theme — Marketing Agéntico (Auto) */
+
 .staging-page {
   min-height: 100vh;
-  background: linear-gradient(160deg, #0f172a 0%, #1e293b 45%, #f4f7fb 45%);
-  color: #0f172a;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(51, 214, 255, 0.18), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(192, 38, 255, 0.12), transparent 50%),
+    linear-gradient(165deg, var(--brand-navy-deep, #070b36) 0%, var(--brand-navy, #0a114e) 42%, #eef2ff 42%, var(--brand-surface, #f4f7fb) 100%);
+  color: var(--brand-ink, #12163a);
 }
 
 .staging-hero {
   max-width: 920px;
   margin: 0 auto;
-  padding: 3rem 1.25rem 2rem;
-  color: #f8fafc;
+  padding: 2.5rem 1.25rem 2rem;
+  color: var(--brand-white, #fff);
+}
+
+.staging-hero-brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.staging-hero-logo {
+  width: min(220px, 42vw);
+  height: auto;
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 2px rgba(51, 214, 255, 0.45),
+    0 12px 40px rgba(0, 0, 0, 0.35);
+  background: var(--brand-navy, #0a114e);
 }
 
 .staging-kicker {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.75rem;
-  opacity: 0.85;
+  color: var(--brand-cyan, #33d6ff);
+  opacity: 0.95;
+  margin: 0 0 0.35rem;
 }
 
 .staging-hero h1 {
   font-size: clamp(1.75rem, 4vw, 2.75rem);
   line-height: 1.15;
-  margin: 0.5rem 0 1rem;
+  margin: 0.35rem 0 0;
 }
 
 .staging-lead {
@@ -51,14 +76,18 @@
 }
 
 .staging-btn-primary {
-  background: #2563eb;
-  color: #fff;
+  background: linear-gradient(135deg, #1a6fff 0%, var(--brand-cyan, #33d6ff) 120%);
+  color: #06102a;
+}
+
+.staging-btn-primary:hover {
+  filter: brightness(1.06);
 }
 
 .staging-btn-ghost {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(51, 214, 255, 0.45);
 }
 
 .staging-btn-sm {
@@ -74,6 +103,7 @@
 
 .staging-section h2 {
   margin-bottom: 0.75rem;
+  color: var(--brand-navy, #0a114e);
 }
 
 .staging-list {
@@ -90,6 +120,7 @@
 
 .staging-network-card h3 {
   margin-top: 0;
+  color: var(--brand-navy, #0a114e);
 }
 
 .staging-pricing .staging-table {
@@ -110,6 +141,8 @@
   margin: 2rem auto;
   padding: 1rem 1.25rem 2rem;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 1rem;
 }
 
@@ -154,12 +187,12 @@
 
 .staging-tabs button {
   flex: 1;
-  background: #f1f5f9;
-  color: #334155;
+  background: #eef2ff;
+  color: var(--brand-navy, #0a114e);
 }
 
 .staging-tabs button.active {
-  background: #111827;
+  background: var(--brand-navy, #0a114e);
   color: #fff;
 }
 
@@ -169,9 +202,9 @@
 }
 
 .staging-bar {
-  background: #0f172a;
+  background: var(--brand-navy-deep, #070b36);
   color: #f8fafc;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid rgba(51, 214, 255, 0.25);
 }
 
 .staging-bar-inner {
@@ -185,10 +218,12 @@
   font-size: 0.875rem;
 }
 
-.staging-bar-brand {
-  color: #93c5fd;
-  text-decoration: none;
-  font-weight: 700;
+.staging-bar .brand-mark-name,
+.staging-bar .brand-mark-tag {
+  color: #e8f7ff;
+}
+
+.staging-bar-brand-mark {
   margin-right: auto;
 }
 
@@ -197,23 +232,30 @@
 }
 
 .staging-bar-credits strong {
-  color: #fde047;
+  color: var(--brand-cyan, #33d6ff);
 }
 
 .staging-bar-pay summary {
   cursor: pointer;
-  color: #93c5fd;
+  color: var(--brand-cyan, #33d6ff);
 }
 
 .staging-bar-pay[open] {
   width: 100%;
-  background: #1e293b;
+  background: rgba(255, 255, 255, 0.06);
   padding: 0.75rem;
   border-radius: 8px;
 }
 
 .staging-bar .staging-btn-ghost {
   background: transparent;
-  border-color: #475569;
+  border-color: rgba(51, 214, 255, 0.35);
   color: #e2e8f0;
+}
+
+@media (max-width: 640px) {
+  .staging-hero-brand {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

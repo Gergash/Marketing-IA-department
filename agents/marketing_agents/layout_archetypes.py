@@ -184,7 +184,7 @@ def build_flux_prompt(
         if archetype.id == "brand_campaign_piece":
             raw = (
                 f"{priority} {base} "
-                "One edge-to-edge photograph of the client's real product, food, place, or atmosphere; "
+                "One edge-to-edge photograph of the client's real product, food, place, people, or atmosphere; "
                 "soft bokeh, leave quiet space in upper third for post-production typography. "
                 "Do not depict brand manuals, palettes, logos, or any readable characters."
             )

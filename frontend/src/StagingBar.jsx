@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { authFetch, clearAuthSession, getAuthToken, isStagingMode, loadAuthUser } from "./auth";
 import BoldCheckout from "./BoldCheckout";
+import { BrandMark } from "./BrandMark";
 import { Link, useNavigate } from "./RouterLink";
 
 export default function StagingBar() {
@@ -18,11 +19,9 @@ export default function StagingBar() {
   if (!isStagingMode()) return null;
 
   return (
-    <div className="staging-bar">
+    <div className="staging-bar brand-theme">
       <div className="staging-bar-inner">
-        <Link to="/" className="staging-bar-brand">
-          Marketing Agéntico
-        </Link>
+        <BrandMark size={32} className="staging-bar-brand-mark" />
         {user ? (
           <>
             <span className="staging-bar-user">{user.email}</span>

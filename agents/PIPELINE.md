@@ -26,7 +26,10 @@ ContentStrategistAgent          ← lineal (LLM o stub; inbound + brand manual)
   │
   ├─ feed / story / universal ► DesignerAgent
   │                              (brand_campaign_piece si hay manual;
-  │                               fal / Venice / SD + overlay + logo)
+  │                               sin foto: fal / Venice / SD + overlay;
+  │                               con foto + alter: Venice /image/edit
+  │                               o fal img2img → luego overlay Pillow)
+  │                              design_source: generated | user_overlay | user_img2img
   │
   ├─ content_format = reel ──► VideoScriptAgent → VideoDesignerAgent
   │                              (video_gen_mode: full | scenes | still)
@@ -54,7 +57,10 @@ Marca: `brand_manual` + `ocr_paddle` + `brand_scan` + `brand_visual` → `BriefI
 |--------|-----|-------------------|--------|
 | `strategist.py` | Estrategia de contenido (inbound + brand) | `BriefInput` | `StrategyOutput` |
 | `copywriter.py` | Redacción (revisiones QA; inbound + brand) | `StrategyOutput`, opcional `qa_feedback` | `CopyOutput` |
-| `designer.py` | Imagen: fal/Venice/SD, foto usuario, logo marca | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
+| `designer.py` | Imagen: fal/Venice/SD, foto usuario (+ alter IA), logo marca | `BriefInput`, `CopyOutput`, `StrategyOutput` | `DesignOutput` |
+| `image_providers.py` | Generate / `compose_from_user_asset` (edit + overlay) | prompt o asset | URL + `design_source` |
+| `revision_prompt.py` | Notas de revisión + `build_scene_edit_prompt` (solo escena) | notes / instructions | prompt edit |
+| `venice_client.py` | Venice generate + `/image/edit` (sin `quality` en edit) | bytes + prompt | PNG/JPEG |
 | `image_specs.py` | Dimensiones y formatos válidos por red (fuente única) | `red_social`, `content_format` | `ImageSpec` / catálogo |
 | `visual_prompt_guards.py` | Sufijo y negativos anti-texto para los generadores | prompt | prompt reforzado |
 | `text_contrast.py` | Color de texto según luminancia del fondo | imagen + caja | colores de overlay |
@@ -125,6 +131,16 @@ El catálogo de qué formatos ofrece cada red vive en `image_specs._NETWORK_FORM
 - `_brief_input` carga texto + paleta + rutas de logo en `BriefInput`.
 - Strategist/copywriter/video_script: bloques de prompt brand.
 - Designer: `resolve_brand_cues` → colores, fonts, `logo_path`, arquetipo `brand_campaign_piece`.
+
+## Foto real + alter IA (Design-as-Code)
+
+Guía operativa: [`docs/foto-real-venice-edit.md`](../docs/foto-real-venice-edit.md).
+
+1. Run con `user_asset_url` + `alter_image_with_ai=true` (+ `visual_instructions` de escena).
+2. `DesignerAgent` arma overlay desde copy; para el edit usa `build_scene_edit_prompt` (sin headlines).
+3. Si hay `revision_notes` que piden personas/escena y la casilla no venía marcada, el diseñador **auto-activa** el edit.
+4. `compose_from_user_asset` → Venice `/image/edit` o fal img2img → Pillow.
+5. Fallos de edit: **fail-loudly** (no devolver la foto original en silencio).
 
 ## Rama clips usuario (`content_format="user_clip_reel"`)
 

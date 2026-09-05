@@ -1,16 +1,32 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-08-30
-Último foco: producción VPS (InsightFlow), integración X en prod, OpenRouter LLM, documentación OAuth/redes.
+Actualizado: 2026-09-05
+Último foco: foto real + Venice `gpt-image-2-edit` (personas en escena) + tipografía Pillow; docs de operación.
 
 **Producción:** `https://marketing.powerupsecosistem.online` · VPS `insightflow@2.25.107.229` · compose `marketing-depa-prod`  
 **InsightFlow (no tocar):** `https://api.powerupsecosistem.online`
 
-**NotebookLM:** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) · [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)
+**NotebookLM:** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) · [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)  
+**Foto real + edit:** [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
 
 ---
 
 ### Cronología reciente
+
+#### 2026-09-05 — Foto real + Venice edit (validado)
+
+| Entrega | Detalle |
+|---------|---------|
+| **Design-as-Code alter** | Foto del local → Venice `POST /image/edit` (`gpt-image-2-edit`) → Pillow tipografía |
+| **Prompt solo-escena** | `build_scene_edit_prompt`: personas/objetos; **prohíbe** tipografía AI |
+| **Sin `quality` en edit** | Schema vivo `additionalProperties: false` → 400 si se envía `quality` |
+| **JPEG re-encode** | `_encode_edit_source` evita “Invalid or corrupt image” |
+| **Fail-loudly fal** | img2img ya no devuelve la foto original en silencio |
+| **Settings mtime** | `get_settings` re-lee `.env` si cambia el archivo |
+| **UI** | Auto Alterar al subir; preferir Venice; badge `design_source` |
+| **Ops** | Un solo Uvicorn en `:8000` (workers zombi causaban fal/venice-sd35 viejo) |
+| **Docs** | `docs/foto-real-venice-edit.md` + README / PIPELINE / CLAUDE / arranque / staging / NotebookLM |
+| **Validación** | Pieza Día del Amor: pareja en sillas + textos legibles + `user_img2img` |
 
 #### 2026-08-30 — Producción, X y documentación operativa
 

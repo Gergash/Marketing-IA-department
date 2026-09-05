@@ -1,4 +1,5 @@
 import { Link } from "./RouterLink";
+import { BrandMark, BRAND_ICON_FULL, BRAND_NAME } from "./BrandMark";
 import "./staging.css";
 
 const NETWORKS = [
@@ -17,10 +18,22 @@ const FORMATS = [
 
 export default function LandingPage() {
   return (
-    <div className="staging-page">
+    <div className="staging-page brand-theme">
       <header className="staging-hero">
-        <p className="staging-kicker">PowerUps · Departamento de Marketing Agéntico</p>
-        <h1>Tu equipo de marketing con IA, en un solo lugar</h1>
+        <div className="staging-hero-brand">
+          <img
+            src={BRAND_ICON_FULL}
+            alt={`${BRAND_NAME} (Auto)`}
+            className="staging-hero-logo"
+            width={220}
+            height={220}
+            decoding="async"
+          />
+          <div>
+            <p className="staging-kicker">PowerUps · {BRAND_NAME} (Auto)</p>
+            <h1>Tu equipo de marketing con IA, en un solo lugar</h1>
+          </div>
+        </div>
         <p className="staging-lead">
           Crea y publica en Facebook, Instagram, X y TikTok. Genera imágenes con IA,
           edita tus fotos con subtítulos y tipografías, o produce reels con voz y diseño
@@ -92,6 +105,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="staging-footer">
+        <BrandMark size={28} />
         <Link to="/terminos">Términos</Link>
         <Link to="/privacidad">Privacidad</Link>
       </footer>

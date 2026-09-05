@@ -5,6 +5,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 ## Capacidades
 
 - Generación de piezas gráficas (fal.ai / Venice.ai / SD) con overlays editoriales, tipografía premium y contraste adaptativo
+- **Foto real del local** (Design-as-Code): Venice `gpt-image-2-edit` altera la escena (p. ej. personas en sillas); Pillow aplica tipografía limpia — ver [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
 - Formatos por red social (Instagram, Facebook, LinkedIn, TikTok, X) + **formato universal 1:1** para publicar la misma pieza en varias redes
 - Manual de marca PDF: OCR (PaddleOCR), paleta de color, logos → prioridad máxima en diseño
 - Reels programáticos (Shotstack) y Reels desde clips del usuario (Google Drive)
@@ -46,8 +47,9 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 15** ✅ Formatos por red + `content_format=universal` (`GET /api/image/formats`). TikTok: generación sí; publish tras App Review. **X: publish nativo** (tweet + imagen)
 - **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
 - **Paso 17** 🔄 **OpenRouter** como LLM cloud en prod (`OPENAI_API_BASE`); integración OAuth Meta/X documentada en `infra/deploy/`
+- **Paso 18** ✅ **Foto real + Venice edit** (`alter_image_with_ai` → `/image/edit` sin tipografía AI; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-08-30).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-05).
 
 ## Formatos de publicación
 
@@ -105,10 +107,11 @@ ffmpeg -version
 
 No es necesario para el resto del pipeline (feed/story/reel generado).
 
-## Proveedores de imagen alternativos (legacy)
+## Proveedores de imagen
 
-> **Proveedor principal: `IMAGE_PROVIDER=fal`** — ver sección 3B.
-> **ComfyUI: descartado** (GPU local insuficiente para Flux; usar fal.ai en su lugar).
+> **Evaluación / foto real del local: `IMAGE_PROVIDER=venice`** (`gpt-image-2` + `gpt-image-2-edit`) — ver sección 3B y [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md).  
+> **fal.ai** sigue siendo opción sólida para generación desde cero (Flux).  
+> **ComfyUI: descartado** (GPU local insuficiente para Flux).
 
 **Stable Diffusion local (Automatic1111 / Forge)** — alternativa sin GPU cloud:
 
@@ -285,7 +288,23 @@ Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto
 
 ### 3B — Imagen (diseño de posts)
 
-**fal.ai — Flux** (proveedor principal recomendado, sin GPU local):
+**Venice.ai** (recomendado para evaluación y **edición de foto real**; base `https://api.venice.ai/api/v1`):
+
+```env
+IMAGE_PROVIDER=venice
+VENICE_API_KEY=...
+VENICE_IMAGE_MODEL=gpt-image-2   # alt: venice-sd35 | nano-banana-pro
+VENICE_IMAGE_RESOLUTION=2K       # 1K | 2K | 4K (solo gpt-image-2 / nano-banana*)
+VENICE_IMAGE_EDIT_MODEL=gpt-image-2-edit
+# VENICE_IMAGE_EDIT_QUALITY=high  # reservado; el cliente NO lo envía (API → 400)
+# Reels: animar escenas con image-to-video
+VIDEO_SCENE_PROVIDER=venice      # o still (Ken Burns)
+VENICE_VIDEO_MODEL=seedance-2.0
+```
+
+`GET /api/image/providers` lista Venice si hay key (label con el modelo activo).
+
+**fal.ai — Flux** (generación desde cero / img2img alternativo):
 
 ```env
 IMAGE_PROVIDER=fal
@@ -295,21 +314,7 @@ FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
 FAL_IMG2IMG_STRENGTH=0.72
 ```
 
-El pipeline genera el fondo, aplica overlay editorial (Pillow + tipografías OFL en `static/fonts/`) y guarda en `static/images/`. Con manual de marca activo prioriza el arquetipo `brand_campaign_piece` (logo + paleta del PDF).
-
-**Venice.ai** (alternativa cloud; base canónica `https://api.venice.ai/api/v1`):
-
-```env
-IMAGE_PROVIDER=venice
-VENICE_API_KEY=...
-VENICE_IMAGE_MODEL=venice-sd35   # o nano-banana-pro / nano-banana-2
-VENICE_IMAGE_RESOLUTION=2K
-# Reels: animar escenas con image-to-video
-VIDEO_SCENE_PROVIDER=venice      # default: still (Ken Burns)
-VENICE_VIDEO_MODEL=wan-2.5-preview-image-to-video
-```
-
-`GET /api/image/providers` solo lista Venice si hay key.
+El pipeline genera o edita el fondo, aplica overlay editorial (Pillow + tipografías OFL en `static/fonts/`) y guarda en `static/images/`. Con manual de marca activo prioriza el arquetipo `brand_campaign_piece` (logo + paleta del PDF).
 
 **Manual de marca (PDF):**
 
@@ -322,7 +327,13 @@ OCR_MIN_TEXT_CHARS=40
 
 Deps: `pypdf`, `pymupdf`, `paddlepaddle`, `paddleocr`. Flujo: pypdf → si texto corto, PaddleOCR → `brand_scan` (paleta + logos). Endpoints: `POST /api/briefs/upload-brand-manual`, `GET/DELETE /api/briefs/brand-manual`.
 
-**Foto del usuario (Design-as-Code):** `POST /api/briefs/upload-asset` + `user_asset_url`; opcional `alter_image_with_ai` + fal img2img.
+**Foto del usuario (Design-as-Code)** — guía completa: [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
+
+1. `POST /api/briefs/upload-asset` → `user_asset_url` en el run.
+2. `alter_image_with_ai=true` + `visual_instructions` (escena, no copy).
+3. Venice edita con prompt **solo-escena** (`build_scene_edit_prompt`); **no** manda headlines a la IA.
+4. Pillow aplica tipografía/logo. Resultado: `design_source=user_img2img`.
+5. Sin alterar: solo overlay (`user_overlay`) — las sillas vacías no cambian.
 
 **DALL·E 3** (`IMAGE_PROVIDER=openai`) y **Canva** (placeholder OAuth, no implementado). `IMAGE_PROVIDER=mock` → placeholder de desarrollo.
 

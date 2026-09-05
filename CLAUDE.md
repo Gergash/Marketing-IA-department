@@ -76,11 +76,13 @@ agents/marketing_agents/
   brand_scan.py         — paleta dominante + logos embebidos/cabecera
   brand_visual.py       — cues (hex/fuentes/logos) → prompts y arquetipo
   advisor.py            — CreativeAdvisorAgent (chat)
-  venice_client.py      — HTTP client Venice.ai (imagen + video queue)
+  venice_client.py      — HTTP client Venice.ai (imagen + /image/edit + video queue)
+  revision_prompt.py    — notas de revisión + build_scene_edit_prompt (solo escena)
   caption.py            — caption publicable (hashtags + link_url)
   publisher.py          — publicación vía proveedor social
-  image_providers.py    — generación, overlay e img2img
+  image_providers.py    — generación, overlay, compose_from_user_asset (edit)
   user_assets.py        — carga y fit de fotos del usuario
+  visual_prompt_guards.py — anti-texto en prompts de generación
   layout_archetypes.py  — 5 arquetipos (incl. brand_campaign_piece)
   design_layouts.py     — composición PIL por arquetipo (+ logo)
   video_script.py       — VideoScriptAgent: guion 3-5 escenas
@@ -172,12 +174,15 @@ fal.ai escala proporcionalmente si altura > 1440px.
 ## Config `.env` típica en dev
 
 ```env
-IMAGE_PROVIDER=fal                 # o venice | stable_diffusion
-FAL_API_KEY=...
+IMAGE_PROVIDER=venice              # evaluación / foto real; o fal | stable_diffusion
+FAL_API_KEY=...                    # si usas fal
 FAL_MODEL=fal-ai/flux-pro/v1.1
-VENICE_API_KEY=...                 # opcional
+VENICE_API_KEY=...
 VENICE_API_BASE=https://api.venice.ai/api/v1
-VENICE_IMAGE_MODEL=venice-sd35
+VENICE_IMAGE_MODEL=gpt-image-2
+VENICE_IMAGE_RESOLUTION=2K
+VENICE_IMAGE_EDIT_MODEL=gpt-image-2-edit
+# No enviar quality a /image/edit (API 400). Ver docs/foto-real-venice-edit.md
 VIDEO_SCENE_PROVIDER=still         # o venice
 OCR_PROVIDER=paddle
 OCR_LANG=es
@@ -217,6 +222,8 @@ LINKEDIN_SCOPES=openid profile w_member_social
 ```
 
 **Nunca commitear `.env`.**
+
+**Foto real:** subir en dashboard + Alterar IA → guía [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md). Tras cambiar `.env`, preferí **un solo** Uvicorn (evitar workers zombi en `:8000`).
 
 **Marca:** subir PDF en el dashboard; requiere `pymupdf` (+ PaddleOCR si `OCR_PROVIDER=paddle`).
 
@@ -291,7 +298,7 @@ pytest tests/ -v
 ~**271 tests** collected. Archivos clave además de pipeline/video/clips:
 
 - `tests/test_brand_and_advisor.py`, `test_brand_scan.py`, `test_brand_visual.py`
-- `tests/test_venice.py`, `test_premium_fonts.py`, `test_caption.py`
+- `tests/test_venice.py`, `test_venice_edit.py`, `test_revision_prompt.py`, `test_premium_fonts.py`, `test_caption.py`
 - `tests/test_revise_run.py`, `test_multi_account.py`, `test_llm_keep_alive.py`
 - `tests/test_format_normalization.py` (formatos por red + universal), `test_thought_stream.py`, `test_text_contrast_and_video_models.py`, `test_linkedin_native.py`
 
@@ -316,10 +323,11 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 - **ffmpeg** solo para `user_clip_reel`
 - **LLM stub silencioso** si Ollama apagado — mitigado con `keep_alive`/timeout; falta error en UI
 - **Imagen fail-loudly** (fal/Venice/SD); mock solo con `IMAGE_PROVIDER=mock`
+- **Foto real + edit:** tipografía solo Pillow; Venice `/image/edit` **sin** campo `quality` (schema 400); un solo proceso en `:8000`
 - **HITL revise** nunca publica; multi-cuenta vía `social_account_id`
 - **Formatos por red:** catálogo único en `image_specs.py` (`_NETWORK_FORMATS`), servido por `GET /api/image/formats`; el dashboard nunca hardcodea dimensiones
 - **`content_format=universal`** = 1080×1080 idéntico en todas las redes (para publicar la misma pieza en varias); se comporta como `feed` en layout y publicación
-- **TikTok / X:** solo generación. `_publish_run` corta con `unavailable` porque ni el sidecar Go ni el publisher Python los soportan
+- **TikTok:** generación sí; publish tras App Review. **X:** publish nativo (OAuth 1.0a)
 
 ---
 

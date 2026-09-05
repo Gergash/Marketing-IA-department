@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Link, useNavigate } from "./RouterLink";
+import { useNavigate } from "./RouterLink";
 import { authFetch, isStagingMode, saveAuthSession } from "./auth";
 import BoldCheckout from "./BoldCheckout";
+import { BrandMark } from "./BrandMark";
+import { Link } from "./RouterLink";
 import "./staging.css";
 
 export default function LoginPage() {
@@ -44,11 +46,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="staging-page">
+    <div className="staging-page brand-theme">
       <div className="container staging-auth-wrap">
-        <Link to="/" className="staging-back">
-          ← Marketing Agéntico
-        </Link>
+        <BrandMark size={48} />
 
         {!session ? (
           <div className="card staging-auth-card">

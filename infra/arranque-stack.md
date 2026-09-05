@@ -208,12 +208,21 @@ En Meta Developers → Valid OAuth Redirect URIs: pegar la **URI completa** (pat
 
 ## Flujo de prueba rápida (fal.ai / Venice + marca + HITL)
 
-1. T1–T5 levantados (T4b solo para Reels; T6–T7 solo si publicas en IG).
-2. `.env`: `IMAGE_PROVIDER=fal` (o `venice` + `VENICE_API_KEY`), `LLM_PROVIDER=ollama`, `OCR_PROVIDER=paddle` si usas PDFs escaneados.
+1. T1–T5 levantados (T4b solo para Reels; T6–T7 solo si publicas en IG). **Un solo** Uvicorn en `:8000`.
+2. `.env`: `IMAGE_PROVIDER=venice` + `VENICE_API_KEY` (o `fal` + `FAL_API_KEY`), `LLM_PROVIDER=ollama`, `OCR_PROVIDER=paddle` si usas PDFs escaneados.
 3. Dashboard → **Manual de marca (PDF)** → subir brand book (aparecen paleta + logos si el scan encuentra).
-4. Crear brief → elegir **Red social** y **Formato** (feed / story / universal) → **Cuenta destino** → **Enviar async**.
+4. Crear brief → elegir **Red social** y **Formato** (feed / story / universal) → **Cuenta destino** → **Enviar async** (o Sync en feed).
 5. Esperar `pending_approval` con pieza (con marca: arquetipo campaña + logo).
 6. T6 + T7 → **Aprobar** (o **Solicitar cambios** con notas).
+
+### Flujo foto real + personas (Venice edit)
+
+Guía: [`docs/foto-real-venice-edit.md`](../docs/foto-real-venice-edit.md).
+
+1. `IMAGE_PROVIDER=venice`, `VENICE_IMAGE_EDIT_MODEL=gpt-image-2-edit`.
+2. Dashboard → segmento **Venice** → **Subir imagen base** → **Alterar foto real** ON → indicaciones de escena.
+3. Sync feed. Esperar 1–3 min. Resultado: `design_source=user_img2img`, tipografía legible, escena alterada.
+4. Si aparece `Unrecognized key(s): 'quality'` o settings de otro provider: matar procesos zombi en `:8000` y reiniciar Uvicorn.
 
 ### Flujo Reels (Video-as-Code)
 
@@ -241,6 +250,7 @@ Si Shotstack responde `400`, el log de T4b incluye `body=...` con el detalle de 
 | Escenario | Terminales necesarias |
 |-----------|------------------------|
 | Solo generar imagen (fal/Venice) + marca PDF | T1, T2, T3, T4, T5 |
+| Foto real + alterar con Venice (`user_img2img`) | T1, T2, T3, T5 (+ `VENICE_*`); ver `docs/foto-real-venice-edit.md` |
 | Generar Reels (Shotstack + voz; escenas still/venice) | T1, T2, T3, T4, **T4b**, T5 |
 | Reel con clips de Drive | T1, T2, T3, T4, **T4b**, T5, **T7** (+ ffmpeg + Google OAuth) |
 | Publicar en Instagram (imagen o reel) | + T6, T7 (ngrok + OAuth scopes IG) |

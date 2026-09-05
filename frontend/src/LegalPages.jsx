@@ -1,6 +1,6 @@
 /** Páginas legales espejo (Vite). En producción/TikTok usan las del gateway vía ngrok. */
 
-const UPDATED = "11 de agosto de 2026";
+const UPDATED = "4 de septiembre de 2026";
 
 function LegalShell({ title, children }) {
   return (
@@ -11,14 +11,29 @@ function LegalShell({ title, children }) {
         padding: "2.5rem 1.25rem 4rem",
         fontFamily: 'Georgia, "Times New Roman", serif',
         lineHeight: 1.65,
-        color: "#1a1a1a",
-        background: "#f7f4ef",
+        color: "#12163a",
+        background: "#f4f7fb",
         minHeight: "100vh",
       }}
     >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+        <img
+          src="/app-icon-192.png"
+          alt="Marketing Agéntico (Auto)"
+          width={48}
+          height={48}
+          style={{ borderRadius: 10 }}
+        />
+        <div>
+          <strong style={{ fontFamily: "system-ui, sans-serif" }}>Marketing Agéntico (Auto)</strong>
+          <div style={{ fontSize: "0.85rem", color: "#5b647a", fontFamily: "system-ui, sans-serif" }}>
+            PowerUps
+          </div>
+        </div>
+      </div>
       <h1 style={{ fontSize: "1.85rem", margin: "0 0 0.35rem" }}>{title}</h1>
       <p style={{ color: "#555", fontSize: "0.95rem", marginBottom: "2rem" }}>
-        Departamento de Marketing Agéntico (prueba 1) · Marketing DEPA IA
+        Marketing Agéntico (Auto) · Departamento de Marketing Agéntico
         <br />
         Última actualización: {UPDATED}
       </p>

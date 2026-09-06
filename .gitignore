@@ -1,7 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-.env
 node_modules/
 dist/
 .pytest_cache/
@@ -14,6 +13,15 @@ gateway/.ruff_cache/
 workers/.ruff_cache/
 *.exe
 *.test
+.env
+.env.*
+!.env.example
+!.env.staging.example
+!.env.production.example
+!.env.*.example
+.env.staging.local
+.env.production
+.env.local
 # Binarios Go compilados (sin extensión, Linux/Mac) — no el directorio cmd/server/
 microservices/**/server.exe
 microservices/social-publisher-go/server

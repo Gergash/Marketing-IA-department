@@ -5,7 +5,8 @@ import json
 import kombu.exceptions
 import redis
 import redis.exceptions
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,8 @@ from gateway.app.schemas.contracts import (
     RunRequest,
     RunResponse,
     SocialPublishStatusResponse,
+    TakesResponse,
+    TakesUpdateRequest,
     ThoughtReplyRequest,
     VideoOptionsResponse,
     ThoughtReplyResponse,
@@ -47,14 +50,17 @@ from gateway.app.schemas.contracts import (
 from gateway.app.services.pipeline_service import (
     approve_run,
     create_run,
+    enqueue_takes_render,
     execute_pipeline,
+    get_run_takes,
     prepare_revision,
     reject_run,
     revise_run,
+    update_run_takes,
 )
 from gateway.app.services.scheduler_service import fire_campaign_by_id, sync_campaign_jobs
 from workers.celery_app import celery_app
-from workers.tasks import execute_pipeline_task, execute_video_pipeline_task
+from workers.tasks import execute_pipeline_task, execute_video_pipeline_task, render_clip_takes_task
 
 router = APIRouter(prefix="/api")
 
@@ -412,6 +418,10 @@ def _run_params(payload: RunRequest, *, interactive: bool | None = None) -> dict
         "alter_image_with_ai": payload.alter_image_with_ai,
         "visual_instructions": payload.visual_instructions,
         "drive_folder_id": payload.drive_folder_id,
+        "editing_goal": payload.editing_goal,
+        "take_count": payload.take_count,
+        "selection_mode": payload.selection_mode,
+        "manual_ranges": payload.manual_ranges,
         "social_account_id": payload.social_account_id,
         "link_url": payload.link_url,
         "cta_on_image": payload.cta_on_image,
@@ -619,6 +629,7 @@ def revise_run_endpoint(
         return RunResponse(run_id=run_id, status="pending_approval", result=result)
 
     # Los formatos de video tardan minutos: se re-renderizan en la cola dedicada, igual que el run original.
+    previous_status = run.status
     try:
         params = prepare_revision(
             db,
@@ -651,7 +662,7 @@ def revise_run_endpoint(
         OSError,
         RuntimeError,
     ) as exc:
-        run.status = "pending_approval"
+        run.status = previous_status if previous_status in ("pending_approval", "pending_takes") else "pending_approval"
         run.error_message = f"celery_broker_unavailable: {exc}"
         db.commit()
         raise HTTPException(
@@ -663,6 +674,110 @@ def revise_run_endpoint(
         ) from exc
 
     return RunResponse(run_id=run_id, status="queued")
+
+
+@router.get("/runs/{run_id}/takes", response_model=TakesResponse)
+def get_takes_endpoint(
+    run_id: int,
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> TakesResponse:
+    """Lista las tomas candidatas de un run user_clip_reel."""
+    run = db.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    try:
+        takes = get_run_takes(db, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return TakesResponse(run_id=run_id, status=run.status, takes=takes)
+
+
+@router.post("/runs/{run_id}/takes", response_model=TakesResponse)
+def update_takes_endpoint(
+    run_id: int,
+    payload: TakesUpdateRequest,
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> TakesResponse:
+    """Acepta/descarta/reordena tomas; valida ≥1 accepted y banda 6–60s."""
+    run = db.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    try:
+        takes = update_run_takes(
+            db,
+            run_id,
+            [item.model_dump(exclude_none=True) for item in payload.takes],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    db.refresh(run)
+    return TakesResponse(run_id=run_id, status=run.status, takes=takes)
+
+
+@router.post("/runs/{run_id}/takes/render", response_model=RunResponse)
+def render_takes_endpoint(
+    run_id: int,
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> RunResponse:
+    """Encola Shotstack solo con tomas accepted (sin nuevo cobro de créditos)."""
+    run = db.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    try:
+        enqueue_takes_render(db, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    try:
+        render_clip_takes_task.apply_async(args=[run_id], queue="video_render")
+    except (
+        redis.exceptions.ConnectionError,
+        kombu.exceptions.OperationalError,
+        OSError,
+        RuntimeError,
+    ) as exc:
+        run.status = "pending_takes"
+        run.error_message = f"celery_broker_unavailable: {exc}"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Redis no esta disponible; el render de tomas no se encolo. "
+                "Levanta Redis y el worker de la cola video_render."
+            ),
+        ) from exc
+
+    return RunResponse(run_id=run_id, status="queued")
+
+
+@router.get("/media/drive/{file_id}")
+def drive_media_preview(
+    file_id: str,
+    start_s: float = Query(0.0, ge=0),
+    end_s: float = Query(8.0, gt=0),
+    tenant_id: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Preview corto on-demand desde Drive (ffmpeg seek); no sirve el máster completo."""
+    from agents.marketing_agents.cloud_footage import cut_preview_from_drive, get_drive_access_token
+    from agents.marketing_agents.drive_source import DriveAuthError
+
+    if end_s <= start_s:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_s debe ser > start_s")
+    try:
+        token = get_drive_access_token(db, tenant_id)
+        path = cut_preview_from_drive(token, file_id, start_s=start_s, end_s=end_s)
+    except DriveAuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"No se pudo generar preview desde Drive: {exc}",
+        ) from exc
+    return FileResponse(path, media_type="video/mp4", filename=f"preview_{file_id}.mp4")
 
 
 @router.get("/runs/{run_id}", response_model=JobStatusResponse)

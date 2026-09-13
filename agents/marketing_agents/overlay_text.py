@@ -296,11 +296,25 @@ def _seed_index(seed: str, n: int) -> int:
     return sum(ord(c) for c in (seed or "x")) % n
 
 
-def pick_font_family(seed: str = "instagram", *, prefer_script: bool = False) -> FontFamily | None:
-    """Elige una familia del catálogo según seed (variación entre imágenes)."""
+def pick_font_family(
+    seed: str = "instagram",
+    *,
+    prefer_script: bool = False,
+    style: str | None = None,
+    family_id: str | None = None,
+) -> FontFamily | None:
+    """Elige una familia del catálogo según seed, o fuerza style/family_id (revisión HITL)."""
     families = list_font_families()
     if not families:
         return None
+    if family_id:
+        hit = next((f for f in families if f.id == family_id), None)
+        if hit:
+            return hit
+    if style:
+        styled = [f for f in families if f.style == style]
+        if styled:
+            return styled[_seed_index(seed, len(styled))]
     if prefer_script:
         scripts = [f for f in families if f.style == "script"]
         if scripts:
@@ -308,6 +322,20 @@ def pick_font_family(seed: str = "instagram", *, prefer_script: bool = False) ->
     # Mezclar estilos: sans / display / serif (sin forzar siempre el mismo)
     pool = [f for f in families if f.style != "script"] or families
     return pool[_seed_index(seed, len(pool))]
+
+
+def font_paths_for_typography(
+    *,
+    style: str | None = None,
+    family_id: str | None = None,
+    font_seed: str = "revision",
+) -> list[str]:
+    """Rutas preferidas para aplicar una petición tipográfica HITL en el overlay Pillow."""
+    family = pick_font_family(font_seed, style=style, family_id=family_id, prefer_script=(style == "script"))
+    if not family:
+        return []
+    paths = [p for p in (family.title, family.body, family.cta) if _existing(p)]
+    return paths
 
 
 def enforce_bold_path(path: str | None, *, fallback_family: FontFamily | None = None) -> str | None:
@@ -332,6 +360,8 @@ def resolve_font_roles(
     font_seed: str = "instagram",
     preferred_font_paths: list[str] | None = None,
     prefer_script_display: bool = True,
+    style: str | None = None,
+    family_id: str | None = None,
 ) -> FontRoles:
     """
     Resuelve display / body / cta / tagline.
@@ -339,11 +369,27 @@ def resolve_font_roles(
     - Varía la familia según ``font_seed`` (más de un tipo de fuente).
     - Body / subtítulo / CTA: siempre peso grueso.
     - preferred del manual se respeta si es Bold+; si es Regular se refuerza.
+    - ``style`` / ``family_id`` fuerzan la familia (notas de revisión HITL).
     """
-    family = pick_font_family(font_seed, prefer_script=prefer_script_display)
+    family = pick_font_family(
+        font_seed,
+        prefer_script=prefer_script_display and not style and not family_id,
+        style=style,
+        family_id=family_id,
+    )
     preferred = [p for p in (preferred_font_paths or []) if _existing(p)]
 
-    if prefer_script_display:
+    # Revisión HITL con familia/estilo: preferred del revision pisa el pack script default.
+    if (style or family_id) and family:
+        return FontRoles(
+            display=family.title,
+            body=enforce_bold_path(family.body, fallback_family=family) or family.body,
+            cta=enforce_bold_path(family.cta, fallback_family=family) or family.cta,
+            tagline=enforce_bold_path(family.tagline, fallback_family=family) or family.tagline,
+            family_id=family.id,
+        )
+
+    if prefer_script_display and not style and not family_id:
         pack = pack_font_roles()
         if pack:
             body = pack.body

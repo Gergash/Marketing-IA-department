@@ -97,9 +97,9 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d
 ## Dashboard — conectar cuentas
 
 1. Abrir `https://marketing.powerupsecosistem.online`
-2. **Integraciones** → Conectar Meta / LinkedIn / X
-3. En el brief: elegir **Red social** + **Cuenta destino**
-4. Ejecutar pipeline → **Aprobar** → publicación
+2. **Integraciones** → Conectar Meta / LinkedIn / X / **Google Drive**
+3. En el brief: elegir **Red social** + **Cuenta destino** (y, si clips: formato Drive + ID de carpeta + objetivo/N tomas)
+4. Ejecutar pipeline → HITL (`pending_takes` si clips; luego `pending_approval`) → **Aprobar** → publicación
 
 ---
 
@@ -131,5 +131,5 @@ curl -sI https://api.powerupsecosistem.online/health   # InsightFlow intacto
 - [ ] Biblioteca multi-imagen reutilizable (WIP)
 - [ ] Endurecer copy/overlay para no repetir texto del brief
 - [x] Foto real + Venice edit (personas/escena; tipografía Pillow) — `docs/foto-real-venice-edit.md`
-
+- [x] `user_clip_reel` cloud: audio-only + VideoProducer + `pending_takes` + Conectar Google Drive en UI
 - [ ] Snapshot VPS en Hostinger tras integraciones estables

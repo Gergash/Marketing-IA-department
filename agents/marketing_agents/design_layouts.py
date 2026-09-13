@@ -23,7 +23,12 @@ def _load_fonts(
     body_size: int,
     *,
     preferred_font_paths: list[str] | None = None,
+    title_size_scale: float = 1.0,
 ) -> tuple:
+    scale = float(title_size_scale or 1.0)
+    if scale != 1.0:
+        title_size = max(12, int(title_size * scale))
+        body_size = max(10, int(body_size * scale))
     (title_path, ts), (body_path, bs) = pick_font_pair(
         seed, body_size, preferred_font_paths=preferred_font_paths
     )
@@ -40,11 +45,33 @@ def _load_fonts(
         return default, default, default
 
 
-def _truetype(path: str, size: int):
-    try:
-        return ImageFont.truetype(path, size=size)
-    except Exception:
-        return ImageFont.load_default()
+def _resolve_text_fills(
+    img,
+    *,
+    text_box: tuple,
+    brand_primary: tuple,
+    brand_secondary: tuple,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+):
+    """Colores de overlay; respeta fuerza HITL (blanco/negro/#hex) y contraste alto."""
+    fill, shadow, sub_fill = pick_text_colors(
+        img, text_box=text_box, brand_primary=brand_primary, brand_secondary=brand_secondary
+    )
+    if force_text_hex:
+        forced = hex_to_rgb(force_text_hex)
+        # Sombra opuesta para legibilidad
+        shadow = (0, 0, 0) if sum(forced) > 400 else (255, 255, 255)
+        return forced, shadow, forced
+    if high_contrast:
+        # Preferir blanco o negro puro según luminancia de la región
+        from .text_contrast import region_luminance
+
+        lum = region_luminance(img, text_box)
+        if lum >= 0.45:
+            return (15, 23, 42), (255, 255, 255), (15, 23, 42)
+        return (255, 255, 255), (0, 0, 0), (248, 250, 252)
+    return fill, shadow, sub_fill
 
 
 def apply_design_layout(
@@ -60,8 +87,17 @@ def apply_design_layout(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
 ) -> bytes:
     """Aplica overlay editorial según arquetipo (feed) o composición centrada (story)."""
+    if force_uppercase is True:
+        headline = (headline or "").upper()
+        subline = subline.upper() if subline else subline
     headline_line, subline_line = build_overlay_lines(headline=headline, subline=subline)
     kwargs = {
         "font_seed": font_seed,
@@ -69,6 +105,11 @@ def apply_design_layout(
         "logo_path": logo_path,
         "tagline": tagline,
         "brand_names": brand_names,
+        "title_size_scale": title_size_scale,
+        "force_text_hex": force_text_hex,
+        "high_contrast": high_contrast,
+        "typography_style": typography_style,
+        "typography_family_id": typography_family_id,
     }
     if (content_format or "").strip().lower() == "story":
         return _layout_story_centered(
@@ -109,6 +150,13 @@ def _draw_centered_text(
     return th
 
 
+def _truetype(path: str, size: int):
+    try:
+        return ImageFont.truetype(path, size=size)
+    except Exception:
+        return ImageFont.load_default()
+
+
 def _layout_story_centered(
     img_bytes: bytes,
     archetype: LayoutArchetype,
@@ -121,6 +169,11 @@ def _layout_story_centered(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
 ) -> bytes:
     """Historias 9:16: tipografía y CTA centrados en el eje visual (no pegados abajo/izquierda)."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -151,7 +204,7 @@ def _layout_story_centered(
     title_size = max(28, min(56, w // 12))
     body_size = max(18, title_size - 10)
     font_title, font_body, font_cta = _load_fonts(
-        font_seed, title_size, body_size, preferred_font_paths=preferred_font_paths
+        font_seed, title_size, body_size, preferred_font_paths=preferred_font_paths, title_size_scale=title_size_scale
     )
 
     margin_x = int(w * 0.12)
@@ -171,8 +224,13 @@ def _layout_story_centered(
     y = max(int(h * 0.22), (h - block_h) // 2)
 
     text_box = (margin_x, y, w - margin_x, min(h - 20, y + block_h))
-    fill, shadow, sub_fill = pick_text_colors(
-        img, text_box=text_box, brand_primary=primary, brand_secondary=secondary
+    fill, shadow, sub_fill = _resolve_text_fills(
+        img,
+        text_box=text_box,
+        brand_primary=primary,
+        brand_secondary=secondary,
+        force_text_hex=force_text_hex,
+        high_contrast=high_contrast,
     )
 
     y += _draw_centered_text(
@@ -230,6 +288,11 @@ def _layout_typographic_poster(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
 ) -> bytes:
     """Estilo Mattelsa/RADAR: headline centrado en zona inferior, contraste adaptativo."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -247,12 +310,17 @@ def _layout_typographic_poster(
 
     title_size = max(22, min(48, w // 16))
     font_title, font_body, font_cta = _load_fonts(
-        font_seed, title_size, title_size - 6, preferred_font_paths=preferred_font_paths
+        font_seed, title_size, title_size - 6, preferred_font_paths=preferred_font_paths, title_size_scale=title_size_scale
     )
 
     box = text_safe_box(w, h, zone="lower")
-    fill, shadow, sub_fill = pick_text_colors(
-        img, text_box=box, brand_primary=primary, brand_secondary=secondary
+    fill, shadow, sub_fill = _resolve_text_fills(
+        img,
+        text_box=box,
+        brand_primary=primary,
+        brand_secondary=secondary,
+        force_text_hex=force_text_hex,
+        high_contrast=high_contrast,
     )
 
     margin_x = int(w * 0.08)
@@ -292,6 +360,11 @@ def _layout_minimal_conceptual(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
 ) -> bytes:
     """Estilo YaComercio: tipografía centrada arriba, acento, mucho aire."""
     primary = hex_to_rgb(archetype.primary_hex)
@@ -304,12 +377,17 @@ def _layout_minimal_conceptual(
 
     title_size = max(20, min(40, w // 18))
     font_title, font_body, font_cta = _load_fonts(
-        font_seed, title_size, title_size - 4, preferred_font_paths=preferred_font_paths
+        font_seed, title_size, title_size - 4, preferred_font_paths=preferred_font_paths, title_size_scale=title_size_scale
     )
 
     box = text_safe_box(w, h, zone="upper")
-    fill, shadow, sub_fill = pick_text_colors(
-        img, text_box=box, brand_primary=primary, brand_secondary=accent
+    fill, shadow, sub_fill = _resolve_text_fills(
+        img,
+        text_box=box,
+        brand_primary=primary,
+        brand_secondary=accent,
+        force_text_hex=force_text_hex,
+        high_contrast=high_contrast,
     )
 
     margin_x = int(w * 0.10)
@@ -351,6 +429,11 @@ def _layout_editorial_infographic(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
 ) -> bytes:
     """Estilo PowerUps/RADAR: barra inferior suave + tipografía centrada."""
     accent = hex_to_rgb(archetype.accent_hex)
@@ -365,15 +448,20 @@ def _layout_editorial_infographic(
 
     title_size = max(18, min(36, w // 20))
     font_title, font_body, font_cta = _load_fonts(
-        font_seed, title_size, title_size - 4, preferred_font_paths=preferred_font_paths
+        font_seed, title_size, title_size - 4, preferred_font_paths=preferred_font_paths, title_size_scale=title_size_scale
     )
 
     box = (int(w * 0.08), h - bar_h, w - int(w * 0.08), h - 12)
-    fill, shadow, sub_fill = pick_text_colors(
-        img, text_box=box, brand_primary=primary, brand_secondary=accent
+    fill, shadow, sub_fill = _resolve_text_fills(
+        img,
+        text_box=box,
+        brand_primary=primary,
+        brand_secondary=accent,
+        force_text_hex=force_text_hex,
+        high_contrast=high_contrast,
     )
-    # Sobre barra oscura forzar contraste claro
-    if fill[0] < 180:
+    # Sobre barra oscura forzar contraste claro (salvo override HITL)
+    if not force_text_hex and fill[0] < 180:
         fill = (255, 255, 255, 255)
         sub_fill = (230, 230, 240, 245)
         shadow = (0, 0, 0, 160)
@@ -416,6 +504,11 @@ def _layout_cinematic_hero(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
 ) -> bytes:
     """Estilo RADAR cinematográfico: gradiente suave + tipografía centrada."""
     accent = hex_to_rgb(archetype.accent_hex)
@@ -432,12 +525,17 @@ def _layout_cinematic_hero(
 
     title_size = max(20, min(42, w // 17))
     font_title, font_body, font_cta = _load_fonts(
-        font_seed, title_size, title_size - 5, preferred_font_paths=preferred_font_paths
+        font_seed, title_size, title_size - 5, preferred_font_paths=preferred_font_paths, title_size_scale=title_size_scale
     )
 
     box = text_safe_box(w, h, zone="lower")
-    fill, shadow, sub_fill = pick_text_colors(
-        img, text_box=box, brand_primary=primary, brand_secondary=accent
+    fill, shadow, sub_fill = _resolve_text_fills(
+        img,
+        text_box=box,
+        brand_primary=primary,
+        brand_secondary=accent,
+        force_text_hex=force_text_hex,
+        high_contrast=high_contrast,
     )
 
     margin_x = int(w * 0.08)
@@ -472,6 +570,11 @@ def _layout_brand_campaign_piece(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
 ) -> bytes:
     """
     Pieza canónica con manual de marca (nivel ChatGPT / Tres Amores):
@@ -485,6 +588,12 @@ def _layout_brand_campaign_piece(
     if sum(cream) < 300:
         cream = (245, 230, 200)
     accent = hex_to_rgb(archetype.accent_hex)
+    if force_text_hex:
+        white = hex_to_rgb(force_text_hex)
+        cream = white
+    elif high_contrast:
+        white = (255, 255, 255)
+        cream = (248, 250, 252)
 
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -519,11 +628,14 @@ def _layout_brand_campaign_piece(
     roles = resolve_font_roles(
         font_seed=font_seed,
         preferred_font_paths=preferred_font_paths,
-        prefer_script_display=True,
+        prefer_script_display=not (typography_style or typography_family_id),
+        style=typography_style,
+        family_id=typography_family_id,
     )
     # Script grande (Great Vibes se lee mejor un poco más grande)
-    title_size = max(36, min(72, w // 9))
-    body_size = max(17, min(28, w // 28))
+    scale = float(title_size_scale or 1.0)
+    title_size = max(36, min(72, int((w // 9) * scale)))
+    body_size = max(17, min(28, int((w // 28) * scale)))
     cta_size = max(15, body_size - 1)
     tag_size = max(15, body_size - 2)
 

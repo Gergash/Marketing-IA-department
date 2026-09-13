@@ -1,11 +1,17 @@
-"""Pruebas de ClipReelDesigner: banda 6-60s, wan-effects opcional con degradacion, forma de VideoDesignOutput."""
+"""Pruebas ClipReelDesigner cloud: propose sin máster local + render con shorts."""
 
 import pytest
 
-from agents.marketing_agents.clip_editor import SelectedSegment
 from agents.marketing_agents.clip_reel_designer import ClipReelDesigner
-from agents.marketing_agents.schemas import BriefInput, CopyOutput, StrategyOutput
+from agents.marketing_agents.schemas import (
+    BriefInput,
+    CloudFootageRef,
+    CopyOutput,
+    StrategyOutput,
+    TakeProposal,
+)
 from agents.marketing_agents.transcription_providers import ClipTranscript, Word
+from agents.marketing_agents.video_producer import VideoProducerAgent
 
 
 @pytest.fixture(autouse=True)
@@ -43,179 +49,155 @@ def _copy() -> CopyOutput:
     )
 
 
-class _FakeEditorAgent:
-    """Editor agent fake: devuelve una lista de segmentos fija, sin llamar a Drive/Whisper/LLM."""
+def _long_transcript(clip_id: str = "clip1") -> ClipTranscript:
+    words = []
+    texts = []
+    # ~40s de palabras espaciadas para que el stub pueda elegir ventanas
+    for i in range(80):
+        start = i * 0.5
+        end = start + 0.4
+        w = "precio" if i % 10 == 0 else ("ubicacion" if i % 7 == 0 else f"palabra{i}")
+        words.append(Word(text=w, start_s=start, end_s=end))
+        texts.append(w)
+    return ClipTranscript(clip_id=clip_id, words=words, text=" ".join(texts))
 
-    def __init__(self, segments: list[SelectedSegment]) -> None:
-        self._segments = segments
-        self.received_revision_notes: str | None = None
 
-    def run(self, transcripts, brief, strategy, *, revision_notes=None) -> list[SelectedSegment]:
-        self.received_revision_notes = revision_notes
-        return self._segments
+class _FakeProducer:
+    def __init__(self, takes: list[TakeProposal]) -> None:
+        self._takes = takes
+
+    def run(self, *a, **kw) -> list[TakeProposal]:
+        return self._takes
 
 
-def _patch_drive_and_transcription(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_propose_does_not_download_master_mp4(monkeypatch: pytest.MonkeyPatch) -> None:
     import agents.marketing_agents.clip_reel_designer as designer_module
 
-    class _FakeDownloadedClip:
-        def __init__(self, clip_id: str, path: str) -> None:
-            self.clip_id = clip_id
-            self.path = path
-            self.filename = f"{clip_id}.mp4"
-
-    fake_clips = [_FakeDownloadedClip("clip1", "/static/uploads/clips/1/clip1.mp4")]
-
-    monkeypatch.setattr(designer_module, "list_and_download_clips", lambda *a, **kw: fake_clips)
+    footage = [
+        CloudFootageRef(file_id="file1", name="a.mp4", mime_type="video/mp4", clip_id="clip1"),
+    ]
+    monkeypatch.setattr(designer_module, "list_cloud_footage", lambda *a, **k: footage)
+    monkeypatch.setattr(designer_module, "get_drive_access_token", lambda *a, **k: "token")
     monkeypatch.setattr(
         designer_module,
-        "transcribe_clips",
-        lambda clips, **kw: [ClipTranscript(clip_id="clip1", words=[Word(text="hola", start_s=0.0, end_s=1.0)], text="hola")],
+        "transcribe_cloud_footage",
+        lambda *a, **k: [_long_transcript("clip1")],
     )
 
+    def _no_render(*a, **k):
+        raise AssertionError("propose must not call render_video")
 
-def test_selected_segments_totaling_45s_pass_duration_band(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_drive_and_transcription(monkeypatch)
-    segments = [
-        SelectedSegment(clip_id="clip1", start_s=0.0, end_s=45.0, text="contenido de prueba", is_hook=True),
+    monkeypatch.setattr(designer_module, "render_video", _no_render)
+
+    takes = [
+        TakeProposal(
+            id="take-1",
+            clip_id="clip1",
+            drive_file_id="file1",
+            trim_in=0.0,
+            trim_out=20.0,
+            duration_s=20.0,
+            transcript="precio oferta",
+            is_hook=True,
+            status="proposed",
+            order=0,
+        )
     ]
-    designer = ClipReelDesigner(editor_agent=_FakeEditorAgent(segments))
+    out = ClipReelDesigner(producer_agent=_FakeProducer(takes)).propose(
+        _brief(),
+        _copy(),
+        _strategy(),
+        db=None,
+        tenant_id="demo",
+        run_id=1,
+        drive_folder_id="folder",
+        take_count=5,
+        selection_mode="auto",
+        editing_goal="mostrar precios",
+    )
+    assert out.video_url == ""
+    assert len(out.takes) == 1
+    assert out.takes[0].drive_file_id == "file1"
+    assert out.footage
 
-    output = designer.run(
-        _brief(), _copy(), _strategy(),
-        db=None, tenant_id="demo-tenant", run_id=1, drive_folder_id="folder123",
+
+def test_render_materializes_shorts_then_shotstack(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agents.marketing_agents.clip_reel_designer as designer_module
+
+    monkeypatch.setattr(
+        designer_module,
+        "materialize_accepted_shorts",
+        lambda db, tenant_id, run_id, takes: {"take-1": "http://localhost/static/shorts/take-1.mp4"},
+    )
+    monkeypatch.setattr(
+        designer_module,
+        "render_video",
+        lambda timeline, render_provider=None: ("http://localhost/static/v.mp4", 1080, 1920),
     )
 
-    assert 6.0 <= output.duration_s <= 60.0
-    assert output.duration_s == 45.0
-    assert output.video_url
-    assert output.image_url is None
-    assert output.scene_count == 1
-
-
-def test_effects_enabled_and_fal_succeeds_replaces_hook_asset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EFFECTS_ENABLED", "true")
-    monkeypatch.setenv("FAL_API_KEY", "fake-fal-key")
-    _patch_drive_and_transcription(monkeypatch)
-
-    import agents.marketing_agents.clip_reel_designer as designer_module
-
-    calls = {"count": 0}
-
-    def _fake_apply_wan_effect(video_url, prompt, api_key, model):
-        calls["count"] += 1
-        return "http://fal.example/effect_output.mp4"
-
-    monkeypatch.setattr(designer_module, "_apply_wan_effect", _fake_apply_wan_effect)
-
-    captured_scenes = {}
-    original_timeline_init = designer_module.Timeline
-
-    def _capturing_timeline(*, scenes, captions):
-        captured_scenes["scenes"] = scenes
-        return original_timeline_init(scenes=scenes, captions=captions)
-
-    monkeypatch.setattr(designer_module, "Timeline", _capturing_timeline)
-
-    segments = [
-        SelectedSegment(clip_id="clip1", start_s=30.0, end_s=40.0, text="hola", is_hook=True),
+    takes = [
+        TakeProposal(
+            id="take-1",
+            clip_id="clip1",
+            drive_file_id="file1",
+            trim_in=10.0,
+            trim_out=20.0,
+            duration_s=10.0,
+            transcript="hola",
+            is_hook=True,
+            status="accepted",
+            order=0,
+        )
     ]
-    designer = ClipReelDesigner(editor_agent=_FakeEditorAgent(segments))
-
-    designer.run(_brief(), _copy(), _strategy(), db=None, tenant_id="demo-tenant", run_id=1, drive_folder_id="f1")
-
-    assert calls["count"] == 1
-    scene = captured_scenes["scenes"][0]
-    assert scene.background_url == "http://fal.example/effect_output.mp4"
-    # El output de wan-effects YA es el segmento recortado: el trim original (30.0-40.0
-    # dentro del clip fuente) ya no aplica sobre el nuevo video y debe resetearse a 0,
-    # o Shotstack recortaria fuera de rango sobre el archivo equivocado (que ya empieza en 0).
-    assert scene.trim_in == 0.0
-    assert scene.trim_out == 10.0
-
-
-def test_multi_segment_captions_reoffset_to_spliced_timeline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """2+ segmentos con timeline_cursor != 0: las captions deben usar posiciones del output empalmado, no las del clip fuente."""
-    _patch_drive_and_transcription(monkeypatch)
-    segments = [
-        SelectedSegment(clip_id="clip1", start_s=0.0, end_s=8.0, text="primer segmento", is_hook=True),
-        SelectedSegment(clip_id="clip1", start_s=20.0, end_s=30.0, text="segundo segmento", is_hook=False),
-    ]
-    designer = ClipReelDesigner(editor_agent=_FakeEditorAgent(segments))
-
-    import agents.marketing_agents.clip_reel_designer as designer_module
-
-    captured = {}
-    original_timeline_init = designer_module.Timeline
-
-    def _capturing_timeline(*, scenes, captions):
-        captured["captions"] = captions
-        return original_timeline_init(scenes=scenes, captions=captions)
-
-    monkeypatch.setattr(designer_module, "Timeline", _capturing_timeline)
-
-    designer.run(_brief(), _copy(), _strategy(), db=None, tenant_id="demo-tenant", run_id=1, drive_folder_id="f1")
-
-    captions = captured["captions"]
-    assert len(captions) == 2
-    # Primer segmento: 0-8s en el timeline empalmado (no 0-8s del clip fuente, que aqui coincide,
-    # pero el segundo segmento demuestra la diferencia real: source 20-30s -> spliced 8-18s).
-    assert captions[0].start_s == 0.0
-    assert captions[0].end_s == 8.0
-    assert captions[1].start_s == 8.0
-    assert captions[1].end_s == 18.0
-
-
-def test_wan_effect_real_call_raises_degrades_and_continues(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Deja correr _apply_wan_effect real; solo mockea el cliente fal, que lanza una excepcion."""
-    monkeypatch.setenv("EFFECTS_ENABLED", "true")
-    monkeypatch.setenv("FAL_API_KEY", "fake-fal-key")
-    _patch_drive_and_transcription(monkeypatch)
-
-    import sys
-    import types
-
-    import agents.marketing_agents.clip_reel_designer as designer_module
-
-    fake_fal_client = types.ModuleType("fal_client")
-
-    def _raising_run(model, arguments):
-        raise RuntimeError("fal upstream error")
-
-    fake_fal_client.run = _raising_run
-    monkeypatch.setitem(sys.modules, "fal_client", fake_fal_client)
-
-    segments = [
-        SelectedSegment(clip_id="clip1", start_s=0.0, end_s=10.0, text="hola", is_hook=True),
-    ]
-    designer = ClipReelDesigner(editor_agent=_FakeEditorAgent(segments))
-
-    output = designer.run(
-        _brief(), _copy(), _strategy(), db=None, tenant_id="demo-tenant", run_id=1, drive_folder_id="f1",
+    out = ClipReelDesigner().render_from_takes(
+        takes,
+        strategy_hook="hook",
+        db=object(),
+        tenant_id="demo",
+        run_id=9,
     )
+    assert out.video_url.endswith(".mp4")
+    assert out.takes[0].source_clip_url.endswith("take-1.mp4")
+    assert out.takes[0].trim_in == 0.0
 
-    assert output.video_url  # el run no falla pese al error real de fal_client.run
 
-
-def test_effects_enabled_and_fal_fails_uses_original_hook_no_run_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("EFFECTS_ENABLED", "true")
-    monkeypatch.setenv("FAL_API_KEY", "fake-fal-key")
-    _patch_drive_and_transcription(monkeypatch)
-
-    import agents.marketing_agents.clip_reel_designer as designer_module
-
-    def _failing_apply_wan_effect(video_url, prompt, api_key, model):
-        return video_url  # simula degradacion tras error interno ya logueado
-
-    monkeypatch.setattr(designer_module, "_apply_wan_effect", _failing_apply_wan_effect)
-
-    segments = [
-        SelectedSegment(clip_id="clip1", start_s=0.0, end_s=10.0, text="hola", is_hook=True),
-    ]
-    designer = ClipReelDesigner(editor_agent=_FakeEditorAgent(segments))
-
-    output = designer.run(
-        _brief(), _copy(), _strategy(), db=None, tenant_id="demo-tenant", run_id=1, drive_folder_id="f1",
+def test_video_producer_manual_ranges() -> None:
+    tr = _long_transcript("clip1")
+    agent = VideoProducerAgent()
+    takes = agent.run(
+        [tr],
+        _brief(),
+        _strategy(),
+        footage_by_clip={"clip1": "fileABC"},
+        take_count=5,
+        selection_mode="manual",
+        editing_goal="precios",
+        manual_ranges=[
+            {"file_id": "fileABC", "start_s": 0.0, "end_s": 8.0},
+            {"file_id": "fileABC", "start_s": 20.0, "end_s": 28.0},
+        ],
     )
+    assert len(takes) == 2
+    assert takes[0].drive_file_id == "fileABC"
+    assert takes[0].is_hook is True
 
-    assert output.video_url  # el run no se bloquea/falla
+
+def test_video_producer_auto_stub_respects_take_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    from gateway.app.core.settings import get_settings
+
+    get_settings.cache_clear()
+
+    agent = VideoProducerAgent()
+    takes = agent.run(
+        [_long_transcript("clip1")],
+        _brief(),
+        _strategy(),
+        footage_by_clip={"clip1": "file1"},
+        take_count=5,
+        selection_mode="auto",
+        editing_goal="precios y ubicacion",
+    )
+    assert 1 <= len(takes) <= 5
+    assert sum(t.duration_s for t in takes) <= 90.0

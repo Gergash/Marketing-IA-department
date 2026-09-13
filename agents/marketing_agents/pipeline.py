@@ -61,6 +61,10 @@ class MarketingPipeline:
         thoughts=None,
         video_gen_mode: str | None = None,
         venice_video_model: str | None = None,
+        editing_goal: str | None = None,
+        take_count: int | None = None,
+        selection_mode: str | None = None,
+        manual_ranges: list | None = None,
     ) -> dict:
         """Ejecuta estratega → grafo copy/QA → diseño → publicación opcional; devuelve dict serializable.
 
@@ -81,7 +85,9 @@ class MarketingPipeline:
         )
 
         strategy = self._run_strategy(brief, thoughts)
-        copy, quality, copy_qa_trace = self._run_copy_qa(brief, strategy, thoughts)
+        copy, quality, copy_qa_trace = self._run_copy_qa(
+            brief, strategy, thoughts, revision_notes=revision_notes
+        )
 
         # Descripción publicable: cuerpo + link opcional + hashtags (nunca como botón en imagen).
         copy.copy_final = build_publish_caption(
@@ -112,7 +118,7 @@ class MarketingPipeline:
             # Branch de clips del usuario: Drive -> transcripcion -> seleccion hook-scored -> Timeline -> render.
             thoughts.think(
                 "clip_reel_designer",
-                "Descargando tus clips de Drive, transcribiendo y eligiendo los mejores momentos…",
+                "Descargando tus clips de Drive, transcribiendo y proponiendo tomas para el editor…",
                 drive_folder_id=drive_folder_id or "",
             )
             design = self.clip_reel_designer.run(
@@ -124,6 +130,10 @@ class MarketingPipeline:
                 run_id=run_id,
                 drive_folder_id=drive_folder_id,
                 revision_notes=revision_notes,
+                editing_goal=editing_goal,
+                take_count=take_count or 10,
+                selection_mode=selection_mode or "auto",
+                manual_ranges=manual_ranges,
             )
             _emit_video_output(thoughts, "clip_reel_designer", design)
         elif content_format == "reel":
@@ -247,9 +257,10 @@ class MarketingPipeline:
             notes = decision["notes"]
         return strategy
 
-    def _run_copy_qa(self, brief: BriefInput, strategy, thoughts):
+    def _run_copy_qa(self, brief: BriefInput, strategy, thoughts, *, revision_notes: str | None = None):
         """Bucle copy/QA + checkpoint: el usuario ajusta el texto antes de producir la pieza."""
-        notes = ""
+        # Notas HITL («Modificaciones a la pieza») entran como user_notes del copywriter.
+        notes = (revision_notes or "").strip()
         for _ in range(_MAX_CHECKPOINT_ROUNDS):
             gout = invoke_copy_qa(
                 self._copy_qa_graph,
@@ -282,6 +293,16 @@ def _merge_notes(existing: str | None, extra: str) -> str:
 
 def _emit_video_output(thoughts, agent: str, design) -> None:
     """Publica el resultado de los diseñadores de video, que comparten `VideoDesignOutput`."""
+    takes = getattr(design, "takes", None) or []
+    if takes and not design.video_url:
+        thoughts.output(
+            agent,
+            f"Propuestas {len(takes)} tomas ({design.duration_s:.1f}s). Revisa y acepta antes del render.",
+            take_count=len(takes),
+            duration_s=design.duration_s,
+            scene_count=design.scene_count,
+        )
+        return
     thoughts.output(
         agent,
         f"Video renderizado ({design.scene_count} escenas, {design.duration_s:.1f}s).",

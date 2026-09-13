@@ -543,6 +543,10 @@ def execute_pipeline(
     cta_on_image = bool(stored_params.get("cta_on_image", False))
     video_gen_mode = stored_params.get("video_gen_mode")
     venice_video_model = stored_params.get("venice_video_model")
+    editing_goal = stored_params.get("editing_goal")
+    take_count = stored_params.get("take_count")
+    selection_mode = stored_params.get("selection_mode")
+    manual_ranges = stored_params.get("manual_ranges")
 
     # Hilo de pensamiento: el trace_id lo genera el cliente antes del POST porque
     # /runs/sync no devuelve el run_id hasta que el pipeline termina.
@@ -562,11 +566,15 @@ def execute_pipeline(
         db=db,
         tenant_id=run.tenant_id,
         run_id=run.id,
-        drive_folder_id=drive_folder_id,
+        drive_folder_id=drive_folder_id or stored_params.get("drive_folder_id"),
         link_url=link_url,
         cta_on_image=cta_on_image,
         video_gen_mode=video_gen_mode,
         venice_video_model=venice_video_model,
+        editing_goal=editing_goal,
+        take_count=take_count,
+        selection_mode=selection_mode,
+        manual_ranges=manual_ranges,
     )
 
     if requires_approval:
@@ -583,11 +591,21 @@ def execute_pipeline(
             **pipeline_kwargs,
         )
         run.result_json = json.dumps(result, ensure_ascii=True)
-        run.status = "pending_approval"
+        design = result.get("design") or {}
+        # user_clip_reel: primero HITL de tomas (sin MP4); el resto va a pending_approval.
+        if (
+            content_format == "user_clip_reel"
+            and design.get("takes")
+            and not (design.get("video_url") or "").strip()
+        ):
+            run.status = "pending_takes"
+            logger.info("pipeline.pending_takes", run_id=run.id, take_count=len(design.get("takes") or []))
+        else:
+            run.status = "pending_approval"
+            logger.info("pipeline.pending_approval", run_id=run.id)
         db.add(run)
         db.commit()
         _notify_slack(get_settings().slack_webhook_url, run.id, brief.tema)
-        logger.info("pipeline.pending_approval", run_id=run.id)
         return result
 
     # Sin aprobación requerida: generar contenido; publicación vía _publish_run.
@@ -704,8 +722,10 @@ def prepare_revision(
     run = db.get(AgentRun, run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")
-    if run.status != "pending_approval":
-        raise ValueError(f"Run {run_id} no está en estado pending_approval (actual: {run.status})")
+    if run.status not in ("pending_approval", "pending_takes"):
+        raise ValueError(
+            f"Run {run_id} no está en estado pending_approval/pending_takes (actual: {run.status})"
+        )
 
     clean = notes.strip()
     if not clean:
@@ -768,8 +788,10 @@ def reject_run(db: Session, run_id: int, *, reason: str = "", approved_by: str =
     run = db.get(AgentRun, run_id)
     if not run:
         raise ValueError(f"Run {run_id} not found")
-    if run.status != "pending_approval":
-        raise ValueError(f"Run {run_id} no está en estado pending_approval (actual: {run.status})")
+    if run.status not in ("pending_approval", "pending_takes"):
+        raise ValueError(
+            f"Run {run_id} no está en estado pending_approval/pending_takes (actual: {run.status})"
+        )
 
     run.status = "rejected"
     run.approved_at = datetime.utcnow()
@@ -779,3 +801,184 @@ def reject_run(db: Session, run_id: int, *, reason: str = "", approved_by: str =
     db.add(run)
     db.commit()
     logger.info("pipeline.rejected", run_id=run_id, reason=reason)
+
+
+# ---------------------------------------------------------------------------
+# HITL de tomas (user_clip_reel)
+# ---------------------------------------------------------------------------
+
+_TAKE_STATUSES = frozenset({"proposed", "accepted", "rejected"})
+
+
+def get_run_takes(db: Session, run_id: int) -> list[dict]:
+    """Lista `design.takes` del result_json del run."""
+    run = db.get(AgentRun, run_id)
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+    if not run.result_json:
+        return []
+    result = json.loads(run.result_json)
+    design = result.get("design") or {}
+    return list(design.get("takes") or [])
+
+
+def update_run_takes(db: Session, run_id: int, updates: list[dict]) -> list[dict]:
+    """Actualiza status/order/trim de tomas; exige ≥1 accepted y banda 6–90s sobre aceptadas."""
+    from agents.marketing_agents.video_producer import _MAX_TOTAL_S
+
+    _MIN_TOTAL_S = 6.0
+
+    run = db.get(AgentRun, run_id)
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+    if run.status != "pending_takes":
+        raise ValueError(f"Run {run_id} no está en estado pending_takes (actual: {run.status})")
+    if not run.result_json:
+        raise ValueError(f"Run {run_id} no tiene resultado con tomas")
+
+    result = json.loads(run.result_json)
+    design = result.get("design") or {}
+    takes = list(design.get("takes") or [])
+    if not takes:
+        raise ValueError(f"Run {run_id} no tiene tomas propuestas")
+
+    by_id = {t["id"]: t for t in takes if t.get("id")}
+    for upd in updates:
+        take_id = upd.get("id")
+        if not take_id or take_id not in by_id:
+            raise ValueError(f"take id desconocido: {take_id}")
+        if "status" in upd and upd["status"] is not None:
+            status = str(upd["status"])
+            if status not in _TAKE_STATUSES:
+                raise ValueError(f"status de toma inválido: {status}")
+            by_id[take_id]["status"] = status
+        if "order" in upd and upd["order"] is not None:
+            by_id[take_id]["order"] = int(upd["order"])
+        if "trim_in" in upd and upd["trim_in"] is not None:
+            by_id[take_id]["trim_in"] = float(upd["trim_in"])
+        if "trim_out" in upd and upd["trim_out"] is not None:
+            by_id[take_id]["trim_out"] = float(upd["trim_out"])
+        if "trim_in" in upd or "trim_out" in upd:
+            tin = float(by_id[take_id].get("trim_in") or 0)
+            tout = float(by_id[take_id].get("trim_out") or 0)
+            if tout <= tin:
+                raise ValueError(f"trim inválido en {take_id}: trim_out debe ser > trim_in")
+            by_id[take_id]["duration_s"] = tout - tin
+
+    accepted = [t for t in takes if t.get("status") == "accepted"]
+    if accepted:
+        total_s = sum(float(t.get("duration_s") or 0) for t in accepted)
+        if not (_MIN_TOTAL_S <= total_s <= _MAX_TOTAL_S):
+            raise ValueError(
+                f"duración de tomas aceptadas fuera de banda: {total_s:.1f}s "
+                f"(esperado {_MIN_TOTAL_S:.0f}-{_MAX_TOTAL_S:.0f}s)"
+            )
+        design["duration_s"] = total_s
+        design["scene_count"] = len(accepted)
+    else:
+        # Permite ajustar trim/orden mientras todas siguen proposed (antes de Aceptar).
+        design["duration_s"] = sum(float(t.get("duration_s") or 0) for t in takes)
+        design["scene_count"] = len(takes)
+
+    design["takes"] = takes
+    result["design"] = design
+    run.result_json = json.dumps(result, ensure_ascii=True)
+    db.add(run)
+    db.commit()
+    logger.info(
+        "pipeline.takes_updated",
+        run_id=run_id,
+        accepted=len(accepted),
+        duration_s=design.get("duration_s"),
+    )
+    return takes
+
+
+def render_takes_for_run(db: Session, run_id: int) -> dict:
+    """Renderiza Shotstack con tomas accepted y deja el run en pending_approval (sin cobrar créditos)."""
+    from agents.marketing_agents.clip_reel_designer import ClipReelDesigner
+    from agents.marketing_agents.schemas import TakeProposal
+    from agents.marketing_agents.video_producer import _MAX_TOTAL_S
+
+    _MIN_TOTAL_S = 6.0
+
+    run = db.get(AgentRun, run_id)
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+    if run.status not in ("pending_takes", "queued", "running"):
+        raise ValueError(
+            f"Run {run_id} no puede renderizar tomas desde status={run.status}"
+        )
+    if not run.result_json:
+        raise ValueError(f"Run {run_id} no tiene resultado con tomas")
+
+    result = json.loads(run.result_json)
+    design = result.get("design") or {}
+    raw_takes = list(design.get("takes") or [])
+    takes = [TakeProposal(**t) for t in raw_takes]
+    accepted = [t for t in takes if t.status == "accepted"]
+    if not accepted:
+        raise ValueError("debe haber al menos una toma accepted")
+    total_s = sum(t.duration_s for t in accepted)
+    if not (_MIN_TOTAL_S <= total_s <= _MAX_TOTAL_S):
+        raise ValueError(
+            f"duración de tomas aceptadas fuera de banda: {total_s:.1f}s "
+            f"(esperado {_MIN_TOTAL_S:.0f}-{_MAX_TOTAL_S:.0f}s)"
+        )
+
+    run.status = "running"
+    db.add(run)
+    db.commit()
+
+    strategy = result.get("strategy") or {}
+    hook = strategy.get("hook") or design.get("video_prompt") or ""
+    provider = design.get("video_provider") or None
+
+    try:
+        rendered = ClipReelDesigner().render_from_takes(
+            takes,
+            strategy_hook=hook,
+            video_provider=provider,
+            db=db,
+            tenant_id=run.tenant_id,
+            run_id=run.id,
+        )
+    except Exception:
+        run.status = "pending_takes"
+        db.add(run)
+        db.commit()
+        raise
+
+    merged = design.copy()
+    rendered_dump = rendered.model_dump()
+    rendered_dump["takes"] = [t.model_dump() for t in rendered.takes]
+    merged.update(rendered_dump)
+    result["design"] = merged
+    run.result_json = json.dumps(result, ensure_ascii=True)
+    run.status = "pending_approval"
+    db.add(run)
+    db.commit()
+    logger.info("pipeline.takes_rendered", run_id=run_id, video_url=merged.get("video_url"))
+    return result
+
+
+def enqueue_takes_render(db: Session, run_id: int) -> None:
+    """Marca el run como queued para el worker de render de tomas (sin debitar créditos)."""
+    run = db.get(AgentRun, run_id)
+    if not run:
+        raise ValueError(f"Run {run_id} not found")
+    if run.status != "pending_takes":
+        raise ValueError(f"Run {run_id} no está en estado pending_takes (actual: {run.status})")
+    if not run.result_json:
+        raise ValueError(f"Run {run_id} no tiene resultado con tomas")
+
+    result = json.loads(run.result_json)
+    takes = list((result.get("design") or {}).get("takes") or [])
+    accepted = [t for t in takes if t.get("status") == "accepted"]
+    if not accepted:
+        raise ValueError("debe haber al menos una toma accepted antes de renderizar")
+
+    run.status = "queued"
+    db.add(run)
+    db.commit()
+    logger.info("pipeline.takes_render_queued", run_id=run_id)

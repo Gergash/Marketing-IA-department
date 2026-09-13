@@ -28,16 +28,19 @@ ContentStrategistAgent          ← lineal (LLM o stub; inbound + brand manual)
   │                              (brand_campaign_piece si hay manual;
   │                               sin foto: fal / Venice / SD + overlay;
   │                               con foto + alter: Venice /image/edit
-  │                               o fal img2img → luego overlay Pillow)
+  │                               o fal FLUX Kontext → luego overlay Pillow)
   │                              design_source: generated | user_overlay | user_img2img
   │
   ├─ content_format = reel ──► VideoScriptAgent → VideoDesignerAgent
   │                              (video_gen_mode: full | scenes | still)
   │
-  └─ user_clip_reel ─────────► ClipReelDesigner     ← Drive → Whisper → Shotstack
+  └─ user_clip_reel ─────────► ClipReelDesigner
+                                 (audio-only Drive → VideoProducer
+                                  → pending_takes → shorts → Shotstack)
   │
   ▼
-HITL (Aprobar / Rechazar / Solicitar cambios → POST /runs/{id}/revise)
+HITL tomas (`pending_takes`) y/o MP4 (`pending_approval`:
+  Aprobar / Rechazar / Solicitar cambios → POST /runs/{id}/revise)
   │  social_account_id del run → token+account_id de esa cuenta (multi-cuenta)
   ▼
 PublisherAgent (si QA aprobó) ← Meta/IG vía Go sidecar; LinkedIn y X nativo en Python
@@ -69,7 +72,9 @@ Marca: `brand_manual` + `ocr_paddle` + `brand_scan` + `brand_visual` → `BriefI
 | `advisor.py` | Chat asesor (fuera del pipeline) | mensaje + brief | reply |
 | `video_script.py` | Guion reel 3-5 escenas (inbound) | brief, copy, strategy | guion escenas |
 | `video_designer.py` | Escenas + voz + Shotstack (still o Venice i2v) | brief, copy, strategy, guion | `VideoDesignOutput` |
-| `clip_reel_designer.py` | Reel desde clips Drive | brief, `drive_folder_id` | `VideoDesignOutput` |
+| `cloud_footage.py` | Drive: list + audio stream + cut shorts | folder / file_id + spans | audio paths / short MP4s |
+| `video_producer.py` | N tomas auto/manual (editing_goal, take_count) | transcripts + params | `TakeProposal[]` |
+| `clip_reel_designer.py` | Orquesta propose → pending_takes → render Shotstack | brief, `drive_folder_id`, params | takes / `VideoDesignOutput` |
 | `publisher.py` | Publicación (mock o proveedor real) | plataforma, copy, diseño | `PublishOutput` |
 | `quality.py` | Reglas de compliance / tono | texto, `tono_marca` | `QualityReview` |
 | `knowledge/inbound_marketing.py` | Doctrina inbound + pirámide redes | — | addendum `_SYSTEM` |
@@ -112,7 +117,7 @@ Controla cuántas rondas de copy como máximo se permiten antes de salir del gra
 | `story` | DesignerAgent (layout centrado) | 9:16; no existe en LinkedIn ni X |
 | `universal` | DesignerAgent | 1080×1080 idéntico en todas las redes; se comporta como `feed` en layout y publicación |
 | `reel` | VideoScript + VideoDesigner | Async-only, cola `video_render` |
-| `user_clip_reel` | ClipReelDesigner | Async-only, requiere `drive_folder_id` + ffmpeg |
+| `user_clip_reel` | ClipReelDesigner + VideoProducerAgent | Async-only; Drive cloud; `drive_folder_id` + ffmpeg; HITL `pending_takes` |
 
 El catálogo de qué formatos ofrece cada red vive en `image_specs._NETWORK_FORMATS` y se sirve por `GET /api/image/formats`. **TikTok** genera pero no publica (App Review pendiente). **X** publica nativo (feed con imagen). `_publish_run` devuelve `unavailable` solo para plataformas sin provider.
 
@@ -139,13 +144,17 @@ Guía operativa: [`docs/foto-real-venice-edit.md`](../docs/foto-real-venice-edit
 1. Run con `user_asset_url` + `alter_image_with_ai=true` (+ `visual_instructions` de escena).
 2. `DesignerAgent` arma overlay desde copy; para el edit usa `build_scene_edit_prompt` (sin headlines).
 3. Si hay `revision_notes` que piden personas/escena y la casilla no venía marcada, el diseñador **auto-activa** el edit.
-4. `compose_from_user_asset` → Venice `/image/edit` o fal img2img → Pillow.
+4. `compose_from_user_asset` → Venice `/image/edit` o fal `FLUX Kontext` (edit por instrucción) → Pillow.
 5. Fallos de edit: **fail-loudly** (no devolver la foto original en silencio).
 
 ## Rama clips usuario (`content_format="user_clip_reel"`)
 
-- Async-only; requiere `drive_folder_id`. Orquestación en `ClipReelDesigner` (Drive → Whisper → hook-scored → captions → wan-effects opcional → Shotstack).
-- HITL: Aprobar / Rechazar / **Solicitar cambios** (`POST /runs/{id}/revise` regenera con notas y vuelve a `pending_approval`; nunca publica).
+- Async-only; requiere `drive_folder_id`. Orquestación cloud-first en `ClipReelDesigner`:
+  1. **Ingest audio-only** — lista videos en Drive; stream → ffmpeg audio → Whisper (sin bajar el máster MP4).
+  2. **VideoProducerAgent** — `editing_goal` + `take_count` (5/10/15/20/30) + `selection_mode` auto|manual → `takes[]` con `drive_file_id`.
+  3. **HITL tomas** — `pending_takes`; `GET/POST /api/runs/{id}/takes`; preview `GET /api/media/drive/{file_id}?start_s=&end_s=`.
+  4. **Render** — `POST .../takes/render` corta solo spans accepted (ffmpeg seek desde Drive) → Shotstack → `pending_approval`.
+- Revisar desde `pending_takes` o `pending_approval` re-propone tomas vía cola `video_render`.
 - Publicación: `run.social_account_id` elige la cuenta Meta/LinkedIn destino (`GET /api/auth/accounts`); NULL = cuenta activa más reciente del provider.
 
 ## Cuándo ampliar LangGraph

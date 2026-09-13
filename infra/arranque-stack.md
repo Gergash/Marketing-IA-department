@@ -140,7 +140,7 @@ Comprueba el banner:
 - `POST /runs/sync` con `reel` / `user_clip_reel` responde **422**. En el dashboard, aunque pulses Sync, el frontend **fuerza Async** y el run queda en `queued` hasta que T4b lo consuma.
 - Sin T4b: el job queda en Redis en cola `video_render` y el historial no avanza de `queued`.
 - Requisitos `.env` (Reel generado): `VIDEO_PROVIDER=shotstack`, `SHOTSTACK_API_KEY`, `SHOTSTACK_ENV=stage` (sandbox) o `v1`, `VOICE_PROVIDER=fal` (reusa `FAL_API_KEY`) o `elevenlabs` + key. Con `VOICE_PROVIDER=fal` / fondos fal.ai, Shotstack descarga directo de `fal.media` (no hace falta ngrok para el render). ngrok (`PUBLIC_IMAGE_BASE_URL`) sigue siendo obligatorio para **publicar en Meta** y para clips locales (`user_clip_reel` / overlays Pillow). Alternativa local: `VIDEO_PROVIDER=mock` / `VOICE_PROVIDER=mock`. Ver PASO 3D en `.env.example`.
-- `user_clip_reel` además: `ffmpeg` en PATH, OAuth Google y `drive_folder_id` en el formulario.
+- `user_clip_reel` además: `ffmpeg` en PATH; Integraciones → **Conectar Google Drive**; `drive_folder_id` + `editing_goal` / `take_count` / `selection_mode`. Flujo cloud: audio-only STT → `pending_takes` → preview `/api/media/drive/{file_id}` → corte de shorts al render → `pending_approval`. Los shorts locales + Shotstack pueden necesitar `PUBLIC_IMAGE_BASE_URL` (ngrok) según assets.
 - Timeout de video: `execute_video_pipeline_task` usa hasta ~20 min (`task_annotations` en `workers/celery_app.py`); el default de otras tareas sigue en 120s.
 - Tras cambiar `.env` o código de video: **reinicia T4b** (Celery no recarga env/módulos solos).
 
@@ -252,7 +252,7 @@ Si Shotstack responde `400`, el log de T4b incluye `body=...` con el detalle de 
 | Solo generar imagen (fal/Venice) + marca PDF | T1, T2, T3, T4, T5 |
 | Foto real + alterar con Venice (`user_img2img`) | T1, T2, T3, T5 (+ `VENICE_*`); ver `docs/foto-real-venice-edit.md` |
 | Generar Reels (Shotstack + voz; escenas still/venice) | T1, T2, T3, T4, **T4b**, T5 |
-| Reel con clips de Drive | T1, T2, T3, T4, **T4b**, T5, **T7** (+ ffmpeg + Google OAuth) |
+| Reel con clips de Drive | T1, T2, T3, T4, **T4b**, T5, Google OAuth en Integraciones (+ ffmpeg) |
 | Publicar en Instagram (imagen o reel) | + T6, T7 (ngrok + OAuth scopes IG) |
 | Multi-cuenta (Cliente A / Cliente B) | T3 + Integraciones + selector **Cuenta destino**; migración `0007` |
 | Prueba de fuego scheduler | T3 (+ seed script, sin Celery obligatorio) |

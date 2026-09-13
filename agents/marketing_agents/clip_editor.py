@@ -57,6 +57,7 @@ class SelectedSegment(BaseModel):
     end_s: float = Field(gt=0)
     text: str = ""
     is_hook: bool = False
+    score: float = 0.0
 
 
 def _clip_span(transcript: ClipTranscript) -> tuple[float, float, str] | None:
@@ -132,7 +133,15 @@ def _select_stub(transcripts: list[ClipTranscript]) -> list[SelectedSegment]:
     if selected:
         scores = [_score_hook(seg.text, seg.end_s - seg.start_s) for seg in selected]
         best_idx = max(range(len(scores)), key=lambda i: scores[i])
-        selected[best_idx] = selected[best_idx].model_copy(update={"is_hook": True})
+        selected = [
+            seg.model_copy(
+                update={
+                    "score": scores[i],
+                    "is_hook": i == best_idx,
+                }
+            )
+            for i, seg in enumerate(selected)
+        ]
 
     return selected
 

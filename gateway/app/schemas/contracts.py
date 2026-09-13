@@ -63,6 +63,14 @@ class RunRequest(BaseModel):
     visual_instructions: str | None = None
     # Carpeta de Google Drive con los clips fuente — requerida cuando content_format=user_clip_reel
     drive_folder_id: str | None = None
+    # Objetivo de edición del reel (qué quiere lograr el cliente con el resultado)
+    editing_goal: str | None = Field(default=None, max_length=2000)
+    # Cantidad de tomas a proponer (user_clip_reel)
+    take_count: Literal[5, 10, 15, 20, 30] | None = None
+    # auto = productor elige por relevancia; manual = rangos en segundos del usuario
+    selection_mode: Literal["auto", "manual"] | None = None
+    # Rangos manuales (requeridos si selection_mode=manual)
+    manual_ranges: list[dict] | None = None
     # Cuenta social destino (id de GET /api/auth/accounts). None = única cuenta del provider (legacy)
     social_account_id: int | None = None
     # Enlace a adjuntar en la descripción del post (no se pinta en la imagen)
@@ -85,6 +93,27 @@ class RunRequest(BaseModel):
             raise ValueError(
                 "content_format='user_clip_reel' requiere drive_folder_id (carpeta de Google Drive con los clips)"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _normalize_clip_reel_edit_params(self) -> "RunRequest":
+        if self.content_format != "user_clip_reel":
+            return self
+        if self.take_count is None:
+            self.take_count = 10
+        if self.selection_mode is None:
+            self.selection_mode = "auto"
+        if self.editing_goal is not None:
+            cleaned = self.editing_goal.strip()
+            self.editing_goal = cleaned or None
+        if self.selection_mode == "manual":
+            ranges = self.manual_ranges or []
+            if not ranges:
+                raise ValueError(
+                    "selection_mode='manual' requiere manual_ranges con al menos un rango {start_s,end_s}"
+                )
+            if self.take_count is not None and len(ranges) > self.take_count:
+                self.manual_ranges = ranges[: self.take_count]
         return self
 
     @model_validator(mode="after")
@@ -278,6 +307,30 @@ class ReviseRequest(BaseModel):
         if not self.notes.strip():
             raise ValueError("notes no puede ser solo espacios en blanco")
         return self
+
+
+class TakeUpdateItem(BaseModel):
+    """Cambio de status/order/trim para una toma de user_clip_reel."""
+
+    id: str
+    status: Literal["proposed", "accepted", "rejected"] | None = None
+    order: int | None = None
+    trim_in: float | None = None
+    trim_out: float | None = None
+
+
+class TakesUpdateRequest(BaseModel):
+    """Batch de actualizaciones de tomas (aceptar/descartar/reordenar)."""
+
+    takes: list[TakeUpdateItem] = Field(min_length=1)
+
+
+class TakesResponse(BaseModel):
+    """Listado de tomas del run + status del run."""
+
+    run_id: int
+    status: str
+    takes: list[dict] = Field(default_factory=list)
 
 
 class CampaignScheduleCreate(BaseModel):

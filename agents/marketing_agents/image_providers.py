@@ -37,6 +37,12 @@ def generate_image(
     tagline: str | None = None,
     brand_names: list[str] | None = None,
     font_seed: str | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
 ) -> tuple[str, int, int]:
     """Return (image URL, width, height) for the given prompt."""
     from gateway.app.core.settings import get_settings
@@ -51,6 +57,12 @@ def generate_image(
         "tagline": tagline,
         "brand_names": brand_names,
         "font_seed": (font_seed or f"{layout_archetype}:{red_social}").strip(),
+        "title_size_scale": title_size_scale,
+        "force_text_hex": force_text_hex,
+        "high_contrast": high_contrast,
+        "typography_style": typography_style,
+        "typography_family_id": typography_family_id,
+        "force_uppercase": force_uppercase,
     }
 
     if provider == "stable_diffusion":
@@ -135,6 +147,12 @@ def _stable_diffusion(
     tagline: str | None = None,
     brand_names: list[str] | None = None,
     font_seed: str | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
 ) -> str:
     """POST a txt2img de A1111/Forge, decodifica PNG, superpone texto y guarda en `/static/images/`."""
     import httpx
@@ -181,6 +199,12 @@ def _stable_diffusion(
                 logo_path=logo_path,
                 tagline=tagline,
                 brand_names=brand_names,
+                title_size_scale=title_size_scale,
+                force_text_hex=force_text_hex,
+                high_contrast=high_contrast,
+                typography_style=typography_style,
+                typography_family_id=typography_family_id,
+                force_uppercase=force_uppercase,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -213,6 +237,12 @@ def _apply_layout_overlay(
     logo_path: str | None = None,
     tagline: str | None = None,
     brand_names: list[str] | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
 ) -> bytes:
     """Aplica composición editorial según arquetipo (poster, campaña marca, hero…)."""
     archetype = brand_archetype or _ARCHETYPE_MAP.get(
@@ -230,6 +260,12 @@ def _apply_layout_overlay(
         logo_path=logo_path,
         tagline=tagline,
         brand_names=brand_names,
+        title_size_scale=title_size_scale,
+        force_text_hex=force_text_hex,
+        high_contrast=high_contrast,
+        typography_style=typography_style,
+        typography_family_id=typography_family_id,
+        force_uppercase=force_uppercase,
     )
 
 
@@ -251,6 +287,12 @@ def _fal(
     tagline: str | None = None,
     brand_names: list[str] | None = None,
     font_seed: str | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
 ) -> str:
     """Genera imagen con fal.ai (Flux pro u otros modelos) y la guarda en static/images/."""
     import os
@@ -312,6 +354,12 @@ def _fal(
                 logo_path=logo_path,
                 tagline=tagline,
                 brand_names=brand_names,
+                title_size_scale=title_size_scale,
+                force_text_hex=force_text_hex,
+                high_contrast=high_contrast,
+                typography_style=typography_style,
+                typography_family_id=typography_family_id,
+                force_uppercase=force_uppercase,
             )
 
         _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -351,6 +399,12 @@ def _venice(
     tagline: str | None = None,
     brand_names: list[str] | None = None,
     font_seed: str | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
 ) -> str:
     """Genera imagen con Venice.ai (/image/generate) y la guarda en static/images/."""
     from .user_assets import fit_image_to_spec
@@ -407,6 +461,12 @@ def _venice(
             logo_path=logo_path,
             tagline=tagline,
             brand_names=brand_names,
+            title_size_scale=title_size_scale,
+            force_text_hex=force_text_hex,
+            high_contrast=high_contrast,
+            typography_style=typography_style,
+            typography_family_id=typography_family_id,
+            force_uppercase=force_uppercase,
         )
 
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -507,11 +567,17 @@ def compose_from_user_asset(
     tagline: str | None = None,
     brand_names: list[str] | None = None,
     font_seed: str | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
 ) -> tuple[str, int, int, str]:
     """
     Design-as-Code: foto del usuario como capa base + overlay Pillow.
-    Si alter_with_ai=True, edita la foto con Venice (/image/edit) o fal img2img
-    antes del overlay tipográfico.
+    Si alter_with_ai=True, edita la foto con Venice (/image/edit) o fal
+    (FLUX Kontext / edit, o img2img legacy) antes del overlay tipográfico.
     Retorna (url, width, height, design_source).
     """
     from gateway.app.core.settings import get_settings
@@ -557,18 +623,19 @@ def compose_from_user_asset(
                 s.fal_api_key,
                 s.fal_img2img_model,
                 strength=s.fal_img2img_strength,
+                guidance=getattr(s, "fal_img2img_guidance", 3.5),
                 spec=spec,
             )
             design_source = "user_img2img"
         else:
             logger.warning(
                 "user_asset.img2img_skipped",
-                reason="alter_with_ai requiere IMAGE_PROVIDER=venice (edit) o fal (img2img) con API key",
+                reason="alter_with_ai requiere image_provider=venice o fal con API key",
                 provider=provider,
             )
             raise RuntimeError(
-                "image_edit_unavailable: activa IMAGE_PROVIDER=venice (gpt-image-2-edit) "
-                "o fal para modificar fotos reales con IA."
+                "image_edit_unavailable: elige Venice (gpt-image-2-edit) o fal.ai "
+                "(FLUX Kontext / edit) con API key para modificar fotos reales."
             )
 
     if overlay_text:
@@ -585,6 +652,12 @@ def compose_from_user_asset(
             logo_path=logo_path,
             tagline=tagline,
             brand_names=brand_names,
+            title_size_scale=title_size_scale,
+            force_text_hex=force_text_hex,
+            high_contrast=high_contrast,
+            typography_style=typography_style,
+            typography_family_id=typography_family_id,
+            force_uppercase=force_uppercase,
         )
 
     prefix = "user_img2img" if design_source == "user_img2img" else "user_overlay"
@@ -628,6 +701,44 @@ def _venice_edit(
         raise RuntimeError(f"image_gen_failed:venice_edit: {exc}") from exc
 
 
+def _fal_edit_mode(model: str) -> str:
+    """Clasifica el endpoint fal: instrucción (paridad Venice) vs strength img2img legacy."""
+    mid = (model or "").strip().lower()
+    if not mid:
+        return "instruction"
+    if "image-to-image" in mid or mid.endswith("/img2img"):
+        return "strength"
+    # kontext, */edit, qwen-image-*/edit, nano-banana edit, etc.
+    return "instruction"
+
+
+def _fal_edit_arguments(
+    *,
+    model: str,
+    prompt: str,
+    image_url: str,
+    strength: float,
+    guidance: float,
+    spec,
+) -> dict:
+    """Arma el payload según familia de modelo fal (instruction edit vs strength img2img)."""
+    mode = _fal_edit_mode(model)
+    args: dict = {
+        "prompt": (prompt or "")[:2000],
+        "image_url": image_url,
+    }
+    if mode == "strength":
+        args["strength"] = float(strength)
+        args["image_size"] = fal_image_size_arg(spec)
+        args["num_inference_steps"] = 28
+        args["enable_safety_checker"] = False
+        return args
+    # Instruction edit (FLUX Kontext, qwen-image-2/edit, …): misma idea que Venice /image/edit.
+    if guidance and guidance > 0:
+        args["guidance_scale"] = float(guidance)
+    return args
+
+
 def _fal_img2img(
     img_bytes: bytes,
     prompt: str,
@@ -635,9 +746,10 @@ def _fal_img2img(
     model: str,
     *,
     strength: float,
+    guidance: float = 3.5,
     spec,
 ) -> bytes:
-    """Alteración controlada vía fal image-to-image; devuelve bytes PNG."""
+    """Edita foto real vía fal (Kontext/edit por defecto; img2img strength si el modelo lo pide)."""
     import os
     import tempfile
 
@@ -651,30 +763,39 @@ def _fal_img2img(
         logger.error("image.fal_missing_sdk", hint="pip install fal-client")
         raise RuntimeError("image_gen_failed: fal_img2img: pip install fal-client") from exc
 
+    model_id = (model or "").strip() or "fal-ai/flux-pro/kontext"
+    mode = _fal_edit_mode(model_id)
     tmp_path = ""
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp.write(img_bytes)
             tmp_path = tmp.name
         uploaded_url = fal_client.upload_file(tmp_path)
-        result = fal_client.run(
-            model,
-            arguments={
-                "prompt": prompt[:2000],
-                "image_url": uploaded_url,
-                "strength": strength,
-                "image_size": fal_image_size_arg(spec),
-                "num_inference_steps": 28,
-                "enable_safety_checker": False,
-            },
+        arguments = _fal_edit_arguments(
+            model=model_id,
+            prompt=prompt,
+            image_url=uploaded_url,
+            strength=strength,
+            guidance=guidance,
+            spec=spec,
         )
-        out_url: str = result["images"][0]["url"]
-        resp = httpx.get(out_url, timeout=90, follow_redirects=True)
+        logger.info(
+            "image.fal_edit_request",
+            model=model_id,
+            mode=mode,
+            prompt_preview=(prompt or "")[:180],
+        )
+        result = fal_client.run(model_id, arguments=arguments)
+        images = (result or {}).get("images") or []
+        if not images or not images[0].get("url"):
+            raise RuntimeError(f"fal edit returned no images: {result!r}")
+        out_url: str = images[0]["url"]
+        resp = httpx.get(out_url, timeout=120, follow_redirects=True)
         resp.raise_for_status()
-        logger.info("image.fal_img2img_ok", model=model)
+        logger.info("image.fal_img2img_ok", model=model_id, mode=mode, out_bytes=len(resp.content))
         return resp.content
     except Exception as exc:
-        logger.error("image.fal_img2img_error", error=str(exc))
+        logger.error("image.fal_img2img_error", error=str(exc), model=model_id, mode=mode)
         # No devolver la foto original en silencio: el usuario cree que "alteró" y
         # solo ve overlay tipográfico (sillas vacías + textos).
         raise RuntimeError(f"image_gen_failed: fal_img2img: {exc}") from exc

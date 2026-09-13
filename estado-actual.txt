@@ -1,8 +1,7 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-09-05
-Último foco: foto real + Venice `gpt-image-2-edit` (personas en escena) + tipografía Pillow; docs de operación.
-
+Actualizado: 2026-09-13
+Último foco: fal.ai con paridad Venice para alterar fotos reales (FLUX Kontext) + docs cloud Drive.
 **Producción:** `https://marketing.powerupsecosistem.online` · VPS `insightflow@2.25.107.229` · compose `marketing-depa-prod`  
 **InsightFlow (no tocar):** `https://api.powerupsecosistem.online`
 
@@ -12,6 +11,29 @@ Actualizado: 2026-09-05
 ---
 
 ### Cronología reciente
+
+#### 2026-09-13 — fal.ai edición de foto real (paridad Venice)
+
+| Entrega | Detalle |
+|---------|---------|
+| **FAL Kontext** | Default `FAL_IMG2IMG_MODEL=fal-ai/flux-pro/kontext` (instrucción, no strength) |
+| **Args por familia** | `_fal_edit_arguments`: Kontext/edit vs legacy `image-to-image` |
+| **UI** | Ya no fuerza Venice al subir foto; fal y Venice editan escena por igual |
+| **Tests** | `tests/test_fal_edit.py` |
+
+#### 2026-09-10 — Edición cloud Drive + HITL de tomas
+
+| Entrega | Detalle |
+|---------|---------|
+| **Sin máster local** | `cloud_footage.py`: lista Drive → stream audio → Whisper; no descarga el MP4 completo |
+| **VideoProducerAgent** | `editing_goal` + `take_count` (5/10/15/20/30) + `selection_mode` auto\|manual → N `TakeProposal` |
+| **pending_takes** | Run llega a HITL de tomas antes de Shotstack; `GET/POST /api/runs/{id}/takes` |
+| **Render diferido** | `POST .../takes/render` → ffmpeg seek solo spans accepted → shorts → Shotstack → `pending_approval` |
+| **Preview** | `GET /api/media/drive/{file_id}?start_s=&end_s=` (auth); UI con blob autenticado |
+| **UI Integraciones** | Botón **Conectar Google Drive** (`/auth/login/google`) |
+| **UI brief** | Objetivo de edición, N tomas, auto/manual + rangos en segundos |
+| **Banda duración** | Suma de tomas 6–90s; cada toma tip. 2–12s |
+| **Docs** | PIPELINE / README / CLAUDE / arranque / estado-actual / NotebookLM |
 
 #### 2026-09-05 — Foto real + Venice edit (validado)
 
@@ -152,8 +174,8 @@ Go sidecar (:8088) → Meta Graph  |  Python nativo → LinkedIn, X
 | Social **X** | OAuth 1.0a + publish nativo Python (tweet + imagen) | ✅ prod configurado; post prueba pendiente |
 | Social TikTok | Generación + legales/verify; publish nativo | ⏳ App Review |
 | Video | Shotstack + voz fal/ElevenLabs/OpenAI; Venice i2v | ✅ |
-| Clips usuario | Drive + Whisper + ClipEditor + Shotstack | ✅ |
-| HITL | pending_approval → approve/reject/revise | ✅ |
+| Clips usuario | Drive audio-only → VideoProducer → `pending_takes` → shorts → Shotstack | ✅ |
+| HITL | `pending_takes` (tomas + objetivo/N) → `pending_approval` (MP4) → approve/reject/revise | ✅ |
 | Hilo de pensamiento | Eventos en vivo + checkpoints interactivos | ✅ |
 | Formatos por red | Catálogo `image_specs` + universal 1:1 | ✅ |
 | Deploy VPS | Hostinger + InsightFlow | ✅ live |
@@ -183,7 +205,7 @@ Strategist (+ brand + inbound)
 | `image_providers.py` / `venice_client.py` | fal / Venice / SD / DALL·E |
 | `advisor.py` | Asesor creativo conversacional |
 | `thought_stream.py` | Hilo de pensamiento: eventos en vivo + checkpoints interactivos |
-| `video_*` / `venice_video_models.py` / `clip_*` / `drive_source.py` / `voice_providers.py` | Reels, modelos de video y clips |
+| `video_*` / `venice_video_models.py` / `clip_*` / `cloud_footage.py` / `video_producer.py` / `drive_source.py` / `voice_providers.py` | Reels, edición cloud Drive, tomas y clips |
 | `knowledge/inbound_marketing.py` | Doctrina inbound |
 | `caption.py` | Caption publicable (hashtags + link) |
 
@@ -251,7 +273,7 @@ Variables X en prod: `X_API_KEY`, `X_API_SECRET`, `X_REDIRECT_URI`, opcional `X_
 | Formato | Camino | Notas |
 |---------|--------|-------|
 | `reel` | VideoScript → escenas → TTS → Shotstack | Async-only; cola `video_render`; `video_gen_mode=full\|scenes\|still` |
-| `user_clip_reel` | Drive → ffmpeg → Whisper → ClipEditor → Shotstack | Requiere `drive_folder_id` + ffmpeg |
+| `user_clip_reel` | Drive audio-only → VideoProducer (N tomas / auto\|manual) → **pending_takes** → cut shorts → Shotstack | `drive_folder_id` + `editing_goal` + `take_count`; sin máster local |
 
 Modos (`GET /api/video/options`): `full` = clip AI completo con Venice; `scenes` = Venice anima cada toma y Shotstack las une; `still` = stills + Ken Burns sin video AI. Modelos vía `venice_video_models.py` (Seedance 2.5/2.0, Kling O3, MiniMax H3).
 
@@ -265,27 +287,29 @@ Modos (`GET /api/video/options`): `full` = clip AI completo con Venice; `scenes`
 - `POST /briefs/upload-asset`, `POST/GET/DELETE /briefs/brand-manual`, `POST /briefs/upload-brand-manual`
 - `POST /advisor/chat`
 - `POST/GET /briefs`
-- `POST /runs/sync`, `/runs/async` — `content_format`, `image_provider`, `social_account_id`, `link_url`, `cta_on_image`, …; reel/clips solo async
+- `POST /runs/sync`, `/runs/async` — `content_format`, `image_provider`, `social_account_id`, `link_url`, `cta_on_image`, …; reel/clips solo async; clips: `drive_folder_id`, `editing_goal`, `take_count`, `selection_mode`, `manual_ranges`
+- `GET/POST /runs/{id}/takes`, `POST /runs/{id}/takes/render` — HITL de tomas (`pending_takes`)
+- `GET /media/drive/{file_id}?start_s=&end_s=` — preview corto autenticado
 - `POST /runs/{id}/approve`, `/reject`, `/revise`
 - `GET /runs`, `/runs/{id}`
 - `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
 - OAuth: `/auth/login|callback/{meta,linkedin,google,x}`, `/auth/status`, `/auth/accounts`, `DELETE /auth/accounts/{id}`
 
-Estáticos: `static/uploads/`, `static/uploads/brand/`, `static/images/`, `static/videos/`, `static/fonts/`.
+Estáticos: `static/uploads/`, `static/uploads/brand/`, `static/uploads/clips/{run_id}/shorts/`, `static/images/`, `static/videos/`, `static/fonts/`.
 
 ---
 
 ### Frontend (dashboard)
 
 - Brief: descripción producto/evento, público, objetivo, tono
-- Red social + Formato: selects acoplados servidos por `/image/formats` (+ Drive folder en `user_clip_reel`)
+- Red social + Formato: selects acoplados servidos por `/image/formats` (+ Drive folder, objetivo de edición, N tomas, auto/manual en `user_clip_reel`)
 - Video: modo de generación y modelo Venice (solo en `reel`)
 - Generador: fal / Venice / SD (según API)
 - Manual de marca: upload PDF, swatches, logos, quitar
 - Foto usuario + alterar con IA
 - Cuenta destino, enlace, CTA en imagen opcional
 - Modo interactivo + hilo de pensamiento (`AgentThoughtThread`)
-- Sync/Async, historial HITL, Integraciones, burbuja Asesor
+- Sync/Async, historial HITL (`pending_takes` + `pending_approval`), Integraciones (Meta / LinkedIn / X / **Google Drive**), burbuja Asesor
 
 ---
 
@@ -372,7 +396,7 @@ Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml -
 ### Pendientes conocidos
 
 1. Canva OAuth / Canva-Figma MCP
-2. Video v2: música de fondo, captions por palabra
+2. Video v2: música de fondo, captions por palabra; bucket S3/GCS propio como master store (hoy Drive del cliente)
 3. TikTok: publicación nativa tras App Review
 4. **X:** post de prueba en prod (Integraciones o tokens en env)
 5. **Meta:** verificar Conectar Meta tras Basic Settings en dominio prod

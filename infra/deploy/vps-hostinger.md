@@ -192,7 +192,7 @@ Sustituye `DOMAIN` por el hostname real.
 | **X** | Callback `https://DOMAIN/api/auth/callback/x`; Read and write; keys en `.env.production` | [`x-oauth-production.md`](x-oauth-production.md) |
 | **TikTok** | Terms, Privacy, verify `.txt`, App Review (Login Kit + Content Posting) | [`tiktok-app-review.md`](tiktok-app-review.md) |
 
-**Alcance actual:** publicación nativa **Meta / LinkedIn / X**. TikTok: legales + verify + app **en evaluación**; OAuth/publish en código tras aprobación.
+**Alcance actual:** publicación nativa **Meta / LinkedIn / X**; clips Drive vía OAuth Google (**Conectar Google Drive**). TikTok: legales + verify + app **en evaluación**; OAuth/publish en código tras aprobación.
 
 **Migración ngrok → prod:** quitar URIs `*.ngrok-free.dev` de todos los portales; en VPS `.env.production` usar solo `marketing.powerupsecosistem.online` y reiniciar `api` + `worker` + `video-worker`.
 

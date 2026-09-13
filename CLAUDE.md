@@ -51,7 +51,8 @@ Pirámide: **Entretener → Informacion → Conexion**.
 | Video (Reels) | **Shotstack**; escenas `still` o Venice i2v (`VIDEO_SCENE_PROVIDER`) |
 | Voz (voiceover) | **fal.ai Kokoro Spanish** (dev) / ElevenLabs / OpenAI TTS |
 | Transcripción (clips usuario) | **Whisper** (`whisper-1`) |
-| Fuente de clips | Google Drive (OAuth `drive.readonly`) |
+| Fuente de clips | Google Drive (OAuth `drive.readonly`) — Integraciones → **Conectar Google Drive** |
+| Edición clips | Audio-only STT + `VideoProducerAgent` + `pending_takes` + cut shorts (sin máster local) |
 | Social | Meta/IG + LinkedIn + **X** OAuth; Go (Meta) + Python nativo (LinkedIn, X) |
 | Async | Celery + Redis (default + `-Q video_render`) |
 | Scheduler | APScheduler |
@@ -90,8 +91,10 @@ agents/marketing_agents/
   video_providers.py    — render_video() Shotstack
   voice_providers.py    — synthesize_voice()
   video_designer.py     — VideoDesignerAgent (still o Venice i2v)
-  drive_source.py       — Google Drive clips
+  drive_source.py       — Google Drive OAuth/list/download (legacy download path)
+  cloud_footage.py      — list + audio stream + cut shorts (path actual user_clip_reel)
   transcription_providers.py — Whisper
+  video_producer.py     — N tomas auto/manual (editing_goal, take_count)
   clip_assets.py / clip_editor.py / clip_reel_designer.py
   thought_stream.py     — hilo de pensamiento (eventos en vivo + checkpoints interactivos)
   pipeline.py           — MarketingPipeline
@@ -161,7 +164,7 @@ Referencia visual: `docs/references/README.md`. Fonts OFL: `static/fonts/README.
 | Instagram/Facebook feed | 1080×1350 | 4:5 |
 | Stories/Reels (imagen) | 1080×1920 (~810×1440 fal) | 9:16 |
 | Reel (video, `content_format=reel`) | 1080×1920, 30fps | 9:16 |
-| Reel con clips propios (`content_format=user_clip_reel`) | 1080×1920, 30fps | 9:16 (duración 6-60s, no 15-30s del reel generado) |
+| Reel con clips propios (`content_format=user_clip_reel`) | 1080×1920, 30fps | 9:16 (suma de tomas 6–90s; no la banda 15–30s del reel generado) |
 | LinkedIn feed | 1200×627 | — |
 | X (Twitter) feed | 1200×675 | 16:9 |
 | TikTok (imagen/video) | 1080×1920 | 9:16 |
@@ -188,8 +191,9 @@ OCR_PROVIDER=paddle
 OCR_LANG=es
 OCR_USE_GPU=true
 OCR_MIN_TEXT_CHARS=40
-FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_MODEL=fal-ai/flux-pro/kontext
 FAL_IMG2IMG_STRENGTH=0.72
+FAL_IMG2IMG_GUIDANCE=3.5
 VIDEO_PROVIDER=shotstack
 SHOTSTACK_API_KEY=...
 SHOTSTACK_ENV=stage
@@ -235,7 +239,7 @@ python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render
 
 Tras cambiar `.env` o código de video, **reinicia el worker**.
 
-**`user_clip_reel`** requiere `ffmpeg` en PATH y `drive_folder_id`.
+**`user_clip_reel`** requiere `ffmpeg` en PATH, OAuth Google (**Conectar Google Drive** en Integraciones) y `drive_folder_id`. Params: `editing_goal`, `take_count`, `selection_mode`. Estados: `pending_takes` → render → `pending_approval`.
 
 ---
 
@@ -335,7 +339,7 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 
 1. Canva OAuth / Canva-Figma MCP
 2. Stable Diffusion local — alternativa; A1111 caído → error explícito
-3. Video v2 — música, captions por palabra
+3. Video v2 — música, captions por palabra; bucket S3/GCS opcional (hoy Drive del cliente)
 4. TikTok fase 2 (auditoría app)
 5. Meta: re-OAuth scopes IG; ngrok dominio fijo
 6. Revise v2 — historial de versiones

@@ -57,9 +57,12 @@ class Settings(BaseSettings):
     fal_api_key: str = ""
     # Modelo fal a usar; opciones: fal-ai/flux-pro/v1.1 | fal-ai/flux/schnell | fal-ai/recraft-v3
     fal_model: str = "fal-ai/flux-pro/v1.1"
-    # Modelo img2img cuando el usuario sube foto y pide alteración con IA
-    fal_img2img_model: str = "fal-ai/flux/dev/image-to-image"
+    # Edición de foto del usuario (mismo flujo que Venice /image/edit).
+    # Default: FLUX.1 Kontext [pro] — edición por instrucción (prompt + image_url).
+    # Legacy strength-based: fal-ai/flux/dev/image-to-image (+ FAL_IMG2IMG_STRENGTH).
+    fal_img2img_model: str = "fal-ai/flux-pro/kontext"
     fal_img2img_strength: float = 0.72
+    fal_img2img_guidance: float = 3.5
     # Venice.ai — IMAGE_PROVIDER=venice | VIDEO_SCENE_PROVIDER=venice
     # Key: https://venice.ai/token — base real: https://api.venice.ai/api/v1
     venice_api_key: str = ""

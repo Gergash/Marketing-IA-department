@@ -1,5 +1,7 @@
 """Agente diseñador: arquetipos editoriales + Flux + composición post-generación."""
 
+from dataclasses import replace
+
 import structlog
 
 from .brand_visual import (
@@ -12,10 +14,13 @@ from .brand_visual import (
 from .image_providers import compose_from_user_asset, generate_image
 from .image_specs import resolve_image_spec
 from .layout_archetypes import build_flux_prompt, get_archetype, pick_archetype
+from .overlay_text import font_paths_for_typography
 from .revision_prompt import (
     compose_visual_prompt,
+    parse_typography_revision,
     revision_requests_people,
     revision_requests_scene_change,
+    scene_revision_notes,
 )
 from .schemas import BriefInput, CopyOutput, DesignOutput, StrategyOutput
 from .visual_prompt_guards import with_photo_only_guard
@@ -82,7 +87,9 @@ class DesignerAgent:
         )
 
         notes = (revision_notes or "").strip()
+        typo = parse_typography_revision(notes)
         want_people = revision_requests_people(notes)
+        want_scene = revision_requests_scene_change(notes)
         if want_people:
             prompt = with_photo_only_guard(prompt, allow_people=True)
 
@@ -93,9 +100,9 @@ class DesignerAgent:
             else "gpt-image-2"
         )
         # Guardar indicaciones de escena del usuario ANTES de mezclar notas de revisión
-        # (las notas van por revision_notes al editor, no embebidas en el prompt Flux).
+        # (tipografía va a Pillow; escena va a revision_notes del editor).
         scene_user_instructions = (visual_instructions or "").strip() or None
-        if notes:
+        if notes and want_scene:
             prompt = compose_visual_prompt(
                 prompt,
                 model=model_for_budget,
@@ -104,12 +111,54 @@ class DesignerAgent:
             visual_instructions = (
                 f"{scene_user_instructions}. {notes}" if scene_user_instructions else notes
             )
+        elif notes and typo.requested:
+            # Solo tipografía: no contaminar el prompt generativo.
+            visual_instructions = scene_user_instructions
+
+        if notes:
             logger.info(
                 "designer.revision_applied",
                 people=want_people,
-                scene_change=revision_requests_scene_change(notes),
+                scene_change=want_scene,
+                typography=typo.requested,
+                typo_style=typo.style,
+                typo_family=typo.family_id,
                 notes_preview=notes[:120],
             )
+
+        # Aplicar tipografía HITL al overlay Pillow (familia, color, tamaño).
+        font_seed = f"{archetype.id}:{brief.red_social}:{brief.tema}"
+        overlay_typo: dict = {
+            "title_size_scale": 1.0,
+            "force_text_hex": None,
+            "high_contrast": False,
+            "typography_style": None,
+            "typography_family_id": None,
+            "force_uppercase": None,
+        }
+        if typo.requested:
+            font_seed = f"{font_seed}:typo:{typo.style or ''}:{typo.family_id or notes[:48]}"
+            typo_paths = font_paths_for_typography(
+                style=typo.style,
+                family_id=typo.family_id,
+                font_seed=font_seed,
+            )
+            if typo_paths:
+                font_paths = typo_paths
+            if typo.text_color_hex:
+                archetype = replace(
+                    archetype,
+                    primary_hex=typo.text_color_hex,
+                    secondary_hex=typo.text_color_hex,
+                )
+            overlay_typo = {
+                "title_size_scale": typo.size_scale,
+                "force_text_hex": typo.text_color_hex,
+                "high_contrast": typo.high_contrast,
+                "typography_style": typo.style,
+                "typography_family_id": typo.family_id,
+                "force_uppercase": typo.force_uppercase,
+            }
 
         headline = copy.headline_for_image.strip() or strategy.hook or copy.copy_final[:100]
         subline = copy.subline_for_image.strip() or None
@@ -127,33 +176,37 @@ class DesignerAgent:
             logo_path=logo_path,
             tagline=tagline,
             brand_names=brand_names or None,
-            font_seed=f"{archetype.id}:{brief.red_social}:{brief.tema}",
+            font_seed=font_seed,
+            **overlay_typo,
         )
 
         # Foto real + notas que piden cambiar la ESCENA (p.ej. agregar personas):
-        # hay que editar la foto con IA (Venice /image/edit o fal img2img), no solo overlay.
+        # hay que editar la foto con IA. Tipografía sola NUNCA auto-activa el edit.
         use_user_asset = bool(user_asset_url and user_asset_url.strip())
         effective_alter = bool(alter_image_with_ai)
-        if (
-            use_user_asset
-            and notes
-            and revision_requests_scene_change(notes)
-            and not effective_alter
-        ):
+        if use_user_asset and notes and want_scene and not effective_alter:
             logger.info(
                 "designer.auto_enable_image_edit",
                 reason=(
                     "Notas de revisión piden cambiar la escena sobre foto real; "
-                    "se activa edición IA (Venice gpt-image-2-edit / fal)."
+                    "se activa edición IA (Venice gpt-image-2-edit / fal FLUX Kontext)."
                 ),
             )
             effective_alter = True
+        if use_user_asset and notes and typo.requested and not want_scene and effective_alter:
+            # Si el run original tenía alter ON pero la revisión es solo tipografía,
+            # no re-editar la escena (evita personas default / deformaciones).
+            logger.info(
+                "designer.skip_image_edit_for_typography_only",
+                reason="Revisión solo tipográfica: se recompone overlay Pillow sin re-editar la foto.",
+            )
+            effective_alter = False
 
         if use_user_asset:
-            # Instrucciones de escena puras (personas/objetos). El prompt Flux NO se
-            # envía al editor: mezclar copy/headline hace que la IA pinte letras ilegibles.
+            # Instrucciones de escena puras. Tipografía NO se manda al editor IA.
             scene_instructions = scene_user_instructions
-            if effective_alter and not scene_instructions and not notes:
+            scene_notes = scene_revision_notes(notes)
+            if effective_alter and not scene_instructions and not scene_notes:
                 scene_instructions = (
                     "Agrega dos personas realistas sentadas en las sillas vacías de la mesa"
                 )
@@ -168,13 +221,15 @@ class DesignerAgent:
                 content_format=content_format,
                 alter_with_ai=effective_alter,
                 visual_instructions=scene_instructions,
-                revision_notes=notes or None,
+                revision_notes=scene_notes,
                 image_provider=used_provider,
                 **overlay_kwargs,
             )
             img_prompt = (
                 visual_instructions or prompt if effective_alter else f"user_asset:{user_asset_url}"
             )
+            if typo.requested:
+                img_prompt = f"{img_prompt} | typography_revision={notes[:160]}"
             provider_label = (
                 f"{used_provider}_edit" if design_source == "user_img2img" else "user_overlay"
             )
@@ -191,6 +246,8 @@ class DesignerAgent:
                 **overlay_kwargs,
             )
             img_prompt = prompt
+            if typo.requested:
+                img_prompt = f"{img_prompt} | typography_revision={notes[:160]}"
             provider_label = used_provider
             design_source = "generated"
 
@@ -203,6 +260,8 @@ class DesignerAgent:
                 palette += " (from brand manual)"
         if cues.logo_paths:
             palette += f"; logos={len(cues.logo_paths)}"
+        if typo.requested:
+            palette += f"; typography_revision={typo.style or typo.family_id or 'custom'}"
         return DesignOutput(
             image_url=url,
             image_prompt=img_prompt,

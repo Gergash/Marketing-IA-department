@@ -8,12 +8,12 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Foto real del local** (Design-as-Code): Venice `gpt-image-2-edit` altera la escena (p. ej. personas en sillas); Pillow aplica tipografía limpia — ver [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
 - Formatos por red social (Instagram, Facebook, LinkedIn, TikTok, X) + **formato universal 1:1** para publicar la misma pieza en varias redes
 - Manual de marca PDF: OCR (PaddleOCR), paleta de color, logos → prioridad máxima en diseño
-- Reels programáticos (Shotstack) y Reels desde clips del usuario (Google Drive)
+- Reels programáticos (Shotstack) y Reels desde clips del usuario (Google Drive **cloud**: audio-only + productor de tomas + HITL)
 - Copy con bucle LangGraph Copywriter ↔ QA y doctrina inbound
 - Asesor creativo conversacional (burbuja en el dashboard)
 - Hilo de pensamiento en vivo de los agentes + modo interactivo con checkpoints
 - Publicación nativa Meta/Instagram (OAuth + sidecar Go), LinkedIn (OAuth + Python) y **X/Twitter** (OAuth 1.0a + Python)
-- HITL: aprobar / rechazar / solicitar cambios (`revise`)
+- HITL: tomas (`pending_takes`) → aprobar / rechazar / solicitar cambios el MP4 (`pending_approval` / `revise`)
 
 ## Stack Tecnológico
 
@@ -37,9 +37,9 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 1–5** ✅ Happy path, Postgres/Alembic, APIs reales, HITL, LangGraph Copy↔QA + inbound — ver [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Paso 6** 🟡 Go sidecar operativo; MCP connect stdio; K8s/Skaffold escritos, sin clúster real
 - **Paso 7** ✅ Video-as-Code (`reel`): script → escenas + voz → Shotstack; async-only, cola `video_render`; opcional `VIDEO_SCENE_PROVIDER=venice`
-- **Paso 8** ✅ `user_clip_reel` (Drive → Whisper → hook-scored → Shotstack). v2: música, captions por palabra
-- **Paso 9** ✅ `POST /runs/{id}/revise` (nunca publica; vuelve a `pending_approval`)
-- **Paso 10** ✅ Multi-cuenta social + selector **Cuenta destino**. TikTok = fase 2 (auditoría app)
+- **Paso 8** ✅ `user_clip_reel` cloud: Drive audio-only → VideoProducer (`editing_goal` / N tomas / auto|manual) → `pending_takes` → cut shorts → Shotstack. Pendiente v2: música, captions por palabra; bucket S3/GCS opcional
+- **Paso 9** ✅ `POST /runs/{id}/revise` (nunca publica; vuelve a HITL). Video: re-encola propose/render
+- **Paso 10** ✅ Multi-cuenta social + selector **Cuenta destino** + **Conectar Google Drive** en Integraciones. TikTok = fase 2 (auditoría app)
 - **Paso 11** ✅ Manual de marca PDF (OCR + paleta + logos) → arquetipo `brand_campaign_piece`
 - **Paso 12** ✅ Venice.ai como proveedor de imagen (y escenas i2v opcionales); modos `full` / `scenes` / `still` en `GET /api/video/options`
 - **Paso 13** ✅ Asesor creativo (`POST /api/advisor/chat` + burbuja UI)
@@ -47,9 +47,9 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 15** ✅ Formatos por red + `content_format=universal` (`GET /api/image/formats`). TikTok: generación sí; publish tras App Review. **X: publish nativo** (tweet + imagen)
 - **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
 - **Paso 17** 🔄 **OpenRouter** como LLM cloud en prod (`OPENAI_API_BASE`); integración OAuth Meta/X documentada en `infra/deploy/`
-- **Paso 18** ✅ **Foto real + Venice edit** (`alter_image_with_ai` → `/image/edit` sin tipografía AI; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
+- **Paso 18** ✅ **Foto real + edit** Venice `gpt-image-2-edit` **y** fal `FLUX Kontext` (`alter_image_with_ai` → escena; tipografía Pillow; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-05).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-10).
 
 ## Formatos de publicación
 
@@ -304,14 +304,15 @@ VENICE_VIDEO_MODEL=seedance-2.0
 
 `GET /api/image/providers` lista Venice si hay key (label con el modelo activo).
 
-**fal.ai — Flux** (generación desde cero / img2img alternativo):
+**fal.ai — Flux** (generación desde cero + edición de foto real con Kontext):
 
 ```env
 IMAGE_PROVIDER=fal
 FAL_API_KEY=tu_key_de_fal.ai
 FAL_MODEL=fal-ai/flux-pro/v1.1   # o fal-ai/flux/schnell
-FAL_IMG2IMG_MODEL=fal-ai/flux/dev/image-to-image
+FAL_IMG2IMG_MODEL=fal-ai/flux-pro/kontext
 FAL_IMG2IMG_STRENGTH=0.72
+FAL_IMG2IMG_GUIDANCE=3.5
 ```
 
 El pipeline genera o edita el fondo, aplica overlay editorial (Pillow + tipografías OFL en `static/fonts/`) y guarda en `static/images/`. Con manual de marca activo prioriza el arquetipo `brand_campaign_piece` (logo + paleta del PDF).
@@ -331,7 +332,7 @@ Deps: `pypdf`, `pymupdf`, `paddlepaddle`, `paddleocr`. Flujo: pypdf → si texto
 
 1. `POST /api/briefs/upload-asset` → `user_asset_url` en el run.
 2. `alter_image_with_ai=true` + `visual_instructions` (escena, no copy).
-3. Venice edita con prompt **solo-escena** (`build_scene_edit_prompt`); **no** manda headlines a la IA.
+3. **Venice** o **fal** editan con prompt **solo-escena** (`build_scene_edit_prompt`); **no** mandan headlines a la IA.
 4. Pillow aplica tipografía/logo. Resultado: `design_source=user_img2img`.
 5. Sin alterar: solo overlay (`user_overlay`) — las sillas vacías no cambian.
 
@@ -371,7 +372,12 @@ INSTAGRAM_BUSINESS_ACCOUNT_ID=...
 - **Historias** vía API oficial requieren `SOCIAL_PROVIDER=meta` e Instagram profesional.
 - Las **historias** de Instagram suelen pedir imagen **9:16** y URL **HTTPS** accesible públicamente (`PUBLIC_IMAGE_BASE_URL` con ngrok en dev).
 - **Reels** (`content_format="reel"`) son **async-only**: `/runs/sync` responde `422`; usa siempre `/runs/async` con un segundo worker Celery en la cola `video_render` (`python -m celery -A workers.celery_app.celery_app worker -l info -Q video_render`). Requiere `VIDEO_PROVIDER`/`SHOTSTACK_API_KEY` (`SHOTSTACK_ENV=stage` para sandbox) y `VOICE_PROVIDER=fal` (o elevenlabs). Con fal.ai, Shotstack descarga fondos/voz desde `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) es obligatorio para **publicar en Meta** y para assets locales (overlays / `user_clip_reel`). Ver sección **PASO 3D** en `.env.example`.
-- **Reel con clips del usuario** (`content_format="user_clip_reel"`) es también **async-only** y requiere `drive_folder_id` en el request (422 si falta o si se usa `/runs/sync`). Requiere además: `ffmpeg` instalado en el host (dependencia de sistema NUEVA — se invoca vía `subprocess` para extraer el audio de cada clip antes de transcribir), credenciales OAuth de Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`) y, para el scope `drive.readonly` en producción con usuarios externos a tu organización, Google puede exigir un **paso manual de verificación de la app** (agrega tu email en modo "Testing" en la pantalla de consentimiento OAuth para evitarlo en dev). Los captions son **por segmento** (no por palabra) en esta versión — granularidad más fina queda para v2.
+- **Reel con clips del usuario** (`content_format="user_clip_reel"`) es **async-only** y requiere `drive_folder_id` (422 si falta o si se usa `/runs/sync`). Flujo cloud (2026-09):
+  1. Integraciones → **Conectar Google Drive** (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI`; scope `drive.readonly`).
+  2. Brief: objetivo de edición (`editing_goal`), cantidad de tomas (`take_count` 5|10|15|20|30), modo `auto` o `manual` (+ `manual_ranges`).
+  3. Worker `video_render`: audio-only desde Drive → Whisper → `VideoProducerAgent` → status **`pending_takes`** (sin bajar el máster MP4).
+  4. Dashboard: aceptar/descartar/reordenar/ajustar trim → `POST /api/runs/{id}/takes/render` corta solo spans → Shotstack → **`pending_approval`**.
+  5. Preview: `GET /api/media/drive/{file_id}?start_s=&end_s=`. Requiere `ffmpeg` en PATH. Captions hoy por segmento; palabra-a-palabra = Video v2.
   - **URLs públicas:** antes del submit a Shotstack, `video_providers._publicize_edit` reescribe `http://localhost:8000` → `PUBLIC_IMAGE_BASE_URL`. Si `EFFECTS_ENABLED=true`, fal.ai wan-effects aún necesita ngrok para alcanzar clips locales a mitad de pipeline.
 - **HITL:** Aprobar / Rechazar / **Solicitar cambios** (`POST /runs/{id}/revise` regenera con notas y vuelve a `pending_approval`; nunca publica).
 - **Multi-cuenta:** selector **Cuenta destino** en el dashboard (`social_account_id`); Integraciones lista N cuentas por proveedor (`GET /api/auth/accounts`). Reconectar Meta/LinkedIn tras migración `0007` para poblar nombre/foto/Page token.

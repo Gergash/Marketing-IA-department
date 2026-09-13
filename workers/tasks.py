@@ -5,7 +5,7 @@ from celery import Task
 
 from agents.marketing_agents.thought_stream import RunCancelledByUser
 from gateway.app.db.session import SessionLocal
-from gateway.app.services.pipeline_service import execute_pipeline
+from gateway.app.services.pipeline_service import execute_pipeline, render_takes_for_run
 from workers.celery_app import celery_app
 
 logger = structlog.get_logger(__name__)
@@ -102,6 +102,16 @@ def execute_video_pipeline_task(
             logger.info("execute_video_pipeline_task.cancelled", run_id=run_id, checkpoint=exc.checkpoint)
             return {"status": "rejected", "checkpoint": exc.checkpoint}
         logger.info("execute_video_pipeline_task.done", run_id=run_id)
+        return result
+
+
+@celery_app.task(bind=True, base=Task, queue="video_render")
+def render_clip_takes_task(self, run_id: int) -> dict:  # noqa: ANN001
+    """Render diferido de tomas accepted → pending_approval (sin re-proponer ni cobrar créditos)."""
+    with SessionLocal() as db:
+        logger.info("render_clip_takes_task.start", run_id=run_id)
+        result = render_takes_for_run(db, run_id)
+        logger.info("render_clip_takes_task.done", run_id=run_id)
         return result
 
 

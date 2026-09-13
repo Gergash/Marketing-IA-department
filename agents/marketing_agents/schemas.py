@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -54,6 +56,42 @@ class DesignOutput(BaseModel):
     design_source: str = "generated"  # generated | user_overlay | user_img2img
 
 
+class CloudFootageRef(BaseModel):
+    """Referencia a un video en Drive sin materializar el máster en disco local."""
+
+    provider: Literal["google_drive"] = "google_drive"
+    file_id: str
+    name: str = ""
+    mime_type: str = ""
+    clip_id: str = ""
+
+
+class ManualTakeRange(BaseModel):
+    """Rango manual (segundos) elegido por el usuario sobre un archivo de Drive."""
+
+    file_id: str = ""
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+
+
+class TakeProposal(BaseModel):
+    """Toma candidata de user_clip_reel: span recortado para HITL antes del render Shotstack."""
+
+    id: str
+    clip_id: str
+    source_clip_url: str = ""
+    # Referencia cloud (Drive); vacía si la toma ya se materializó a un short local
+    drive_file_id: str = ""
+    trim_in: float = Field(ge=0)
+    trim_out: float = Field(gt=0)
+    duration_s: float = Field(gt=0)
+    transcript: str = ""
+    is_hook: bool = False
+    score: float = 0.0
+    status: Literal["proposed", "accepted", "rejected"] = "proposed"
+    order: int = 0
+
+
 class VideoDesignOutput(BaseModel):
     """Salida del diseñador de video: URL del reel renderizado, sibling de `DesignOutput` para content_format=reel."""
 
@@ -67,6 +105,9 @@ class VideoDesignOutput(BaseModel):
     duration_s: float = 0.0
     scene_count: int = 0
     layout_archetype: str = ""
+    # user_clip_reel: tomas propuestas antes del MP4 (vacío en reel generado)
+    takes: list[TakeProposal] = Field(default_factory=list)
+    footage: list[CloudFootageRef] = Field(default_factory=list)
 
 
 class PublishOutput(BaseModel):

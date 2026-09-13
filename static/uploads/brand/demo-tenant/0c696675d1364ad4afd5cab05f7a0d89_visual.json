@@ -1,12 +1,4 @@
 {
-  "id": "0c696675d1364ad4afd5cab05f7a0d89",
-  "original_filename": "manual-de-marca-del-estero.pdf",
-  "pdf_filename": "0c696675d1364ad4afd5cab05f7a0d89.pdf",
-  "txt_filename": "0c696675d1364ad4afd5cab05f7a0d89.txt",
-  "visual_filename": "0c696675d1364ad4afd5cab05f7a0d89_visual.json",
-  "char_count": 4543,
-  "extraction_method": "pypdf",
-  "url": "http://localhost:8000/static/uploads/brand/demo-tenant/0c696675d1364ad4afd5cab05f7a0d89.pdf",
   "palette_hex": [
     "#B8860B",
     "#C09048",
@@ -44,5 +36,10 @@
   ],
   "suggested_archetype": "brand_campaign_piece",
   "pages_scanned": 4,
-  "embedded_images": 2
+  "embedded_images": 2,
+  "notes": [
+    "pdf_fonts:5",
+    "text_fonts:8",
+    "palette_swatch:0c696675d1364ad4afd5cab05f7a0d89_palette.png"
+  ]
 }

@@ -99,9 +99,11 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
     <section className="card">
       <h2>Integraciones de redes sociales</h2>
       <p style={{ fontSize: "0.85rem", color: "#888" }}>
-        Conecta tus cuentas para publicación nativa. Meta/Instagram: OAuth + Go sidecar (:8088).
-        LinkedIn: OAuth (Community Management API) + publisher nativo con imagen.
-        X: OAuth 1.0a (Consumer Keys en .env) + tweet con imagen.
+        Conecta tus cuentas para publicación nativa y clips de Drive.
+        Meta/Instagram: OAuth + Go sidecar (:8088).
+        LinkedIn: OAuth + publisher nativo con imagen.
+        X: OAuth 1.0a + tweet con imagen.
+        Google Drive: OAuth solo lectura para <code>user_clip_reel</code>.
       </p>
 
       {error && <p style={{ color: "red", fontSize: "0.85rem" }}>{error}</p>}
@@ -151,6 +153,21 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
           }}
         >
           {connectedProviders.includes("x") ? "＋ Conectar otra cuenta X" : "Conectar X"}
+        </button>
+
+        <button
+          onClick={() => handleConnect("google")}
+          style={{
+            background: connectedProviders.includes("google") ? "#34a853" : "#444",
+            color: "#fff",
+            border: "none",
+            padding: "0.6rem 1.2rem",
+            borderRadius: "6px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          {connectedProviders.includes("google") ? "Reconectar Google Drive" : "Conectar Google Drive"}
         </button>
 
         <button onClick={load} disabled={loading} style={{ background: "transparent", border: "1px solid #666", padding: "0.6rem 1rem", borderRadius: "6px", cursor: "pointer" }}>
@@ -218,6 +235,11 @@ LINKEDIN_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callba
 X_API_KEY=...
 X_API_SECRET=...
 X_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/x
+
+# Google Drive (solo lectura — user_clip_reel)
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback/google
 
 PUBLIC_IMAGE_BASE_URL=https://marketing.powerupsecosistem.online`}</pre>
       </details>

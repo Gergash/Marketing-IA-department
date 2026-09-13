@@ -120,7 +120,59 @@ async function api(path, method = "GET", body = null) {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  if (res.status === 204) return null;
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return res.json();
+  return res;
+}
+
+async function apiMediaBlob(path) {
+  const headers = {};
+  const key = getApiKey();
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) throw new Error(await res.text());
+  return res.blob();
+}
+
+function DriveTakePreview({ take }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let revoked = "";
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (take.drive_file_id) {
+          const blob = await apiMediaBlob(
+            `/media/drive/${take.drive_file_id}?start_s=${take.trim_in}&end_s=${take.trim_out}`
+          );
+          if (cancelled) return;
+          revoked = URL.createObjectURL(blob);
+          setSrc(revoked);
+          return;
+        }
+        if (take.source_clip_url && !String(take.source_clip_url).includes("/api/media/drive/")) {
+          setSrc(resolveImageUrl(take.source_clip_url));
+        }
+      } catch {
+        if (!cancelled) setSrc("");
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [take.drive_file_id, take.trim_in, take.trim_out, take.source_clip_url]);
+
+  if (!src) return null;
+  return (
+    <video
+      controls
+      src={src}
+      style={{ maxWidth: "280px", width: "100%", borderRadius: "4px", marginBottom: "0.4rem" }}
+    />
+  );
 }
 
 async function uploadAsset(file) {
@@ -186,6 +238,10 @@ export default function App() {
   const [brandManual, setBrandManual] = useState(null);
   const [uploadingBrand, setUploadingBrand] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState("");
+  const [editingGoal, setEditingGoal] = useState("");
+  const [takeCount, setTakeCount] = useState(10);
+  const [selectionMode, setSelectionMode] = useState("auto");
+  const [manualRangesText, setManualRangesText] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [ctaOnImage, setCtaOnImage] = useState(false);
   const [alterImageWithAi, setAlterImageWithAi] = useState(false);
@@ -203,6 +259,8 @@ export default function App() {
   const [revisionNotes, setRevisionNotes] = useState("");
   const [revisionByRunId, setRevisionByRunId] = useState({});
   const [revisionFeedback, setRevisionFeedback] = useState(null);
+  const [renderingTakesRunId, setRenderingTakesRunId] = useState(null);
+  const [savingTakesRunId, setSavingTakesRunId] = useState(null);
 
   const loadHistory = async () => {
     try {
@@ -363,12 +421,12 @@ export default function App() {
     loadBrandManual();
   }, [apiKey]);
 
-  // Poll de runs async (reels): rellena Resultado cuando pasa a pending_approval con video_url
+  // Poll de runs async (reels): rellena Resultado cuando pasa a pending_takes / pending_approval
   useEffect(() => {
     const runId = result?.run_id;
     const status = result?.status;
     if (!runId) return undefined;
-    const done = ["pending_approval", "completed", "failed", "rejected", "deduplicated"];
+    const done = ["pending_takes", "pending_approval", "completed", "failed", "rejected", "deduplicated"];
     if (done.includes(status) && result?.result) return undefined;
     if (!["queued", "running", "publishing"].includes(status) && result?.result) return undefined;
 
@@ -440,7 +498,28 @@ export default function App() {
         ...(userAssetUrl && alterImageWithAi && visualInstructions.trim()
           ? { visual_instructions: visualInstructions.trim() }
           : {}),
-        ...(contentFormat === "user_clip_reel" ? { drive_folder_id: driveFolderId.trim() } : {}),
+        ...(contentFormat === "user_clip_reel"
+          ? {
+              drive_folder_id: driveFolderId.trim(),
+              editing_goal: editingGoal.trim() || undefined,
+              take_count: Number(takeCount) || 10,
+              selection_mode: selectionMode,
+              ...(selectionMode === "manual" && manualRangesText.trim()
+                ? {
+                    manual_ranges: manualRangesText
+                      .trim()
+                      .split("\n")
+                      .map((line) => line.trim())
+                      .filter(Boolean)
+                      .map((line) => {
+                        const [a, b] = line.split(/[-–,]/).map((x) => parseFloat(String(x).trim()));
+                        return { start_s: a, end_s: b };
+                      })
+                      .filter((r) => Number.isFinite(r.start_s) && Number.isFinite(r.end_s) && r.end_s > r.start_s),
+                  }
+                : {}),
+            }
+          : {}),
         ...(contentFormat === "reel"
           ? { video_gen_mode: videoGenMode, venice_video_model: veniceVideoModel }
           : {}),
@@ -497,6 +576,89 @@ export default function App() {
       await loadHistory();
     } catch (e) {
       setError(e.message);
+    }
+  };
+
+  const syncTakesIntoResult = (runId, takes, status) => {
+    setResult((prev) => {
+      if (!prev || prev.run_id !== runId) return prev;
+      const design = { ...(prev.result?.design || {}), takes };
+      return {
+        ...prev,
+        status: status || prev.status,
+        result: { ...(prev.result || {}), design },
+      };
+    });
+  };
+
+  const saveTakes = async (runId, takes) => {
+    if (savingTakesRunId != null) return;
+    setSavingTakesRunId(runId);
+    setError(null);
+    try {
+      const payload = {
+        takes: takes.map((t) => ({
+          id: t.id,
+          status: t.status,
+          order: t.order,
+          trim_in: t.trim_in,
+          trim_out: t.trim_out,
+        })),
+      };
+      const res = await api(`/runs/${runId}/takes`, "POST", payload);
+      syncTakesIntoResult(runId, res.takes, res.status);
+      await loadHistory();
+      return res.takes;
+    } catch (e) {
+      setError(e.message);
+      return null;
+    } finally {
+      setSavingTakesRunId(null);
+    }
+  };
+
+  const setTakeStatus = async (runId, takes, takeId, status) => {
+    const next = takes.map((t) => (t.id === takeId ? { ...t, status } : t));
+    await saveTakes(runId, next);
+  };
+
+  const acceptAllTakes = async (runId, takes) => {
+    const next = takes.map((t, i) => ({ ...t, status: "accepted", order: i }));
+    await saveTakes(runId, next);
+  };
+
+  const moveTake = async (runId, takes, takeId, direction) => {
+    const sorted = [...takes].sort((a, b) => a.order - b.order);
+    const idx = sorted.findIndex((t) => t.id === takeId);
+    if (idx < 0) return;
+    const swap = idx + direction;
+    if (swap < 0 || swap >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[swap];
+    const next = takes.map((t) => {
+      if (t.id === a.id) return { ...t, order: b.order };
+      if (t.id === b.id) return { ...t, order: a.order };
+      return t;
+    });
+    await saveTakes(runId, next);
+  };
+
+  const renderAcceptedTakes = async (runId) => {
+    if (renderingTakesRunId != null) return;
+    setRenderingTakesRunId(runId);
+    setError(null);
+    try {
+      const res = await api(`/runs/${runId}/takes/render`, "POST", {});
+      setResult((prev) =>
+        prev && prev.run_id === runId
+          ? { ...prev, status: res.status, result: res.result || prev.result }
+          : prev
+      );
+      await loadHistory();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRenderingTakesRunId(null);
     }
   };
 
@@ -652,14 +814,57 @@ export default function App() {
             ` Publicación automática en ${currentNetwork} aún no implementada: la pieza se genera y queda para descargar/publicar a mano.`}
         </p>
         {contentFormat === "user_clip_reel" && (
-          <label>
-            Carpeta de Drive (ID)
-            <input
-              placeholder="ID de la carpeta de Google Drive con tus clips"
-              value={driveFolderId}
-              onChange={(e) => setDriveFolderId(e.target.value)}
-            />
-          </label>
+          <>
+            <label>
+              Carpeta de Drive (ID)
+              <input
+                placeholder="ID de la carpeta de Google Drive con tus clips"
+                value={driveFolderId}
+                onChange={(e) => setDriveFolderId(e.target.value)}
+              />
+            </label>
+            <label>
+              ¿Qué quieres lograr con esta edición?
+              <textarea
+                rows={2}
+                placeholder="Ej: resaltar precios, ubicación y el mensaje principal para atraer clientes nuevos"
+                value={editingGoal}
+                onChange={(e) => setEditingGoal(e.target.value)}
+              />
+            </label>
+            <label>
+              Cantidad de tomas
+              <select value={takeCount} onChange={(e) => setTakeCount(Number(e.target.value))}>
+                {[5, 10, 15, 20, 30].map((n) => (
+                  <option key={n} value={n}>
+                    {n} tomas
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Selección de tomas
+              <select value={selectionMode} onChange={(e) => setSelectionMode(e.target.value)}>
+                <option value="auto">Automático (relevancia + objetivo)</option>
+                <option value="manual">Manual (minutos / segundos)</option>
+              </select>
+            </label>
+            {selectionMode === "manual" && (
+              <label>
+                Rangos manuales (un rango por línea: inicio-fin en segundos)
+                <textarea
+                  rows={3}
+                  placeholder={"120-128\n540-548\n900-908"}
+                  value={manualRangesText}
+                  onChange={(e) => setManualRangesText(e.target.value)}
+                />
+              </label>
+            )}
+            <p className="hint">
+              No se descarga el video completo: se analiza el audio en la nube y solo se cortan las tomas
+              aceptadas al renderizar.
+            </p>
+          </>
         )}
         {contentFormat === "reel" && (
           <div className="video-gen-block" style={{ marginTop: "0.75rem" }}>
@@ -746,7 +951,7 @@ export default function App() {
           </div>
           <p className="hint">
             {imageProvider === "fal"
-              ? "Flux Pro vía API. Para alterar fotos reales con personas, preferí Venice (gpt-image-2-edit)."
+              ? "Flux Pro vía API. Alterar foto real: FLUX Kontext (edición por instrucción), misma capacidad que Venice."
               : imageProvider === "venice"
                 ? "Venice.ai + gpt-image-2 / gpt-image-2-edit. Si cambias .env, recarga esta página (settings se re-leen por mtime)."
                 : "Generación local con Automatic1111/Forge en :7860."}
@@ -906,18 +1111,13 @@ export default function App() {
                   const up = await uploadAsset(file);
                   setUserAssetUrl(up.url);
                   setUserAssetName(up.filename);
-                  // Foto real del sitio: por defecto activar edición IA (Venice/fal)
+                  // Foto real: activar edición IA; el proveedor elegido (fal o Venice) edita la escena
                   setAlterImageWithAi(true);
                   setVisualInstructions((prev) =>
                     prev.trim()
                       ? prev
                       : "Agrega dos personas realistas sentadas en las sillas vacías de la mesa, cena natural. No agregues ni modifiques texto."
                   );
-                  // Preferir Venice para /image/edit (fal img2img suele deformar tipografía de la foto)
-                  setImageProvider((cur) => {
-                    const hasVenice = imageProviders.some((p) => p.id === "venice");
-                    return hasVenice ? "venice" : cur;
-                  });
                 } catch (err) {
                   setError(err.message);
                   setUserAssetUrl("");
@@ -945,12 +1145,12 @@ export default function App() {
               disabled={!userAssetUrl || loading}
               onChange={(e) => setAlterImageWithAi(e.target.checked)}
             />
-            {" "}Alterar foto real con IA (Venice gpt-image-2-edit / fal) — agrega personas, objetos, etc.
+            {" "}Alterar foto real con IA (Venice o fal.ai) — agrega personas, objetos, etc.
           </label>
-          {alterImageWithAi && userAssetUrl && imageProvider === "fal" && (
-            <p className="hint" style={{ color: "#b45309" }}>
-              Aviso: con fal la IA puede deformar textos ya presentes en la foto. Para editar foto real
-              usa <strong>Venice (gpt-image-2)</strong>.
+          {alterImageWithAi && userAssetUrl && (
+            <p className="hint">
+              Con <strong>Venice</strong> usa <code>gpt-image-2-edit</code>; con <strong>fal.ai</strong> usa
+              {" "}<code>FLUX Kontext</code> (edición por instrucción). En ambos casos Pillow aplica la tipografía después.
             </p>
           )}
           {alterImageWithAi && userAssetUrl && (
@@ -965,7 +1165,7 @@ export default function App() {
             </label>
           )}
           <p className="hint">
-            Con IA (recomendado): Venice edita solo la escena (personas/objetos) y Pillow aplica tipografía limpia.
+            Con IA: el proveedor elegido (Venice o fal) edita solo la escena (personas/objetos) y Pillow aplica tipografía limpia.
             La IA no debe pintar letras — si ves texto ilegible, el editor recibió copy por error o hay un API viejo en :8000.
             Sin IA: solo se pegan textos sobre la foto (las sillas vacías no cambian).
           </p>
@@ -1090,6 +1290,172 @@ export default function App() {
       <section className="card">
         <h2>Resultado</h2>
         {error && <p style={{ color: "red" }}>{error}</p>}
+        {result?.status === "pending_takes" && Array.isArray(result?.result?.design?.takes) && (
+          <div style={{ marginBottom: "1rem" }}>
+            <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+              Tomas propuestas — acepta, descarta o reordena antes de renderizar el reel.
+            </p>
+            <div className="actions" style={{ marginBottom: "0.75rem" }}>
+              <button
+                type="button"
+                disabled={savingTakesRunId != null || renderingTakesRunId != null}
+                onClick={() => acceptAllTakes(result.run_id, result.result.design.takes)}
+              >
+                Aceptar todas
+              </button>
+              <button
+                type="button"
+                disabled={
+                  savingTakesRunId != null ||
+                  renderingTakesRunId != null ||
+                  !result.result.design.takes.some((t) => t.status === "accepted")
+                }
+                onClick={() => renderAcceptedTakes(result.run_id)}
+              >
+                {renderingTakesRunId === result.run_id ? <span className="spinner"></span> : null}
+                {renderingTakesRunId === result.run_id ? "Renderizando…" : "Renderizar reel"}
+              </button>
+              <button type="button" disabled={approvingRunId != null} onClick={() => doReject(result.run_id)}>
+                ✗ Descartar run
+              </button>
+            </div>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {[...result.result.design.takes]
+                .sort((a, b) => a.order - b.order)
+                .map((take) => (
+                  <li
+                    key={take.id}
+                    style={{
+                      border: "1px solid #333",
+                      borderRadius: "6px",
+                      padding: "0.75rem",
+                      marginBottom: "0.5rem",
+                      opacity: take.status === "rejected" ? 0.55 : 1,
+                    }}
+                  >
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+                      <strong>{take.id}</strong>
+                      <code>{take.status}</code>
+                      {take.is_hook && <span style={{ color: "#047857" }}>hook</span>}
+                      <span style={{ color: "#888" }}>{Number(take.duration_s).toFixed(1)}s</span>
+                      <span style={{ color: "#888" }}>
+                        trim {Number(take.trim_in).toFixed(1)}–{Number(take.trim_out).toFixed(1)}
+                      </span>
+                    </div>
+                    {take.transcript && (
+                      <p className="hint" style={{ margin: "0.4rem 0" }}>
+                        {take.transcript}
+                      </p>
+                    )}
+                    <DriveTakePreview take={take} />
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
+                      <label style={{ fontSize: "0.8rem" }}>
+                        trim_in
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={take.trim_in}
+                          disabled={savingTakesRunId != null}
+                          onChange={(e) => {
+                            const next = result.result.design.takes.map((t) =>
+                              t.id === take.id
+                                ? {
+                                    ...t,
+                                    trim_in: Number(e.target.value),
+                                    duration_s: Math.max(0.1, t.trim_out - Number(e.target.value)),
+                                  }
+                                : t
+                            );
+                            syncTakesIntoResult(result.run_id, next);
+                          }}
+                          onBlur={() => saveTakes(result.run_id, result.result.design.takes)}
+                          style={{ width: "5rem", marginLeft: "0.25rem" }}
+                        />
+                      </label>
+                      <label style={{ fontSize: "0.8rem" }}>
+                        trim_out
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={take.trim_out}
+                          disabled={savingTakesRunId != null}
+                          onChange={(e) => {
+                            const next = result.result.design.takes.map((t) =>
+                              t.id === take.id
+                                ? {
+                                    ...t,
+                                    trim_out: Number(e.target.value),
+                                    duration_s: Math.max(0.1, Number(e.target.value) - t.trim_in),
+                                  }
+                                : t
+                            );
+                            syncTakesIntoResult(result.run_id, next);
+                          }}
+                          onBlur={() => saveTakes(result.run_id, result.result.design.takes)}
+                          style={{ width: "5rem", marginLeft: "0.25rem" }}
+                        />
+                      </label>
+                    </div>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        disabled={savingTakesRunId != null}
+                        onClick={() =>
+                          setTakeStatus(result.run_id, result.result.design.takes, take.id, "accepted")
+                        }
+                      >
+                        Aceptar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingTakesRunId != null}
+                        onClick={() =>
+                          setTakeStatus(result.run_id, result.result.design.takes, take.id, "rejected")
+                        }
+                      >
+                        Descartar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingTakesRunId != null}
+                        onClick={() => moveTake(result.run_id, result.result.design.takes, take.id, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingTakesRunId != null}
+                        onClick={() => moveTake(result.run_id, result.result.design.takes, take.id, 1)}
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+            {result.result.design.takes.some((t) => t.status === "accepted") && (
+              <div style={{ marginTop: "0.75rem" }}>
+                <p className="hint">Paquete de tomas aceptadas (URLs para el editor):</p>
+                <ul>
+                  {result.result.design.takes
+                    .filter((t) => t.status === "accepted")
+                    .sort((a, b) => a.order - b.order)
+                    .map((t) => (
+                      <li key={`pkg-${t.id}`}>
+                        <code>{t.id}</code>{" "}
+                        <a href={resolveImageUrl(t.source_clip_url)} target="_blank" rel="noreferrer">
+                          {t.source_clip_url || "(sin url)"}
+                        </a>{" "}
+                        [{Number(t.trim_in).toFixed(1)}–{Number(t.trim_out).toFixed(1)}s]
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
         {result?.result?.design?.image_url && (
           <div style={{ marginBottom: "1rem" }}>
             <p style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.4rem" }}>
@@ -1156,7 +1522,7 @@ export default function App() {
               Modificaciones a la pieza
               <textarea
                 rows={3}
-                placeholder="Ej: cambia el headline, fondo más oscuro, CTA más corto…"
+                placeholder="Ej: tipografía Montserrat blanca más grande; agrega 2 personas en las sillas; cambia el headline…"
                 value={revisionNotes}
                 onChange={(e) => {
                   setRevisionNotes(e.target.value);
@@ -1185,7 +1551,8 @@ export default function App() {
               </p>
             )}
             <p className="hint">
-              Describe los cambios deseados. La regeneración automática se conectará al pipeline más adelante.
+              Tipografía/color/tamaño se aplican en el overlay. Escena (personas, fondo) regenera la foto con IA.
+              Copy/headline se reescriben con tus notas. Luego vuelve a revisión humana.
             </p>
           </div>
         )}
@@ -1207,6 +1574,31 @@ export default function App() {
                 <span style={{ marginLeft: "0.5rem", color: "#888" }}>
                   (por {item.approved_by})
                 </span>
+              )}
+              {item.status === "pending_takes" && Array.isArray(item.result?.design?.takes) && (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <p className="hint">
+                    {item.result.design.takes.length} tomas propuestas — abre el resultado o acepta todas
+                    y renderiza.
+                  </p>
+                  <button
+                    type="button"
+                    style={{ marginRight: "0.3rem" }}
+                    onClick={() =>
+                      setResult({
+                        run_id: item.run_id,
+                        status: item.status,
+                        result: item.result,
+                        error_message: item.error_message,
+                      })
+                    }
+                  >
+                    Revisar tomas
+                  </button>
+                  <button type="button" disabled={approvingRunId != null} onClick={() => doReject(item.run_id)}>
+                    ✗ Rechazar
+                  </button>
+                </div>
               )}
               {item.status === "pending_approval" && (
                 <div style={{ marginTop: "0.5rem", marginLeft: 0 }}>
@@ -1246,7 +1638,7 @@ export default function App() {
                     Modificaciones a la pieza
                     <textarea
                       rows={2}
-                      placeholder="Ej: cambia el headline, fondo más oscuro, CTA más corto…"
+                      placeholder="Ej: tipografía Montserrat blanca más grande; agrega personas; cambia el headline…"
                       value={revisionByRunId[item.run_id] || ""}
                       onChange={(e) => {
                         const value = e.target.value;

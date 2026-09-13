@@ -106,12 +106,12 @@ def test_async_routes_user_clip_reel_to_video_task(monkeypatch: pytest.MonkeyPat
     assert captured["kwargs"]["drive_folder_id"] == "folder123"
 
 
-def test_execute_pipeline_user_clip_reel_reaches_pending_approval(
+def test_execute_pipeline_user_clip_reel_reaches_pending_takes(
     monkeypatch: pytest.MonkeyPatch, db_session, brief
 ) -> None:
-    """Async run accepted (spec): user_clip_reel llega a pending_approval via el mismo HITL existente."""
+    """Async run accepted (spec): user_clip_reel llega a pending_takes con tomas (sin MP4 aún)."""
     from agents.marketing_agents.clip_reel_designer import ClipReelDesigner
-    from agents.marketing_agents.schemas import VideoDesignOutput
+    from agents.marketing_agents.schemas import TakeProposal, VideoDesignOutput
     from gateway.app.services.pipeline_service import create_run, execute_pipeline
 
     captured_kwargs: dict = {}
@@ -120,15 +120,29 @@ def test_execute_pipeline_user_clip_reel_reaches_pending_approval(
         captured_kwargs.update(kwargs)
         return VideoDesignOutput(
             image_url=None,
-            video_url="http://localhost:8000/static/videos/clipreel.mp4",
+            video_url="",
             video_prompt=strategy.hook,
             video_provider="mock",
             voice_provider="",
-            width=1080,
-            height=1920,
+            width=0,
+            height=0,
             duration_s=20.0,
             scene_count=1,
             layout_archetype="typographic_poster",
+            takes=[
+                TakeProposal(
+                    id="take-1",
+                    clip_id="clip1",
+                    source_clip_url="http://localhost/static/c.mp4",
+                    trim_in=0.0,
+                    trim_out=20.0,
+                    duration_s=20.0,
+                    transcript="hola",
+                    is_hook=True,
+                    status="proposed",
+                    order=0,
+                )
+            ],
         )
 
     monkeypatch.setattr(ClipReelDesigner, "run", _fake_run)
@@ -150,10 +164,11 @@ def test_execute_pipeline_user_clip_reel_reaches_pending_approval(
         drive_folder_id="folder123",
     )
 
-    assert result["design"]["video_url"] == "http://localhost:8000/static/videos/clipreel.mp4"
+    assert result["design"]["video_url"] == ""
+    assert result["design"]["takes"]
     assert captured_kwargs["drive_folder_id"] == "folder123"
     db_session.refresh(run)
-    assert run.status == "pending_approval"
+    assert run.status == "pending_takes"
 
 
 def test_async_routes_feed_to_default_task_without_video_queue(

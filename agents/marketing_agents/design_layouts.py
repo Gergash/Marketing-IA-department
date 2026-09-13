@@ -628,11 +628,12 @@ def _layout_brand_campaign_piece(
     roles = resolve_font_roles(
         font_seed=font_seed,
         preferred_font_paths=preferred_font_paths,
-        prefer_script_display=not (typography_style or typography_family_id),
+        # HITL tipografía: NUNCA forzar Great Vibes si el usuario pidió otra fuente
+        prefer_script_display=not bool(typography_style or typography_family_id),
         style=typography_style,
         family_id=typography_family_id,
     )
-    # Script grande (Great Vibes se lee mejor un poco más grande)
+    # Tamaño de título (script se lee mejor un poco más grande; sans también escala)
     scale = float(title_size_scale or 1.0)
     title_size = max(36, min(72, int((w // 9) * scale)))
     body_size = max(17, min(28, int((w // 28) * scale)))

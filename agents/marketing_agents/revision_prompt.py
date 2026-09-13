@@ -43,9 +43,15 @@ _TYPOGRAPHY_RE = re.compile(
     r"great[\s-]?vibes|roboto|inter|"
     r"tama[nñ]o\s+del?\s+texto|texto\s+m[aá]s\s+(grande|peque[nñ]o)|"
     r"headline\s+(m[aá]s\s+)?(grande|peque[nñ]o|blanco|negro)|"
-    r"color\s+del?\s+(texto|tipograf|fuente|letra)|"
+    r"color(?:es)?(?:\s+del?\s+(texto|tipograf\w*|fuente|letra|acento|cta))?|"
+    r"color\s+(del?\s+)?(texto|tipograf|fuente|letra|acento|cta)|"
+    r"texto\s+(en\s+)?(blanco|negro|rojo|azul|verde|dorado|rosa|naranja|morado)|"
+    r"texto\s+(en\s+)?#[0-9a-fA-F]{6}|"
+    r"#[0-9a-fA-F]{6}|"
     r"contraste\s+(del?\s+)?(texto|tipograf)|"
-    r"overlay|may[uú]sculas|min[uú]sculas"
+    r"overlay|may[uú]sculas|min[uú]sculas|"
+    r"cambia\s+(la\s+)?(fuente|tipograf|color)|"
+    r"otra\s+fuente|nueva\s+fuente"
     r")\b",
     re.IGNORECASE,
 )
@@ -72,6 +78,22 @@ _FAMILY_ALIASES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bscript_campaign\b", re.I), "script_campaign"),
 ]
 
+# Colores de texto / acento en lenguaje natural → hex
+_COLOR_NAME_HEX: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(blanco|white)\b", re.I), "#FFFFFF"),
+    (re.compile(r"\b(negro|black)\b", re.I), "#0F172A"),
+    (re.compile(r"\b(crema|beige|marfil|ivory)\b", re.I), "#F5E6C8"),
+    (re.compile(r"\b(dorado|gold|amarillo)\b", re.I), "#C9A227"),
+    (re.compile(r"\b(rojo|red|carmes[ií]|scarlet)\b", re.I), "#DC2626"),
+    (re.compile(r"\b(azul|blue|navy|marino)\b", re.I), "#1D4ED8"),
+    (re.compile(r"\b(verde|green|esmeralda)\b", re.I), "#059669"),
+    (re.compile(r"\b(rosa|pink|fucsia|magenta)\b", re.I), "#DB2777"),
+    (re.compile(r"\b(naranja|orange|coral)\b", re.I), "#EA580C"),
+    (re.compile(r"\b(morado|p[uú]rpura|violet|lila)\b", re.I), "#7C3AED"),
+    (re.compile(r"\b(gris|gray|grey|plateado|silver)\b", re.I), "#64748B"),
+    (re.compile(r"\b(cian|turquoise|turquesa|teal)\b", re.I), "#0D9488"),
+]
+
 
 @dataclass(frozen=True)
 class TypographyRevision:
@@ -81,9 +103,11 @@ class TypographyRevision:
     style: str | None = None  # sans | serif | script | display
     family_id: str | None = None
     text_color_hex: str | None = None
+    accent_hex: str | None = None
     size_scale: float = 1.0
     force_uppercase: bool | None = None
     high_contrast: bool = False
+    rotate_family: bool = False  # «cambia la fuente» sin nombrar cuál
 
 
 def revision_requests_typography(notes: str | None) -> bool:
@@ -143,18 +167,51 @@ def parse_typography_revision(notes: str | None) -> TypographyRevision:
             family_id = fid
             break
 
+    # «Cambia la fuente / tipografía» sin nombrar cuál → rotar familia en Pillow.
+    rotate_family = bool(
+        re.search(
+            r"\b(cambia|cambiar|otra|nueva|diferente)\b.{0,24}\b(fuente|tipograf|font)",
+            low,
+        )
+        or re.search(r"\b(fuente|tipograf|font).{0,16}\b(diferente|otra|nueva)\b", low)
+    ) and not family_id and not style
+
     text_color_hex: str | None = None
+    accent_hex: str | None = None
     hex_m = re.search(r"#([0-9a-fA-F]{6})\b", text)
     if hex_m:
         text_color_hex = f"#{hex_m.group(1).upper()}"
-    elif re.search(r"\b(blanco|white|claro)\b", low):
-        text_color_hex = "#FFFFFF"
-    elif re.search(r"\b(negro|black|oscuro)\b", low) and re.search(
-        r"\b(texto|tipograf|fuente|letra|headline|color)\b", low
-    ):
+
+    named_color: str | None = None
+    for pat, hex_val in _COLOR_NAME_HEX:
+        if pat.search(text):
+            named_color = hex_val
+            break
+
+    wants_accent = bool(
+        re.search(r"\b(acento|accent|cta|bot[oó]n|pill|l[ií]nea\s+de\s+acento)\b", low)
+    )
+    wants_text_color = bool(
+        re.search(
+            r"\b(texto|tipograf|fuente|letra|headline|titular|color(?:es)?)\b",
+            low,
+        )
+    )
+
+    if named_color:
+        if wants_accent and not re.search(r"\b(texto|tipograf|fuente|letra|headline)\b", low):
+            accent_hex = named_color
+        else:
+            text_color_hex = text_color_hex or named_color
+            # Si pide color de acento además del texto, reutilizar o parsear segundo
+            if wants_accent:
+                accent_hex = named_color
+
+    # Fallback: «negro/oscuro» cerca de texto (si no cayó en named por falta de contexto)
+    if not text_color_hex and re.search(r"\b(oscuro|dark)\b", low) and wants_text_color:
         text_color_hex = "#0F172A"
-    elif re.search(r"\b(dorado|gold|amarillo)\b", low):
-        text_color_hex = "#C9A227"
+    if not text_color_hex and re.search(r"\b(claro|light)\b", low) and wants_text_color:
+        text_color_hex = "#FFFFFF"
 
     size_scale = 1.0
     if re.search(r"\b(m[aá]s\s+grande|agranda|larger|bigger|aumenta\s+(el\s+)?tama[nñ]o)\b", low):
@@ -177,9 +234,11 @@ def parse_typography_revision(notes: str | None) -> TypographyRevision:
         style=style,
         family_id=family_id,
         text_color_hex=text_color_hex,
+        accent_hex=accent_hex,
         size_scale=size_scale,
         force_uppercase=force_uppercase,
         high_contrast=high_contrast,
+        rotate_family=rotate_family,
     )
 
 

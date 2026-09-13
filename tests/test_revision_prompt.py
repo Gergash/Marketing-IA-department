@@ -32,6 +32,25 @@ def test_typography_notes_are_not_scene_change() -> None:
     assert typo.size_scale > 1.0
 
 
+def test_parse_font_and_color_requests() -> None:
+    azul = parse_typography_revision("cambia el color del texto a azul")
+    assert azul.requested
+    assert azul.text_color_hex == "#1D4ED8"
+    assert not revision_requests_scene_change("cambia el color del texto a azul")
+
+    hex_c = parse_typography_revision("texto en #EA580C")
+    assert hex_c.text_color_hex == "#EA580C"
+
+    accent = parse_typography_revision("color de acento dorado")
+    assert accent.requested
+    assert accent.accent_hex == "#C9A227" or accent.text_color_hex == "#C9A227"
+
+    rotate = parse_typography_revision("cambia la fuente")
+    assert rotate.requested
+    assert rotate.rotate_family is True
+    assert rotate.family_id is None
+
+
 def test_compose_skips_typography_only_notes() -> None:
     base = "atmosphere photo of a restaurant"
     notes = "cambia la tipografía a cursiva"
@@ -177,9 +196,87 @@ def test_designer_applies_typography_revision(monkeypatch) -> None:
     )
     assert out.design_source == "user_overlay"
     assert captured.get("alter_with_ai") is False  # tipografía sola: no re-editar foto
-    assert captured.get("typography_family_id") == "montserrat" or (
-        captured.get("preferred_font_paths")
+    assert captured.get("typography_family_id") == "montserrat"
+    assert captured.get("typography_style") in ("sans", None) or captured.get(
+        "typography_family_id"
     )
     assert captured.get("force_text_hex") == "#FFFFFF"
     assert float(captured.get("title_size_scale") or 1) > 1.0
     assert captured.get("revision_notes") in (None, "")
+
+
+def test_designer_escape_script_on_generic_font_change(monkeypatch) -> None:
+    """«Cambia la tipografía» sin nombre debe salir de Great Vibes (script de campaña)."""
+    from agents.marketing_agents.designer import DesignerAgent
+    from agents.marketing_agents.schemas import BriefInput, CopyOutput, StrategyOutput
+
+    captured: dict = {}
+
+    def _fake_compose(url, **kwargs):
+        captured.update(kwargs)
+        return "http://localhost:8000/static/images/x.png", 1080, 1350, "user_overlay"
+
+    monkeypatch.setattr(
+        "agents.marketing_agents.designer.compose_from_user_asset", _fake_compose
+    )
+    monkeypatch.setattr(
+        "agents.marketing_agents.designer.resolve_brand_cues",
+        lambda *a, **k: type(
+            "C",
+            (),
+            {
+                "has_signal": True,
+                "suggested_archetype": "brand_campaign_piece",
+                "font_names": [],
+                "logo_paths": [],
+                "palette_hex": ["#C9A227"],
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "agents.marketing_agents.designer.apply_brand_to_archetype", lambda a, c: a
+    )
+    monkeypatch.setattr(
+        "agents.marketing_agents.designer.resolve_brand_font_paths", lambda *a, **k: []
+    )
+    monkeypatch.setattr(
+        "agents.marketing_agents.designer.brand_priority_prompt_block", lambda *a, **k: ""
+    )
+    monkeypatch.setattr(
+        "agents.marketing_agents.designer.extract_brand_name_candidates", lambda *a, **k: []
+    )
+    monkeypatch.setattr(
+        "gateway.app.core.settings.get_settings",
+        lambda: type("S", (), {"image_provider": "mock", "venice_image_model": "gpt-image-2"})(),
+    )
+
+    DesignerAgent().run(
+        BriefInput(
+            tema="Chimichurri significa amistad",
+            publico_objetivo="clientes",
+            red_social="instagram",
+            objetivo="branding",
+            brand_context="manual de marca",
+        ),
+        CopyOutput(
+            copy_final="Chimichurri",
+            headline_for_image="Chimichurri significa amistad",
+            subline_for_image="",
+            hashtags=["#x"],
+            cta="",
+        ),
+        StrategyOutput(
+            tipo_post="feed",
+            hook="Chimichurri",
+            mensaje_base="amistad",
+            hashtags=["#x"],
+        ),
+        user_asset_url="/static/uploads/site.jpg",
+        revision_notes="cambia esta tipografía, usa una fuente sans-serif moderna",
+    )
+    assert captured.get("typography_family_id") not in (None, "", "script_campaign")
+    assert captured.get("typography_style") in ("sans", None) or captured.get(
+        "typography_family_id"
+    )
+    # No debe pedir script
+    assert captured.get("typography_style") != "script"

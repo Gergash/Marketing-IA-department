@@ -138,27 +138,52 @@ class DesignerAgent:
         }
         if typo.requested:
             font_seed = f"{font_seed}:typo:{typo.style or ''}:{typo.family_id or notes[:48]}"
-            typo_paths = font_paths_for_typography(
-                style=typo.style,
-                family_id=typo.family_id,
+            # Cualquier pedido de tipografía debe salir de Great Vibes / script de campaña
+            # salvo que el usuario pida explícitamente cursiva/script.
+            want_script = (typo.style == "script") or (typo.family_id == "script_campaign")
+            eff_style = typo.style
+            eff_family = typo.family_id
+            rotate = typo.rotate_family or (not eff_style and not eff_family and not want_script)
+            if not want_script and not eff_style and not eff_family:
+                # Default al cambiar tipografía: sans (Montserrat/Poppins/…), no cursiva
+                eff_style = "sans"
+                rotate = True
+            typo_paths, resolved_family = font_paths_for_typography(
+                style=eff_style if not rotate else None,
+                family_id=eff_family,
                 font_seed=font_seed,
+                rotate=rotate,
             )
             if typo_paths:
                 font_paths = typo_paths
+            if resolved_family:
+                eff_family = resolved_family
+                # Si resolvimos familia concreta, no hace falta forzar style (el id basta)
+                if not typo.style:
+                    eff_style = None
+            replace_kwargs = {}
             if typo.text_color_hex:
-                archetype = replace(
-                    archetype,
-                    primary_hex=typo.text_color_hex,
-                    secondary_hex=typo.text_color_hex,
-                )
+                replace_kwargs["primary_hex"] = typo.text_color_hex
+                replace_kwargs["secondary_hex"] = typo.text_color_hex
+            if typo.accent_hex:
+                replace_kwargs["accent_hex"] = typo.accent_hex
+            if replace_kwargs:
+                archetype = replace(archetype, **replace_kwargs)
             overlay_typo = {
                 "title_size_scale": typo.size_scale,
                 "force_text_hex": typo.text_color_hex,
                 "high_contrast": typo.high_contrast,
-                "typography_style": typo.style,
-                "typography_family_id": typo.family_id,
+                "typography_style": eff_style if want_script else (eff_style or "sans"),
+                "typography_family_id": eff_family,
                 "force_uppercase": typo.force_uppercase,
             }
+            logger.info(
+                "designer.typography_override",
+                family_id=eff_family,
+                style=overlay_typo["typography_style"],
+                rotate=rotate,
+                paths=len(typo_paths or []),
+            )
 
         headline = copy.headline_for_image.strip() or strategy.hook or copy.copy_final[:100]
         subline = copy.subline_for_image.strip() or None

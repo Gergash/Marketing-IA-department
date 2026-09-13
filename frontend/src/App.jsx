@@ -1522,7 +1522,7 @@ export default function App() {
               Modificaciones a la pieza
               <textarea
                 rows={3}
-                placeholder="Ej: tipografía Montserrat blanca más grande; agrega 2 personas en las sillas; cambia el headline…"
+                placeholder="Ej: fuente Montserrat; texto azul; color de acento dorado; tipografía más grande…"
                 value={revisionNotes}
                 onChange={(e) => {
                   setRevisionNotes(e.target.value);
@@ -1551,8 +1551,8 @@ export default function App() {
               </p>
             )}
             <p className="hint">
-              Tipografía/color/tamaño se aplican en el overlay. Escena (personas, fondo) regenera la foto con IA.
-              Copy/headline se reescriben con tus notas. Luego vuelve a revisión humana.
+              Fuente y colores del texto se aplican en el overlay (Pillow). Ej: «fuente Poppins»,
+              «texto blanco», «color #C9A227», «acento dorado». Escena (personas/fondo) regenera la foto con IA.
             </p>
           </div>
         )}
@@ -1638,7 +1638,7 @@ export default function App() {
                     Modificaciones a la pieza
                     <textarea
                       rows={2}
-                      placeholder="Ej: tipografía Montserrat blanca más grande; agrega personas; cambia el headline…"
+                      placeholder="Ej: fuente Montserrat; texto azul; acento dorado…"
                       value={revisionByRunId[item.run_id] || ""}
                       onChange={(e) => {
                         const value = e.target.value;

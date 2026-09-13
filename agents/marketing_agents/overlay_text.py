@@ -329,13 +329,44 @@ def font_paths_for_typography(
     style: str | None = None,
     family_id: str | None = None,
     font_seed: str = "revision",
-) -> list[str]:
-    """Rutas preferidas para aplicar una petición tipográfica HITL en el overlay Pillow."""
-    family = pick_font_family(font_seed, style=style, family_id=family_id, prefer_script=(style == "script"))
+    rotate: bool = False,
+) -> tuple[list[str], str | None]:
+    """Rutas + family_id para aplicar una petición tipográfica HITL en el overlay Pillow.
+
+    Devuelve ``(paths, family_id)``. Si ``rotate`` y no hay familia/estilo, elige una
+    familia **no script** distinta del default (evita quedar atrapado en Great Vibes).
+    """
+    families = list_font_families()
+    family: FontFamily | None = None
+    if rotate and families and not family_id and not style:
+        # Nunca rotar hacia script: el usuario pide “cambiar la fuente” porque ya ve cursiva.
+        pool = [f for f in families if f.style != "script"] or families
+        base = pick_font_family(font_seed.replace(":typo:", ":"), prefer_script=False)
+        if base and len(pool) > 1:
+            others = [f for f in pool if f.id != base.id]
+            family = others[_seed_index(font_seed + ":rotate", len(others))] if others else pool[0]
+        else:
+            family = pool[_seed_index(font_seed + ":rotate", len(pool))] if pool else None
+        # Preferir sans explícito si el pool lo permite
+        if family and family.style == "script":
+            sans = [f for f in pool if f.style == "sans"]
+            if sans:
+                family = sans[_seed_index(font_seed, len(sans))]
+    else:
+        # Pedidos genéricos de tipografía sin estilo: default sans (no cursiva de campaña).
+        eff_style = style
+        if not family_id and not eff_style and not rotate:
+            eff_style = None
+        family = pick_font_family(
+            font_seed,
+            style=eff_style,
+            family_id=family_id,
+            prefer_script=(eff_style == "script"),
+        )
     if not family:
-        return []
+        return [], None
     paths = [p for p in (family.title, family.body, family.cta) if _existing(p)]
-    return paths
+    return paths, family.id
 
 
 def enforce_bold_path(path: str | None, *, fallback_family: FontFamily | None = None) -> str | None:
@@ -389,11 +420,44 @@ def resolve_font_roles(
             family_id=family.id,
         )
 
+    # preferred HITL (rutas de una familia no-script): no forzar Great Vibes en display.
+    if preferred and not prefer_script_display:
+        title = preferred[0]
+        body_cand = None
+        for p in preferred[1:] + preferred[:1]:
+            if not _is_thin_filename(p):
+                body_cand = p
+                break
+        body = enforce_bold_path(body_cand, fallback_family=family) or (
+            family.body if family else title
+        )
+        cta = enforce_bold_path(
+            next((p for p in preferred if _is_bold_filename(p)), None),
+            fallback_family=family,
+        ) or body
+        return FontRoles(
+            display=title,
+            body=body,
+            cta=cta,
+            tagline=(family.tagline if family else body),
+            family_id=(family.id if family else ""),
+        )
+
     if prefer_script_display and not style and not family_id:
+        # Variar el look canónico: ~1/3 sans/display, resto Great Vibes (script_campaign).
+        # Antes SIEMPRE era cursiva → todas las piezas idénticas tipográficamente.
+        if _seed_index(font_seed or "x", 3) == 0 and family and family.style != "script":
+            return FontRoles(
+                display=family.title,
+                body=enforce_bold_path(family.body, fallback_family=family) or family.body,
+                cta=enforce_bold_path(family.cta, fallback_family=family) or family.cta,
+                tagline=enforce_bold_path(family.tagline, fallback_family=family) or family.tagline,
+                family_id=family.id,
+            )
         pack = pack_font_roles()
         if pack:
             body = pack.body
-            # Preferidos del manual: solo si son gruesos
+            # Preferidos del manual: solo si son gruesos (cuerpo); display sigue script
             for p in preferred:
                 if not _is_thin_filename(p):
                     body = p
@@ -407,7 +471,6 @@ def resolve_font_roles(
                 tagline=enforce_bold_path(pack.tagline, fallback_family=family) or pack.tagline,
                 family_id=pack.family_id,
             )
-
     if preferred and family:
         # Título: primer preferred (puede ser display/script)
         title = preferred[0]

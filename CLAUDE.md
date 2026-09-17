@@ -4,6 +4,8 @@
 
 MVP de automatización de marketing con agentes de IA. Flujo: brief (+ manual de marca) → estrategia → copy con QA → diseño visual → aprobación humana → publicación en redes.
 
+Capa opcional **SaaS**: landing + registro/login email + JWT + créditos Bold (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS`). Ver `docs/staging-landing-bold.md`.
+
 **Prioridad de desarrollo:** un solo developer, mediados 2026, iterar rápido sin sobre-ingenierizar.
 
 ---
@@ -32,6 +34,22 @@ Strategist (+ brand + inbound)
 ```
 
 Asesor creativo (`advisor.py`) es **fuera** del pipeline: chat vía `POST /api/advisor/chat`.
+
+### Capa SaaS (landing / login / créditos)
+
+```
+/  LandingPage          ← solo si VITE_STAGING_SAAS=true (bake Vite)
+/login  LoginPage       ← POST /api/auth/register|login → JWT
+/app    App (estudio)   ← Bearer JWT; créditos vía /api/billing/*
+```
+
+| Flag | Capa | Efecto |
+|------|------|--------|
+| `STAGING_SAAS_ENABLED` | API | Habilita auth email, billing Bold, cobro de créditos al publicar |
+| `VITE_STAGING_SAAS` | Frontend build | Rutas landing/login; **rebuild** obligatorio al cambiar |
+
+Código: `gateway/app/api/auth_users.py`, `billing.py`, `services/auth_users.py`; UI `LandingPage.jsx`, `LoginPage.jsx`, `auth.js` (`isStagingMode`).  
+Contraseñas: PBKDF2-HMAC-SHA256 120k — **irreversibles**. Legacy `API_KEY` sigue si SaaS off.
 
 Doctrina inbound (HubSpot/Cyberclick/…) vive en
 `agents/marketing_agents/knowledge/` y se inyecta en Strategist, Copywriter y VideoScriptAgent.
@@ -223,7 +241,19 @@ LINKEDIN_API_VERSION=202401     # header LinkedIn-Version de la API /rest
 # Deben estar CONCEDIDOS en la pestaña Auth de la app; si no, LinkedIn rechaza todo el consentimiento.
 # Sin el producto "Sign In with LinkedIn using OpenID Connect": r_basicprofile w_member_social
 LINKEDIN_SCOPES=openid profile w_member_social
+
+# SaaS (landing + login + Bold) — ver docs/staging-landing-bold.md
+STAGING_SAAS_ENABLED=true
+JWT_SECRET=cambia-esto-en-serio
+JWT_TTL_MINUTES=10080
+BOLD_API_KEY=
+BOLD_INTEGRITY_SECRET=
+BOLD_WEBHOOK_SECRET=
+PACK_AMOUNT_COP=99000
+CREDITS_PER_PACK=100
 ```
+
+Frontend (`frontend/.env.local`): `VITE_STAGING_SAAS=true`. En prod Docker el compose pasa el build-arg (default `true`).
 
 **Nunca commitear `.env`.**
 
@@ -290,6 +320,8 @@ ngrok http 8000
 - `GET /api/auth/accounts` / `DELETE /api/auth/accounts/{id}`
 - `POST /api/campaigns/{id}/fire`
 - `GET /api/image/archetypes` / `/image/providers` / `/image/formats` (formatos válidos por red)
+- SaaS: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
+- Billing: `GET /api/billing/credits`, `GET /api/billing/bold-checkout`, `POST /api/billing/bold-webhook`
 
 ---
 
@@ -307,9 +339,11 @@ pytest tests/ -v
 - `tests/test_format_normalization.py` (formatos por red + universal), `test_thought_stream.py`, `test_text_contrast_and_video_models.py`, `test_linkedin_native.py`
 
 3 fallos preexistentes en `test_venice.py` / `test_video_timeline_clips.py` (estructura del edit Shotstack).
+**Hueco:** aún no hay tests de auth SaaS / billing / créditos.
 
 Estado canónico: [`estado-actual.txt`](estado-actual.txt).  
 NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).
+SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md).
 
 ---
 
@@ -332,6 +366,8 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 - **Formatos por red:** catálogo único en `image_specs.py` (`_NETWORK_FORMATS`), servido por `GET /api/image/formats`; el dashboard nunca hardcodea dimensiones
 - **`content_format=universal`** = 1080×1080 idéntico en todas las redes (para publicar la misma pieza en varias); se comporta como `feed` en layout y publicación
 - **TikTok:** generación sí; publish tras App Review. **X:** publish nativo (OAuth 1.0a)
+- **SaaS UI bake-time:** `VITE_STAGING_SAAS` se fija en el build Vite; cambiar el flag en prod exige rebuild del contenedor `frontend`
+- **Contraseñas SaaS:** solo hash; el panel admin (si existe) puede forzar reset, nunca “mostrar” la clave
 
 ---
 
@@ -346,6 +382,8 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 7. CI/CD — Skaffold/Cloud Deploy sin GKE real
 8. Fallback LLM → propagar a UI
 9. Unlimited-OCR descartado (VRAM); PaddleOCR es el camino OCR
+10. SaaS: rate limit login, reset password público, tests auth/billing, JWT_SECRET sin fallback hardcodeado, no skip firma Bold con secret vacío
+11. Panel admin SaaS (usuarios / créditos / reset) — en implementación
 
 ---
 
@@ -354,3 +392,4 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 - Rama activa: `main`
 - Commits directamente a `main`; no crear ramas salvo petición explícita
 - `master` es rama estable; fusionar solo cuando el usuario lo indique
+- Deploy prod: `master` en VPS ≈ `main`; tras `git pull`, `up -d --build` (frontend si cambió `VITE_*`)

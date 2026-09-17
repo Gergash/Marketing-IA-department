@@ -40,7 +40,7 @@ El código fuente **no contiene ninguna URL hardcodeada** de ngrok, localhost ni
 | `STAGING_SUCCESS_REDIRECT_URL` | `http://localhost:5173/app?paid=1` | `https://marketing.powerupsecosistem.online/app?paid=1` |
 | `META_REDIRECT_URI` etc. | `http://localhost:8000/api/auth/callback/meta` | `https://marketing.powerupsecosistem.online/api/auth/callback/meta` |
 
-El **frontend** (Vite) siempre hace peticiones a rutas relativas `/api/*`. En desarrollo, Vite las proxea a `http://127.0.0.1:8000`. En producción, Caddy hace el mismo proxy hacia el contenedor `api:8000`. **El frontend compilado no contiene ninguna URL de backend.**
+El **frontend** (Vite) siempre hace peticiones a rutas relativas `/api/*`. En desarrollo, Vite las proxea a `http://127.0.0.1:8000`. En producción, Caddy hace el mismo proxy hacia el contenedor `api:8000`. **El frontend compilado no contiene ninguna URL de backend**, pero sí hornea `VITE_STAGING_SAAS` en build-time (landing/login). Sin rebuild con ese flag, prod muestra el dashboard legacy aunque la API tenga SaaS activo.
 
 ---
 
@@ -350,6 +350,7 @@ git pull origin master
 nano .env.production
 # Añadir las variables de staging SaaS:
 #   STAGING_SAAS_ENABLED=true
+#   VITE_STAGING_SAAS=true   # build-arg del frontend (compose)
 #   JWT_SECRET=<secreto largo aleatorio>
 #   BOLD_API_KEY=...
 #   BOLD_INTEGRITY_SECRET=...
@@ -358,13 +359,15 @@ nano .env.production
 #   CREDITS_PER_PACK=100
 #   STAGING_SUCCESS_REDIRECT_URL=https://marketing.powerupsecosistem.online/app?paid=1
 
-# Rebuild y restart
+# Rebuild y restart (frontend OBLIGATORIO si cambió VITE_*)
 docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d --build
 
 # Verificar
-docker compose -f infra/docker-compose.prod.yml ps
-curl https://marketing.powerupsecosistem.online/api/auth/me
-```
+docker compose -f infra/docker-compose.prod.yml --env-file .env.production ps
+# Landing debe ser la SaaS (no el dashboard directo en /)
+curl -sI https://marketing.powerupsecosistem.online/login | head -5
+curl -s https://marketing.powerupsecosistem.online/api/auth/me
+# Esperado sin JWT: 401; con SaaS off: 404```
 
 ### 7.3 La migración se aplica automáticamente
 

@@ -220,6 +220,10 @@ Prefijo típico: `/api`.
 | GET | `/runs`, `/runs/{id}` | Historial / estado |
 | POST/GET | `/campaigns`, POST `.../fire` | Scheduler |
 | GET | `/auth/login/{provider}`, callbacks, `/auth/accounts` | OAuth multi-cuenta |
+| POST | `/auth/register`, `/auth/login` | SaaS email (si `STAGING_SAAS_ENABLED`) |
+| GET | `/auth/me` | Perfil + créditos (JWT) |
+| GET | `/billing/credits`, `/billing/bold-checkout` | Saldo / firma Bold |
+| POST | `/billing/bold-webhook` | Confirmación de pago Bold |
 
 Swagger local: `http://127.0.0.1:8000/docs`.
 
@@ -227,6 +231,7 @@ Swagger local: `http://127.0.0.1:8000/docs`.
 
 ## 11. Frontend (dashboard)
 
+- Con **SaaS** (`VITE_STAGING_SAAS=true`): `/` = landing, `/login` = registro/login, `/app` = estudio.
 - Campo de brief: “Descripción del producto o evento”.
 - **Red social** y **Formato de publicación**: dos selects acoplados alimentados por `/image/formats`; al cambiar de red se corrige el formato si dejó de ser válido.
 - Video (solo en `reel`): modo de generación y modelo Venice. En `user_clip_reel`: carpeta Drive, objetivo de edición, N tomas, auto/manual.
@@ -410,7 +415,21 @@ Regla crítica: el **Authorized redirect URI** en Google Cloud Console debe coin
 
 ---
 
-## 17. Glosario rápido
+## 17. Capa SaaS (landing + login + Bold + créditos)
+
+Flags duales (ambos necesarios):
+
+| Variable | Capa | Notas |
+|----------|------|--------|
+| `STAGING_SAAS_ENABLED=true` | API | Auth email, billing, cobro de créditos |
+| `VITE_STAGING_SAAS=true` | Frontend **build** | Rutas `/`, `/login`, `/app`; en Docker es build-arg — rebuild obligatorio |
+
+Flujo: landing → registro/login (JWT) → estudio → comprar créditos (Bold webhook) → publicar descuenta créditos (402 si no hay saldo).  
+Contraseñas: PBKDF2 120k, irreversibles. Guía: `docs/staging-landing-bold.md`.
+
+---
+
+## 18. Glosario rápido
 
 | Término | Significado |
 |---------|-------------|
@@ -422,6 +441,7 @@ Regla crítica: el **Authorized redirect URI** en Google Cloud Console debe coin
 | `user_img2img` | Foto editada con Venice/fal (escena) + tipografía Pillow |
 | Inbound | Marco Attract→Convert→Close→Delight + pirámide de fines en redes |
 | Formato universal | Pieza 1080×1080 que encaja en todas las redes sin recortes |
+| SaaS / staging SaaS | Landing + login email + créditos Bold (flags STAGING/VITE) |
 | Hilo de pensamiento | Stream de eventos de los agentes por `trace_id`, con checkpoints interactivos |
 | `GOOGLE_CLIENT_ID` | ID de cliente OAuth web de Google Cloud para Conectar Google Drive |
 | `drive.readonly` | Scope OAuth: lectura de Drive; no escribe ni borra archivos |
@@ -429,7 +449,7 @@ Regla crítica: el **Authorized redirect URI** en Google Cloud Console debe coin
 
 ---
 
-## 18. Preguntas útiles para hacerle a NotebookLM
+## 19. Preguntas útiles para hacerle a NotebookLM
 
 - ¿Cuál es el flujo completo desde el brief hasta la publicación?
 - ¿Qué hace el manual de marca en el diseño?
@@ -448,6 +468,6 @@ Regla crítica: el **Authorized redirect URI** en Google Cloud Console debe coin
 
 ---
 
-## 19. Resumen ejecutivo
+## 20. Resumen ejecutivo
 
 Marketing DEPA IA es un MVP local completo para generar copy e identidades visuales con agentes, respetar un brand book (OCR + paleta + logos), **editar fotos reales del local con Venice** (escena) y tipografía Pillow, producir Reels o clips desde Drive (cloud + HITL de tomas), elegir el formato correcto de cada red (o uno universal) y publicar con control humano en Meta, LinkedIn o X. Lo más maduro es generación + marca + foto real + formatos + HITL + multi-cuenta + OAuth Google Drive. TikTok se genera; publish tras App Review.

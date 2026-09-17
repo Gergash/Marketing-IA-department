@@ -208,6 +208,27 @@ Sustituye `DOMAIN` por el hostname real.
 - [ ] `docker ps` muestra ambos stacks
 - [ ] Snapshot VPS en Hostinger
 - [ ] Volúmenes Docker de Marketing documentados como independientes de InsightFlow
+- [ ] Si SaaS activo: landing en `/`, login en `/login`, `STAGING_SAAS_ENABLED` + rebuild frontend con `VITE_STAGING_SAAS=true`, `JWT_SECRET` no vacío, webhook Bold al dominio
+
+---
+
+## Capa SaaS en producción
+
+La UI de landing/login **no** se activa solo con el `.env` de la API. Hace falta el build-arg Vite:
+
+```bash
+# En .env.production
+STAGING_SAAS_ENABLED=true
+VITE_STAGING_SAAS=true
+JWT_SECRET=<secreto-largo>
+BOLD_API_KEY=...
+BOLD_INTEGRITY_SECRET=...
+BOLD_WEBHOOK_SECRET=...
+
+docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d --build frontend api
+```
+
+Detalle: [`../../docs/staging-landing-bold.md`](../../docs/staging-landing-bold.md).
 
 ---
 

@@ -14,6 +14,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - Hilo de pensamiento en vivo de los agentes + modo interactivo con checkpoints
 - Publicación nativa Meta/Instagram (OAuth + sidecar Go), LinkedIn (OAuth + Python) y **X/Twitter** (OAuth 1.0a + Python)
 - HITL: tomas (`pending_takes`) → aprobar / rechazar / solicitar cambios el MP4 (`pending_approval` / `revise`)
+- **SaaS opcional:** landing, registro/login, créditos Bold y cobro al publicar — ver [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
 
 ## Stack Tecnológico
 
@@ -48,8 +49,9 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
 - **Paso 17** 🔄 **OpenRouter** como LLM cloud en prod (`OPENAI_API_BASE`); integración OAuth Meta/X documentada en `infra/deploy/`
 - **Paso 18** ✅ **Foto real + edit** Venice `gpt-image-2-edit` **y** fal `FLUX Kontext` (`alter_image_with_ai` → escena; tipografía Pillow; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
+- **Paso 19** ✅ **Capa SaaS** landing + login + JWT + créditos Bold (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` bake-time) — [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md). Hardening y panel admin pendientes
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-10).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-17).
 
 ## Formatos de publicación
 

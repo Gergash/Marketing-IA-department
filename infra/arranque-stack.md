@@ -22,6 +22,8 @@ cd frontend && npm install && cd ..
 
 Copia y configura `.env` desde `.env.example` (nunca commitear `.env`).
 
+**Capa SaaS (landing/login/Bold):** `STAGING_SAAS_ENABLED=true` en `.env` + `VITE_STAGING_SAAS=true` en `frontend/.env.local`. Guía: [`../docs/staging-landing-bold.md`](../docs/staging-landing-bold.md).
+
 ---
 
 ## Orden de arranque — 7–8 terminales

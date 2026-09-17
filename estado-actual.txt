@@ -1,16 +1,30 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-09-13
-Último foco: fal.ai con paridad Venice para alterar fotos reales (FLUX Kontext) + docs cloud Drive.
+Actualizado: 2026-09-17
+Último foco: capa SaaS (landing + login + Bold + créditos) activa en staging/prod + fix `VITE_STAGING_SAAS` en build Docker.
 **Producción:** `https://marketing.powerupsecosistem.online` · VPS `insightflow@2.25.107.229` · compose `marketing-depa-prod`  
 **InsightFlow (no tocar):** `https://api.powerupsecosistem.online`
 
 **NotebookLM:** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) · [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)  
-**Foto real + edit:** [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
+**Foto real + edit:** [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)  
+**SaaS / Bold:** [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/manual-staging.md`](docs/manual-staging.md)
 
 ---
 
 ### Cronología reciente
+
+#### 2026-09-17 — Capa SaaS + login en prod (VITE bake)
+
+| Entrega | Detalle |
+|---------|---------|
+| **Flags duales** | API: `STAGING_SAAS_ENABLED=true`. Frontend: `VITE_STAGING_SAAS=true` (Vite bake-time; **no basta** con el `.env` de la API) |
+| **Fix prod** | `Dockerfile.frontend` + `docker-compose.prod.yml` pasan `VITE_STAGING_SAAS` al build; sin eso `/` abre el dashboard legacy |
+| **Rutas UI** | `/` landing · `/login` registro/login · `/app` estudio (JWT) |
+| **Auth email** | `POST /api/auth/register\|login`, `GET /api/auth/me` — JWT + PBKDF2-HMAC-SHA256 (120k); contraseñas **no** recuperables en claro |
+| **Billing** | Bold checkout + webhook → créditos por tenant; publicar sin saldo → **402** |
+| **Legacy** | Con SaaS off, sigue `API_KEY` Bearer |
+| **Huecos conocidos** | Sin reset password público · sin rate limit login · JWT_SECRET no debe quedar vacío (fallback `dev-staging-change-me`) · sin tests auth/billing · panel admin en curso |
+| **Docs** | staging-landing-bold, manual-staging, CLAUDE, vps-hostinger, .env.example |
 
 #### 2026-09-13 — fal.ai edición de foto real (paridad Venice)
 
@@ -293,14 +307,35 @@ Modos (`GET /api/video/options`): `full` = clip AI completo con Venice; `scenes`
 - `POST /runs/{id}/approve`, `/reject`, `/revise`
 - `GET /runs`, `/runs/{id}`
 - `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
-- OAuth: `/auth/login|callback/{meta,linkedin,google,x}`, `/auth/status`, `/auth/accounts`, `DELETE /auth/accounts/{id}`
+- OAuth social: `/auth/login|callback/{meta,linkedin,google,x}`, `/auth/status`, `/auth/accounts`, `DELETE /auth/accounts/{id}`
+- SaaS (si `STAGING_SAAS_ENABLED`): `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
+- Billing: `GET /billing/credits`, `GET /billing/bold-checkout`, `POST /billing/bold-webhook`
 
 Estáticos: `static/uploads/`, `static/uploads/brand/`, `static/uploads/clips/{run_id}/shorts/`, `static/images/`, `static/videos/`, `static/fonts/`.
 
 ---
 
+### Capa SaaS (landing + créditos)
+
+Activación **obligatoria en dos sitios**:
+
+| Capa | Variable | Dónde |
+|------|----------|--------|
+| Backend | `STAGING_SAAS_ENABLED=true` | `.env` / `.env.production` |
+| Frontend | `VITE_STAGING_SAAS=true` | `frontend/.env.local` (dev) o build-arg Docker (prod) |
+
+Flujo: landing → registro/login (email único) → JWT → estudio `/app` → comprar créditos (Bold) → publicar consume créditos.
+
+Tablas: `app_users`, `credit_wallets`, `payment_records` (schema_patches al arrancar).  
+Guía: `docs/staging-landing-bold.md`. Manual largo: `docs/manual-staging.md`.
+
+**Prod:** tras cambiar `VITE_STAGING_SAAS`, hay que **rebuild** `frontend` (`docker compose … up -d --build frontend`). Reiniciar solo la API no cambia la UI.
+
+---
+
 ### Frontend (dashboard)
 
+- Con SaaS: landing `/`, login `/login`, estudio `/app` + barra de créditos
 - Brief: descripción producto/evento, público, objetivo, tono
 - Red social + Formato: selects acoplados servidos por `/image/formats` (+ Drive folder, objetivo de edición, N tomas, auto/manual en `user_clip_reel`)
 - Video: modo de generación y modelo Venice (solo en `reel`)
@@ -361,9 +396,19 @@ X_API_KEY=...
 X_API_SECRET=...
 X_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/x
 PUBLIC_IMAGE_BASE_URL=https://marketing.powerupsecosistem.online
+# SaaS (landing + login + Bold)
+STAGING_SAAS_ENABLED=true
+VITE_STAGING_SAAS=true          # build-arg del frontend; rebuild obligatorio
+JWT_SECRET=<secreto-largo>      # NUNCA vacío en prod
+BOLD_API_KEY=...
+BOLD_INTEGRITY_SECRET=...
+BOLD_WEBHOOK_SECRET=...
+PACK_AMOUNT_COP=99000
+CREDITS_PER_PACK=100
 ```
 
-Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d api worker video-worker`
+Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d api worker video-worker`  
+Tras cambiar `VITE_STAGING_SAAS`: mismo comando con `--build frontend` (o `up -d --build`).
 
 **No commitear `.env` ni `.env.production`.**
 
@@ -390,6 +435,7 @@ Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml -
 | 23 OpenRouter LLM en prod | 🔄 Key + validar que no caiga a stub |
 | 24 Biblioteca multi-imagen | ⬜ Modelo `UserAsset` iniciado; API/UI pendiente |
 | 25 Copy sin eco del brief | ⬜ Endurecer strategist/copywriter/QA + overlay |
+| 26 Capa SaaS (landing/login/Bold/créditos) | ✅ Flags + prod UI (VITE bake); panel admin / hardening pendientes |
 
 ---
 
@@ -401,20 +447,22 @@ Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml -
 4. **X:** post de prueba en prod (Integraciones o tokens en env)
 5. **Meta:** verificar Conectar Meta tras Basic Settings en dominio prod
 6. **Biblioteca de fotos:** subir varias imágenes reutilizables por tenant (WIP `UserAsset`)
-7. **Copy/overlay:** evitar que texto del brief (tema, público, objetivo, tono) aparezca literal en imagen/caption
-8. CI/CD contra GKE real + Secret Manager
-9. Fallback LLM stub → propagar error a la UI
-10. Revise v2: historial de versiones y notas en copy + overlay Pillow
-11. Formato `universal` en video: hoy solo cubre imagen
-12. LinkedIn: solo perfil personal; solo imagen; token ~60 d sin refresh auto
-13. OAuth `_pending_states` en memoria (rompe con réplicas K8s)
-14. OpenRouter en prod: confirmar agentes usan LLM real, no stub
+7. **SaaS hardening:** JWT_SECRET obligatorio sin fallback; rate limit login/registro; reset password; tests auth/billing; no saltar firma Bold si secret vacío
+8. **Panel admin** (en curso): listar usuarios, forzar reset password, créditos — sin mostrar hashes como texto plano
+9. **Copy/overlay:** evitar que texto del brief (tema, público, objetivo, tono) aparezca literal en imagen/caption
+10. CI/CD contra GKE real + Secret Manager
+11. Fallback LLM stub → propagar error a la UI
+12. Revise v2: historial de versiones y notas en copy + overlay Pillow
+13. Formato `universal` en video: hoy solo cubre imagen
+14. LinkedIn: solo perfil personal; solo imagen; token ~60 d sin refresh auto
+15. OAuth `_pending_states` en memoria (rompe con réplicas K8s)
+16. OpenRouter en prod: confirmar agentes usan LLM real, no stub
 
 ---
 
 ### Resumen
 
-MVP **end-to-end**: brief con **manual de marca**, copy con QA e inbound, piezas por red (IG, FB, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento, HITL con revise, publicación **Meta/LinkedIn/X** (multi-cuenta donde aplica).
+MVP **end-to-end**: brief con **manual de marca**, copy con QA e inbound, piezas por red (IG, FB, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento, HITL con revise, publicación **Meta/LinkedIn/X** (multi-cuenta donde aplica), más capa **SaaS** (landing/login/créditos Bold) en staging y prod.
 
 **Producción:** `marketing.powerupsecosistem.online` en VPS Hostinger junto a InsightFlow.  
-**Docs:** este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md` (local) + `infra/deploy/vps-hostinger.md` + `infra/deploy/proceso-integracion-redes.md`.
+**Docs:** este archivo + `README.md` + `CLAUDE.md` + `docs/staging-landing-bold.md` + `infra/arranque-stack.md` (local) + `infra/deploy/vps-hostinger.md` + `infra/deploy/proceso-integracion-redes.md`.

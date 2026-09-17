@@ -1,41 +1,50 @@
-# Staging local — Marketing DEPA IA
+# Capa SaaS — Marketing DEPA IA
 
 Landing, registro/login por correo (único), botón Bold y créditos para publicar en redes.
 
-## Activar en local
+Guía larga (manual local + ngrok): [`manual-staging.md`](manual-staging.md).
+
+## Activar
 
 ### 1. Backend
 
-Copia variables de `.env.staging.example` a `.env` en la raíz del proyecto:
+Copia variables de `.env.staging.example` a `.env` (local) o `.env.production` (VPS):
 
 ```bash
 STAGING_SAAS_ENABLED=true
-JWT_SECRET=un-secreto-largo-aleatorio
+JWT_SECRET=un-secreto-largo-aleatorio   # obligatorio en prod; no dejar vacío
+JWT_TTL_MINUTES=10080
 BOLD_API_KEY=<llave identidad Bold>
 BOLD_INTEGRITY_SECRET=<llave secreta Bold>
 BOLD_WEBHOOK_SECRET=<misma llave secreta>
 PACK_AMOUNT_COP=99000
 CREDITS_PER_PACK=100
 STAGING_SUCCESS_REDIRECT_URL=http://localhost:5173/app?paid=1
+# Prod:
+# STAGING_SUCCESS_REDIRECT_URL=https://marketing.powerupsecosistem.online/app?paid=1
 ```
 
-Instala dependencia nueva:
+SQLite/Postgres crean tablas `app_users`, `credit_wallets` y `payment_records` al iniciar (`schema_patches`).
 
-```bash
-pip install PyJWT
-```
+### 2. Frontend (bake-time)
 
-Arranca API y frontend como siempre (`uvicorn` + `npm run dev` en `frontend/`).
+El flag de UI **no** se lee del `.env` de la API en runtime. Vite lo hornea en el build.
 
-SQLite crea tablas `app_users`, `credit_wallets` y `payment_records` al iniciar (schema_patches).
-
-### 2. Frontend
-
-Crea `frontend/.env.local`:
+**Local** — `frontend/.env.local`:
 
 ```bash
 VITE_STAGING_SAAS=true
 ```
+
+**Prod (Docker)** — `infra/docker-compose.prod.yml` pasa el build-arg:
+
+```yaml
+args:
+  VITE_API_URL: ""
+  VITE_STAGING_SAAS: ${VITE_STAGING_SAAS:-true}
+```
+
+Tras cambiar `VITE_STAGING_SAAS` en el VPS hay que **rebuild** el contenedor `frontend`. Reiniciar solo `api` no activa landing/login.
 
 ### 3. Rutas
 
@@ -43,17 +52,27 @@ VITE_STAGING_SAAS=true
 |-----|----------|
 | `/` | Landing del departamento de marketing agéntico |
 | `/login` | Registro o login (email único) |
-| `/app` | Estudio de marketing (dashboard existente) |
+| `/app` | Estudio de marketing (dashboard) |
 
-Tras **registro exitoso** (correo no repetido) o login, se muestra el **botón Bold** para comprar el paquete de créditos.
+Tras **registro exitoso** o login, la UI muestra el **botón Bold** para comprar el paquete de créditos.
 
-## Bold + webhook en dev
+## Auth
 
-1. Panel Bold → Webhook: `https://<tu-ngrok>/api/billing/bold-webhook`
-2. `BOLD_WEBHOOK_SECRET` = misma llave secreta del botón (patrón Malcom/InsightFlow).
-3. Referencia de orden: `MDIA-{tenant_id}-{timestamp}` — el webhook extrae `tenant_id` y acredita `CREDITS_PER_PACK`.
+| Pieza | Detalle |
+|-------|---------|
+| Hash | PBKDF2-HMAC-SHA256, 120 000 iteraciones — **irreversible** |
+| Token | JWT (`sub`=email, `tenant_id`); default TTL 7 días |
+| Legacy | Con `STAGING_SAAS_ENABLED=false`, sigue `API_KEY` Bearer |
 
-Para probar pagos reales necesitas ngrok apuntando al gateway `:8000`.
+No existe (aún) recuperación pública de contraseña ni rate limiting en login/registro. Un panel admin puede forzar reset sin exponer el hash en claro.
+
+## Bold + webhook
+
+1. Panel Bold → Webhook: `https://<dominio>/api/billing/bold-webhook` (local: ngrok → `:8000`)
+2. `BOLD_WEBHOOK_SECRET` = misma llave secreta del botón.
+3. Referencia de orden: `MDIA-{tenant_id}-{timestamp}` — el webhook acredita `CREDITS_PER_PACK`.
+
+**Importante:** si `BOLD_WEBHOOK_SECRET` / `BOLD_INTEGRITY_SECRET` quedan vacíos, la validación de firma puede saltarse — no dejes secretos vacíos en prod.
 
 ## Créditos por publicación
 
@@ -64,17 +83,26 @@ Para probar pagos reales necesitas ngrok apuntando al gateway `:8000`.
 | Video con subtítulos | 5 |
 | Reel / clip IA | 8 |
 
-Si no hay créditos suficientes al publicar, la API responde **402 Payment Required**.
+Sin saldo suficiente al publicar → **402 Payment Required**.
 
-## Endpoints nuevos
+## Endpoints
 
 - `POST /api/auth/register` — email, password, full_name
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `GET /api/billing/credits`
-- `GET /api/billing/bold-checkout` — firma integridad Bold (requiere JWT)
+- `GET /api/billing/bold-checkout` — firma integridad Bold (JWT)
 - `POST /api/billing/bold-webhook`
 
-## Producción
+## Producción (estado actual)
 
-Mantén `STAGING_SAAS_ENABLED=false` en producción hasta validar el flujo completo. El modo legacy con `API_KEY` sigue funcionando cuando staging está desactivado.
+SaaS puede ir **activo** en `marketing.powerupsecosistem.online` con ambos flags en `true` y frontend reconstruido.
+
+Checklist:
+
+1. `STAGING_SAAS_ENABLED=true` + `JWT_SECRET` fuerte en `.env.production`
+2. `VITE_STAGING_SAAS=true` (build-arg) → `docker compose … up -d --build frontend`
+3. Llaves Bold + webhook HTTPS del dominio
+4. Hard refresh del navegador tras el rebuild
+
+Con SaaS off (`STAGING_SAAS_ENABLED=false` y rebuild con `VITE_STAGING_SAAS=false`), el modo legacy con `API_KEY` sigue disponible.

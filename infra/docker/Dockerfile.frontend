@@ -8,6 +8,9 @@ COPY frontend/ ./
 # Misma origen que la API pública (Caddy en :443). Vacío = rutas relativas /api.
 ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
+# Landing + login SaaS (Vite bake-time; debe coincidir con STAGING_SAAS_ENABLED en API).
+ARG VITE_STAGING_SAAS=false
+ENV VITE_STAGING_SAAS=$VITE_STAGING_SAAS
 RUN npm run build
 
 FROM nginx:1.27-alpine

@@ -18,6 +18,8 @@ services:
       args:
         # Misma origen HTTPS (Caddy del host) → rutas relativas /api
         VITE_API_URL: ""
+        # Landing + login (bake-time). Override con VITE_STAGING_SAAS=false si no se quiere en prod.
+        VITE_STAGING_SAAS: ${VITE_STAGING_SAAS:-true}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8081:80"

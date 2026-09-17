@@ -7,6 +7,7 @@ import { Link, useNavigate } from "./RouterLink";
 export default function StagingBar() {
   const navigate = useNavigate();
   const [credits, setCredits] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const user = loadAuthUser();
 
   useEffect(() => {
@@ -14,6 +15,9 @@ export default function StagingBar() {
     authFetch("/billing/credits")
       .then((d) => setCredits(d.balance))
       .catch(() => setCredits(null));
+    authFetch("/auth/me")
+      .then((me) => setIsAdmin(Boolean(me.is_admin)))
+      .catch(() => setIsAdmin(false));
   }, []);
 
   if (!isStagingMode()) return null;
@@ -28,6 +32,11 @@ export default function StagingBar() {
             <span className="staging-bar-credits">
               Créditos: <strong>{credits ?? user.credits_balance ?? "…"}</strong>
             </span>
+            {isAdmin && (
+              <Link to="/admin" className="staging-btn staging-btn-primary staging-btn-sm">
+                Admin
+              </Link>
+            )}
             <details className="staging-bar-pay">
               <summary>Recargar con Bold</summary>
               <BoldCheckout />

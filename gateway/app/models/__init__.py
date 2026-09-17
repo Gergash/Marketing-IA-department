@@ -2,6 +2,7 @@
 
 from .entities import (
     AgentRun,
+    ApiUsageEvent,
     AppUser,
     Brief,
     CampaignSchedule,
@@ -16,6 +17,7 @@ from .entities import (
 __all__ = [
     "Brief",
     "AgentRun",
+    "ApiUsageEvent",
     "AppUser",
     "CreditWallet",
     "PaymentRecord",

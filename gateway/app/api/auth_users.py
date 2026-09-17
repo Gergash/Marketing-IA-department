@@ -43,6 +43,8 @@ class MeResponse(BaseModel):
     full_name: str = ""
     credits_balance: int
     staging_enabled: bool
+    is_admin: bool = False
+    is_active: bool = True
 
 
 def _ensure_staging() -> None:
@@ -102,13 +104,24 @@ def me(
     tenant_id: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> MeResponse:
+    from gateway.app.core.auth import require_admin
+
     s = get_settings()
     wallet = get_or_create_wallet(db, tenant_id)
     user = db.execute(select(AppUser).where(AppUser.tenant_id == tenant_id)).scalar_one_or_none()
+    is_admin = False
+    if user is not None:
+        try:
+            require_admin(tenant_id=tenant_id, db=db)
+            is_admin = True
+        except HTTPException:
+            is_admin = False
     return MeResponse(
         email=user.email if user else "",
         tenant_id=tenant_id,
         full_name=(user.full_name if user else "") or "",
         credits_balance=wallet.balance,
         staging_enabled=s.staging_saas_enabled,
+        is_admin=is_admin,
+        is_active=bool(user.is_active) if user else True,
     )

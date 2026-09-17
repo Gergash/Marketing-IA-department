@@ -7,7 +7,7 @@ Actualizado: 2026-09-17
 
 **NotebookLM:** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) · [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)  
 **Foto real + edit:** [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)  
-**SaaS / Bold:** [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/manual-staging.md`](docs/manual-staging.md)
+**SaaS / Bold:** [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/manual-staging.md`](docs/manual-staging.md) · [`docs/admin-panel.md`](docs/admin-panel.md)
 
 ---
 
@@ -23,7 +23,8 @@ Actualizado: 2026-09-17
 | **Auth email** | `POST /api/auth/register\|login`, `GET /api/auth/me` — JWT + PBKDF2-HMAC-SHA256 (120k); contraseñas **no** recuperables en claro |
 | **Billing** | Bold checkout + webhook → créditos por tenant; publicar sin saldo → **402** |
 | **Legacy** | Con SaaS off, sigue `API_KEY` Bearer |
-| **Huecos conocidos** | Sin reset password público · sin rate limit login · JWT_SECRET no debe quedar vacío (fallback `dev-staging-change-me`) · sin tests auth/billing · panel admin en curso |
+| **Huecos conocidos** | Sin reset password público · sin rate limit login · JWT_SECRET no debe quedar vacío (fallback `dev-staging-change-me`) · sin tests auth/billing (sí hay `test_admin_panel`) · Auth0 en integración (usuario) |
+| **Panel admin** | `/admin` — resumen, usuarios, pagos, consumo APIs; `ADMIN_EMAILS` bootstrap; docs `docs/admin-panel.md` |
 | **Docs** | staging-landing-bold, manual-staging, CLAUDE, vps-hostinger, .env.example |
 
 #### 2026-09-13 — fal.ai edición de foto real (paridad Venice)
@@ -435,7 +436,7 @@ Tras cambiar `VITE_STAGING_SAAS`: mismo comando con `--build frontend` (o `up -d
 | 23 OpenRouter LLM en prod | 🔄 Key + validar que no caiga a stub |
 | 24 Biblioteca multi-imagen | ⬜ Modelo `UserAsset` iniciado; API/UI pendiente |
 | 25 Copy sin eco del brief | ⬜ Endurecer strategist/copywriter/QA + overlay |
-| 26 Capa SaaS (landing/login/Bold/créditos) | ✅ Flags + prod UI (VITE bake); panel admin / hardening pendientes |
+| 26 Capa SaaS (landing/login/Bold/créditos) | ✅ Flags + prod UI (VITE bake); panel admin `/admin` listo; Auth0 pendiente |
 
 ---
 
@@ -448,7 +449,7 @@ Tras cambiar `VITE_STAGING_SAAS`: mismo comando con `--build frontend` (o `up -d
 5. **Meta:** verificar Conectar Meta tras Basic Settings en dominio prod
 6. **Biblioteca de fotos:** subir varias imágenes reutilizables por tenant (WIP `UserAsset`)
 7. **SaaS hardening:** JWT_SECRET obligatorio sin fallback; rate limit login/registro; reset password; tests auth/billing; no saltar firma Bold si secret vacío
-8. **Panel admin** (en curso): listar usuarios, forzar reset password, créditos — sin mostrar hashes como texto plano
+8. **Panel admin** ✅ `/admin` + `ADMIN_EMAILS`; Auth0 reemplazará solo el IdP (reset password → dashboard Auth0)
 9. **Copy/overlay:** evitar que texto del brief (tema, público, objetivo, tono) aparezca literal en imagen/caption
 10. CI/CD contra GKE real + Secret Manager
 11. Fallback LLM stub → propagar error a la UI

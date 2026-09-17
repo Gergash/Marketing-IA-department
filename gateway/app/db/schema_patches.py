@@ -72,6 +72,51 @@ CREATE TABLE IF NOT EXISTS app_users (
 """
                 )
             )
+            rows_au = conn.execute(text("PRAGMA table_info(app_users)")).fetchall()
+            if rows_au:
+                cols_au = {r[1] for r in rows_au}
+                if "is_admin" not in cols_au:
+                    conn.execute(
+                        text("ALTER TABLE app_users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0")
+                    )
+                if "is_active" not in cols_au:
+                    conn.execute(
+                        text("ALTER TABLE app_users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
+                    )
+                if "last_login_at" not in cols_au:
+                    conn.execute(text("ALTER TABLE app_users ADD COLUMN last_login_at DATETIME"))
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS api_usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id VARCHAR(64) NOT NULL,
+    run_id VARCHAR(64),
+    provider VARCHAR(32) NOT NULL,
+    operation VARCHAR(32) NOT NULL,
+    model VARCHAR(128) NOT NULL DEFAULT '',
+    units INTEGER NOT NULL DEFAULT 1,
+    credits_cost INTEGER NOT NULL DEFAULT 0,
+    success BOOLEAN NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+"""
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_api_usage_events_tenant_id ON api_usage_events(tenant_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_api_usage_events_run_id ON api_usage_events(run_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_api_usage_events_provider ON api_usage_events(provider)")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_api_usage_events_created_at ON api_usage_events(created_at)"
+                )
+            )
             conn.execute(
                 text(
                     """
@@ -132,6 +177,47 @@ CREATE TABLE IF NOT EXISTS app_users (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 )
 """
+                )
+            )
+            conn.execute(
+                text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
+            )
+            conn.execute(
+                text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
+            )
+            conn.execute(
+                text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP")
+            )
+            conn.execute(
+                text(
+                    """
+CREATE TABLE IF NOT EXISTS api_usage_events (
+    id SERIAL PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL,
+    run_id VARCHAR(64),
+    provider VARCHAR(32) NOT NULL,
+    operation VARCHAR(32) NOT NULL,
+    model VARCHAR(128) NOT NULL DEFAULT '',
+    units INTEGER NOT NULL DEFAULT 1,
+    credits_cost INTEGER NOT NULL DEFAULT 0,
+    success BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+)
+"""
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_api_usage_events_tenant_id ON api_usage_events(tenant_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_api_usage_events_run_id ON api_usage_events(run_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_api_usage_events_provider ON api_usage_events(provider)")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_api_usage_events_created_at ON api_usage_events(created_at)"
                 )
             )
             conn.execute(

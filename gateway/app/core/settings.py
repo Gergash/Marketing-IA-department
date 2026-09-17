@@ -200,6 +200,11 @@ class Settings(BaseSettings):
     # Slack Incoming Webhook para notificaciones human-in-the-loop
     slack_webhook_url: str = ""
 
+    # Panel de administrador — emails con acceso aunque su fila AppUser.is_admin sea False
+    # (bootstrap: evita el huevo-gallina de tener que ser admin en BD para volverse admin)
+    admin_emails: str = ""
+    admin_panel_enabled: bool = True
+
     # Hilo de pensamiento de los agentes (Marketing Studio)
     thoughts_enabled: bool = True
     thoughts_ttl_seconds: int = 7200

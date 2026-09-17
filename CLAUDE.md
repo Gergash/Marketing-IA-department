@@ -383,7 +383,7 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md).
 8. Fallback LLM → propagar a UI
 9. Unlimited-OCR descartado (VRAM); PaddleOCR es el camino OCR
 10. SaaS: rate limit login, reset password público, tests auth/billing, JWT_SECRET sin fallback hardcodeado, no skip firma Bold con secret vacío
-11. Panel admin SaaS (usuarios / créditos / reset) — en implementación
+11. Panel admin SaaS (`/admin`, `docs/admin-panel.md`) — listo; Auth0 lo integra el usuario por separado
 
 ---
 

@@ -60,7 +60,18 @@ export async function authFetch(path, options = {}) {
   }
   if (!res.ok) {
     const detail = data.detail || text || res.statusText;
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    // 401 = sesión inválida/caída: forzar relogin. 403 = sin permiso; el llamador decide qué mostrar.
+    if (res.status === 401 && isStagingMode()) {
+      clearAuthSession();
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.history.pushState({}, "", "/login");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
+      throw new Error("Tu sesión expiró. Inicia sesión de nuevo.");
+    }
+    const err = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    err.status = res.status;
+    throw err;
   }
   return data;
 }

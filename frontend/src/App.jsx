@@ -3,7 +3,9 @@ import AdvisorChatBubble from "./AdvisorChatBubble";
 import AgentThoughtThread from "./AgentThoughtThread";
 import Integrations from "./Integrations";
 import { BrandMark } from "./BrandMark";
-import { getAuthToken } from "./auth";
+import { Link } from "./RouterLink";
+import { authFetch, getAuthToken, isStagingMode } from "./auth";
+import "./staging.css";
 
 /** Traza del hilo de pensamiento: el cliente la genera porque /runs/sync no devuelve el run_id hasta terminar. */
 function newTraceId() {
@@ -261,6 +263,18 @@ export default function App() {
   const [revisionFeedback, setRevisionFeedback] = useState(null);
   const [renderingTakesRunId, setRenderingTakesRunId] = useState(null);
   const [savingTakesRunId, setSavingTakesRunId] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!isStagingMode() || !getAuthToken()) return;
+    let alive = true;
+    authFetch("/auth/me")
+      .then((me) => alive && setIsAdmin(Boolean(me.is_admin)))
+      .catch(() => alive && setIsAdmin(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const loadHistory = async () => {
     try {
@@ -732,6 +746,15 @@ export default function App() {
           <h1>Marketing Agéntico (Auto)</h1>
           <p className="app-brand-sub">Estudio de marketing multiagente</p>
         </div>
+        {isAdmin && (
+          <Link
+            to="/admin"
+            className="staging-btn staging-btn-primary staging-btn-sm"
+            style={{ marginLeft: "auto" }}
+          >
+            Panel admin
+          </Link>
+        )}
       </header>
 
       {/* API Key */}

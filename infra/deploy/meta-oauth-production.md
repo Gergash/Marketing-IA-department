@@ -1,5 +1,7 @@
 # Meta / Instagram OAuth — URLs de producción
 
+> **2026-09-17 noche:** el usuario pidió documentar el repo y **no** pasar la app de Meta a Live hasta dar la bandera. Este archivo es la guía; **no ejecutar** el trámite App Review / Live hasta esa bandera.
+
 Usar cuando el departamento corre en **`https://marketing.powerupsecosistem.online`** (VPS), no ngrok.
 
 App ID del proyecto: `1258515492788752` (mismo valor en `META_APP_ID` / `META_CLIENT_ID`).

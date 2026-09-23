@@ -4,7 +4,7 @@
 
 MVP de automatización de marketing con agentes de IA. Flujo: brief (+ manual de marca) → estrategia → copy con QA → diseño visual → aprobación humana → publicación en redes.
 
-Capa opcional **SaaS**: landing + registro/login email + JWT + créditos Bold (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS`). Ver `docs/staging-landing-bold.md`.
+Capa opcional **SaaS**: landing + **Auth0 Universal Login** (única identidad) + créditos Bold (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` + `VITE_AUTH0_*`). Ver `docs/auth0.md`, `docs/admin-panel.md`, `docs/staging-landing-bold.md`. Snapshot 17-sep: `docs/estado-saas-auth0-2026-09-17.md`.
 
 **Prioridad de desarrollo:** un solo developer, mediados 2026, iterar rápido sin sobre-ingenierizar.
 
@@ -339,11 +339,12 @@ pytest tests/ -v
 - `tests/test_format_normalization.py` (formatos por red + universal), `test_thought_stream.py`, `test_text_contrast_and_video_models.py`, `test_linkedin_native.py`
 
 3 fallos preexistentes en `test_venice.py` / `test_video_timeline_clips.py` (estructura del edit Shotstack).
-**Hueco:** aún no hay tests de auth SaaS / billing / créditos.
+**Hueco residual:** tests JWKS live / billing Bold E2E. Hay `tests/test_admin_panel.py` y `tests/test_auth0_saas.py` (410 + upsert).
 
 Estado canónico: [`estado-actual.txt`](estado-actual.txt).  
-NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).
-SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md).
+Snapshot Auth0 (noche 17-sep): [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md).  
+NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).  
+SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/auth0.md`](docs/auth0.md) · [`docs/admin-panel.md`](docs/admin-panel.md).
 
 ---
 
@@ -366,8 +367,10 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md).
 - **Formatos por red:** catálogo único en `image_specs.py` (`_NETWORK_FORMATS`), servido por `GET /api/image/formats`; el dashboard nunca hardcodea dimensiones
 - **`content_format=universal`** = 1080×1080 idéntico en todas las redes (para publicar la misma pieza en varias); se comporta como `feed` en layout y publicación
 - **TikTok:** generación sí; publish tras App Review. **X:** publish nativo (OAuth 1.0a)
-- **SaaS UI bake-time:** `VITE_STAGING_SAAS` se fija en el build Vite; cambiar el flag en prod exige rebuild del contenedor `frontend`
-- **Contraseñas SaaS:** solo hash; el panel admin (si existe) puede forzar reset, nunca “mostrar” la clave
+- **SaaS UI bake-time:** `VITE_STAGING_SAAS` y `VITE_AUTH0_*` se fijan en el build Vite; cambiar flags en prod exige rebuild del contenedor `frontend`
+- **Identidad SaaS:** solo Auth0 ID token. `/api/auth/register` y `/login` locales son **410**. Reset password del panel admin es **410**
+- **Panel admin:** lee `app_users` / `payment_records` / `api_usage_events`; bootstrap `ADMIN_EMAILS`. No llama Auth0 Management ni Venice dashboard
+- **Rutas staging:** unknown paths (p.ej. `/ladmin`) van a landing; nunca fallback a `App` sin sesión
 
 ---
 
@@ -377,13 +380,14 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md).
 2. Stable Diffusion local — alternativa; A1111 caído → error explícito
 3. Video v2 — música, captions por palabra; bucket S3/GCS opcional (hoy Drive del cliente)
 4. TikTok fase 2 (auditoría app)
-5. Meta: re-OAuth scopes IG; ngrok dominio fijo
+5. Meta App Live / Review — **esperar bandera del usuario**; código OAuth+Go ya existe
 6. Revise v2 — historial de versiones
 7. CI/CD — Skaffold/Cloud Deploy sin GKE real
 8. Fallback LLM → propagar a UI
 9. Unlimited-OCR descartado (VRAM); PaddleOCR es el camino OCR
-10. SaaS: rate limit login, reset password público, tests auth/billing, JWT_SECRET sin fallback hardcodeado, no skip firma Bold con secret vacío
-11. Panel admin SaaS (`/admin`, `docs/admin-panel.md`) — listo; Auth0 lo integra el usuario por separado
+10. SaaS: callbacks Auth0 de prod, rate limit, Custom Domain, tests JWKS live, no skip firma Bold con secret vacío
+11. Panel admin `/admin` listo en código; Auth0-only en working tree local; deploy Auth0 a VPS pendiente
+12. Commit del working tree Auth0 cuando se pida; `main` ahead 4 vs origin
 
 ---
 

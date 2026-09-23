@@ -85,6 +85,14 @@ CREATE TABLE IF NOT EXISTS app_users (
                     )
                 if "last_login_at" not in cols_au:
                     conn.execute(text("ALTER TABLE app_users ADD COLUMN last_login_at DATETIME"))
+                # Auth0-only: subject único; SQLite no tiene IF NOT EXISTS en ADD COLUMN.
+                if "auth0_sub" not in cols_au:
+                    conn.execute(text("ALTER TABLE app_users ADD COLUMN auth0_sub VARCHAR(128)"))
+                    conn.execute(
+                        text(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS ix_app_users_auth0_sub ON app_users(auth0_sub)"
+                        )
+                    )
             conn.execute(
                 text(
                     """
@@ -187,6 +195,14 @@ CREATE TABLE IF NOT EXISTS app_users (
             )
             conn.execute(
                 text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP")
+            )
+            conn.execute(
+                text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS auth0_sub VARCHAR(128)")
+            )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_app_users_auth0_sub ON app_users(auth0_sub)"
+                )
             )
             conn.execute(
                 text(

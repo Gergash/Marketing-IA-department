@@ -14,7 +14,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - Hilo de pensamiento en vivo de los agentes + modo interactivo con checkpoints
 - Publicación nativa Meta/Instagram (OAuth + sidecar Go), LinkedIn (OAuth + Python) y **X/Twitter** (OAuth 1.0a + Python)
 - HITL: tomas (`pending_takes`) → aprobar / rechazar / solicitar cambios el MP4 (`pending_approval` / `revise`)
-- **SaaS opcional:** landing, registro/login, créditos Bold y cobro al publicar — ver [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
+- **SaaS opcional:** landing, **Auth0 Universal Login**, créditos Bold, panel `/admin` — ver [`docs/auth0.md`](docs/auth0.md), [`docs/admin-panel.md`](docs/admin-panel.md), [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
 
 ## Stack Tecnológico
 
@@ -49,9 +49,9 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
 - **Paso 17** 🔄 **OpenRouter** como LLM cloud en prod (`OPENAI_API_BASE`); integración OAuth Meta/X documentada en `infra/deploy/`
 - **Paso 18** ✅ **Foto real + edit** Venice `gpt-image-2-edit` **y** fal `FLUX Kontext` (`alter_image_with_ai` → escena; tipografía Pillow; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
-- **Paso 19** ✅ **Capa SaaS** landing + login + JWT + créditos Bold (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` bake-time) — [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md). Hardening y panel admin pendientes
+- **Paso 19** ✅ **Capa SaaS** landing + Auth0 + créditos Bold (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` bake-time) — [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md), [`docs/auth0.md`](docs/auth0.md). Panel `/admin` listo. Auth0-only en working tree local (17-sep noche). **Meta App Live: esperar bandera.** Snapshot: [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md)
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-17).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-17 noche).
 
 ## Formatos de publicación
 
@@ -507,6 +507,8 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
   - `GET /api/auth/accounts` — multi-cuenta OAuth
   - `POST /api/campaigns`, `POST /api/campaigns/{id}/fire`
 - **Estado del proyecto (canónico):** [`estado-actual.txt`](estado-actual.txt)
+- **Snapshot Auth0/admin 17-sep:** [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md)
+- **Auth0:** [`docs/auth0.md`](docs/auth0.md) · **Panel admin:** [`docs/admin-panel.md`](docs/admin-panel.md)
 - **NotebookLM (fuente para subir):** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) — guía [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)
 - **Pipeline:** [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Referencia visual de marca:** [`docs/references/README.md`](docs/references/README.md)

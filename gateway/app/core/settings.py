@@ -186,8 +186,13 @@ class Settings(BaseSettings):
     # Vacío = auth desactivada (dev local). En producción, pon un valor aleatorio largo.
     api_key: str = ""
 
-    # Staging SaaS — landing + login + Bold + créditos (local / pre-prod)
+    # Staging SaaS — landing + Auth0 + Bold + créditos
     staging_saas_enabled: bool = False
+    # Auth0 (única identidad SaaS). Domain sin https://. Audience vacío = client_id (ID token).
+    auth0_domain: str = ""
+    auth0_client_id: str = ""
+    auth0_audience: str = ""
+    # Legacy local JWT — deprecado; se ignora cuando Auth0 está configurado
     jwt_secret: str = ""
     jwt_ttl_minutes: int = 10080  # 7 días
     # Bold — botón de pagos (misma llave secreta firma webhook X-Bold-Signature)
@@ -196,6 +201,8 @@ class Settings(BaseSettings):
     bold_webhook_secret: str = ""
     pack_amount_cop: int = 99000
     credits_per_pack: int = 100
+    # Créditos al crear el primer wallet Auth0 (staging local sin Bold)
+    staging_seed_credits: int = 100
     staging_success_redirect_url: str = "http://localhost:5173/app?paid=1"
     # Slack Incoming Webhook para notificaciones human-in-the-loop
     slack_webhook_url: str = ""

@@ -1,17 +1,37 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-09-17
-Último foco: capa SaaS (landing + login + Bold + créditos) activa en staging/prod + fix `VITE_STAGING_SAAS` en build Docker.
+Actualizado: 2026-09-17 (noche)
+Último foco: **Auth0-only** en local (login Universal Login) + panel `/admin` + docs de detección usuarios/pagos/consumo. **Meta App Live: esperando bandera del usuario.**
 **Producción:** `https://marketing.powerupsecosistem.online` · VPS `insightflow@2.25.107.229` · compose `marketing-depa-prod`  
 **InsightFlow (no tocar):** `https://api.powerupsecosistem.online`
 
+**Snapshot Auth0/admin (detalle Git + decisiones):** [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md)  
 **NotebookLM:** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) · [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)  
 **Foto real + edit:** [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)  
-**SaaS / Bold:** [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/manual-staging.md`](docs/manual-staging.md) · [`docs/admin-panel.md`](docs/admin-panel.md)
+**SaaS / Bold / Auth0:** [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/auth0.md`](docs/auth0.md) · [`docs/admin-panel.md`](docs/admin-panel.md) · [`docs/manual-staging.md`](docs/manual-staging.md)
+
+**Git (noche 17-sep):** `main` en `d422a6e`, **ahead 4** vs `origin/main`. Auth0-only está en **working tree** (sin commit). `master` = `ecbe53e`, no fusionar.
 
 ---
 
 ### Cronología reciente
+
+#### 2026-09-17 noche — Auth0-only + panel admin verificado en local
+
+| Entrega | Detalle |
+|---------|---------|
+| **IdP** | Única identidad SaaS = Auth0 Universal Login. `POST /api/auth/register\|login` → **410**. Reset admin → **410** (usar dashboard Auth0) |
+| **Token** | ID token RS256 JWKS (`aud` = client_id). Access token / Resource Server **no** creado (MCP sin `create:resource_servers`) |
+| **Upsert** | Primera llamada API con Bearer crea/actualiza `AppUser.auth0_sub` + `tenant_id` + `CreditWallet` |
+| **Tenant Auth0** | `dev-ayl6gsakmvf7rb27.us.auth0.com` · SPA Marketing DEPA IA · client `loXNtYYuNPxwCwuxDZv4i1cXAUWILw0L` · callbacks **solo localhost:5173** (prod Auth0 aún no) |
+| **Admin local** | `ADMIN_EMAILS=info@powerupsagencia.com` en `.env`. Signup **ok** desde `/login` → **Crear cuenta**. Entra al estudio `/app` |
+| **Bug `/ladmin`** | Rutas desconocidas caían a `App` sin sesión. Fix: whitelist; unknown → landing |
+| **Bug signup** | Abrir `/u/signup` a mano o refrescar → `some body keys are invalid`. Flujo correcto: botón de la app (`/authorize`) |
+| **Panel** | `/admin` KPIs desde BD propia. Flujo usuarios/pagos/consumo documentado en `docs/admin-panel.md` |
+| **Friendly Name** | Texto “Sign Up to dev-ayl6gsak…” se cambia en Auth0 Settings → Friendly Name (p.ej. PowerUps), no en código |
+| **Meta Live** | **No iniciado.** Esperar bandera. Guía: `infra/deploy/meta-oauth-production.md` |
+| **Docs** | `docs/auth0.md`, snapshot `docs/estado-saas-auth0-2026-09-17.md`, admin-panel ampliado |
+| **Working tree** | Auth0-only **sin commit**. Commits locales previos: bake VITE, docs SaaS, panel admin, plan gpt-image-2 directo |
 
 #### 2026-09-17 — Capa SaaS + login en prod (VITE bake)
 
@@ -23,7 +43,7 @@ Actualizado: 2026-09-17
 | **Auth email** | `POST /api/auth/register\|login`, `GET /api/auth/me` — JWT + PBKDF2-HMAC-SHA256 (120k); contraseñas **no** recuperables en claro |
 | **Billing** | Bold checkout + webhook → créditos por tenant; publicar sin saldo → **402** |
 | **Legacy** | Con SaaS off, sigue `API_KEY` Bearer |
-| **Huecos conocidos** | Sin reset password público · sin rate limit login · JWT_SECRET no debe quedar vacío (fallback `dev-staging-change-me`) · sin tests auth/billing (sí hay `test_admin_panel`) · Auth0 en integración (usuario) |
+| **Huecos conocidos (mañana 17-sep)** | Login local JWT/PBKDF2 — **supersedido de noche por Auth0-only** (ver bloque de arriba) · Bold sin keys en local · Auth0 prod callbacks pendientes |
 | **Panel admin** | `/admin` — resumen, usuarios, pagos, consumo APIs; `ADMIN_EMAILS` bootstrap; docs `docs/admin-panel.md` |
 | **Docs** | staging-landing-bold, manual-staging, CLAUDE, vps-hostinger, .env.example |
 
@@ -436,7 +456,8 @@ Tras cambiar `VITE_STAGING_SAAS`: mismo comando con `--build frontend` (o `up -d
 | 23 OpenRouter LLM en prod | 🔄 Key + validar que no caiga a stub |
 | 24 Biblioteca multi-imagen | ⬜ Modelo `UserAsset` iniciado; API/UI pendiente |
 | 25 Copy sin eco del brief | ⬜ Endurecer strategist/copywriter/QA + overlay |
-| 26 Capa SaaS (landing/login/Bold/créditos) | ✅ Flags + prod UI (VITE bake); panel admin `/admin` listo; Auth0 pendiente |
+| 26 Capa SaaS (landing/login/Bold/créditos) | ✅ Flags + VITE bake; panel `/admin`; **Auth0-only en local (working tree)**; prod Auth0 y Bold reales pendientes |
+| 27 Meta App Mode Live / Review | ⬜ **Esperando bandera explícita del usuario** (código OAuth+Go ya existe) |
 
 ---
 
@@ -446,10 +467,11 @@ Tras cambiar `VITE_STAGING_SAAS`: mismo comando con `--build frontend` (o `up -d
 2. Video v2: música de fondo, captions por palabra; bucket S3/GCS propio como master store (hoy Drive del cliente)
 3. TikTok: publicación nativa tras App Review
 4. **X:** post de prueba en prod (Integraciones o tokens en env)
-5. **Meta:** verificar Conectar Meta tras Basic Settings en dominio prod
+5. **Meta App Live:** **esperar bandera**. Código OAuth+Go listo; trámite Developers + prueba Conectar Meta en prod no empezados esta noche
 6. **Biblioteca de fotos:** subir varias imágenes reutilizables por tenant (WIP `UserAsset`)
-7. **SaaS hardening:** JWT_SECRET obligatorio sin fallback; rate limit login/registro; reset password; tests auth/billing; no saltar firma Bold si secret vacío
-8. **Panel admin** ✅ `/admin` + `ADMIN_EMAILS`; Auth0 reemplazará solo el IdP (reset password → dashboard Auth0)
+7. **SaaS hardening:** rate limit Auth0/API; Custom Domain Auth0; callbacks prod; no saltar firma Bold si secret vacío; tests JWKS live
+8. **Panel admin** ✅ `/admin` + `ADMIN_EMAILS`; IdP = Auth0 (reset → dashboard Auth0). Deploy Auth0 a VPS pendiente
+9. **Commit Auth0-only** working tree cuando se pida; push de los 4 commits locales vs origin
 9. **Copy/overlay:** evitar que texto del brief (tema, público, objetivo, tono) aparezca literal en imagen/caption
 10. CI/CD contra GKE real + Secret Manager
 11. Fallback LLM stub → propagar error a la UI
@@ -463,7 +485,7 @@ Tras cambiar `VITE_STAGING_SAAS`: mismo comando con `--build frontend` (o `up -d
 
 ### Resumen
 
-MVP **end-to-end**: brief con **manual de marca**, copy con QA e inbound, piezas por red (IG, FB, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento, HITL con revise, publicación **Meta/LinkedIn/X** (multi-cuenta donde aplica), más capa **SaaS** (landing/login/créditos Bold) en staging y prod.
+MVP **end-to-end**: brief con **manual de marca**, copy con QA e inbound, piezas por red (IG, FB, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento, HITL con revise, publicación **Meta/LinkedIn/X** (multi-cuenta donde aplica), más capa **SaaS** (landing + **Auth0** + créditos Bold + panel `/admin`) en local; bake VITE en prod.
 
-**Producción:** `marketing.powerupsecosistem.online` en VPS Hostinger junto a InsightFlow.  
-**Docs:** este archivo + `README.md` + `CLAUDE.md` + `docs/staging-landing-bold.md` + `infra/arranque-stack.md` (local) + `infra/deploy/vps-hostinger.md` + `infra/deploy/proceso-integracion-redes.md`.
+**Producción:** `marketing.powerupsecosistem.online` en VPS Hostinger junto a InsightFlow. Auth0 en prod **aún no** (callbacks solo localhost).  
+**Docs:** este archivo + `docs/estado-saas-auth0-2026-09-17.md` + `README.md` + `CLAUDE.md` + `docs/auth0.md` + `docs/admin-panel.md` + `docs/staging-landing-bold.md` + `infra/arranque-stack.md` + `infra/deploy/vps-hostinger.md` + `infra/deploy/proceso-integracion-redes.md`.

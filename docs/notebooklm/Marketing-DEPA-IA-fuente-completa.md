@@ -3,6 +3,7 @@
 **Proyecto:** Marketing DEPA IA (PowerUps)  
 **Tipo:** MVP de automatización de marketing con agentes de IA  
 **Actualizado:** 2026-09-10  
+**Nota 2026-09-17:** esta fuente **no** cubre Auth0-only ni el panel `/admin`. Usar `estado-actual.txt` + `docs/estado-saas-auth0-2026-09-17.md` como complemento hasta reescribir esta página.  
 **Idioma:** español  
 
 Este documento es **autocontenido**: súbelo como única fuente (o como fuente principal) a NotebookLM. No depende de enlaces internos del repositorio.

@@ -3,6 +3,10 @@ import { authFetch, getAuthToken } from "./auth";
 
 const BOLD_SDK = "https://checkout.bold.co/library/boldPaymentButton.js";
 
+/**
+ * Botón Bold de recarga de créditos.
+ * Requiere sesión Auth0 (getAuthToken); sin token solo muestra hint de login.
+ */
 export default function BoldCheckout() {
   const mountRef = useRef(null);
   const [error, setError] = useState("");
@@ -10,14 +14,15 @@ export default function BoldCheckout() {
   const [pack, setPack] = useState(null);
 
   useEffect(() => {
-    if (!getAuthToken()) {
-      setHint("Inicia sesión para ver el botón Bold.");
-      return;
-    }
-
+    if (!getAuthToken) return;
     let cancelled = false;
 
     (async () => {
+      const token = await getAuthToken();
+      if (!token) {
+        setHint("Inicia sesión con Auth0 para ver el botón Bold.");
+        return;
+      }
       try {
         const cfg = await authFetch("/billing/bold-checkout");
         if (cancelled) return;

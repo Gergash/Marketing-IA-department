@@ -1,8 +1,8 @@
 # Capa SaaS — Marketing DEPA IA
 
-Landing, registro/login por correo (único), botón Bold y créditos para publicar en redes.
+Landing, **Auth0 Universal Login** (única identidad), botón Bold y créditos para publicar en redes.
 
-Guía larga (manual local + ngrok): [`manual-staging.md`](manual-staging.md).
+Identidad: [`auth0.md`](auth0.md). Panel admin: [`admin-panel.md`](admin-panel.md). Snapshot 17-sep: [`estado-saas-auth0-2026-09-17.md`](estado-saas-auth0-2026-09-17.md). Guía larga (manual local + ngrok): [`manual-staging.md`](manual-staging.md).
 
 ## Activar
 
@@ -12,8 +12,11 @@ Copia variables de `.env.staging.example` a `.env` (local) o `.env.production` (
 
 ```bash
 STAGING_SAAS_ENABLED=true
-JWT_SECRET=un-secreto-largo-aleatorio   # obligatorio en prod; no dejar vacío
-JWT_TTL_MINUTES=10080
+AUTH0_DOMAIN=dev-ayl6gsakmvf7rb27.us.auth0.com
+AUTH0_CLIENT_ID=loXNtYYuNPxwCwuxDZv4i1cXAUWILw0L
+AUTH0_AUDIENCE=                         # vacío = valida ID token (aud = client_id)
+ADMIN_EMAILS=info@powerupsagencia.com
+ADMIN_PANEL_ENABLED=true
 BOLD_API_KEY=<llave identidad Bold>
 BOLD_INTEGRITY_SECRET=<llave secreta Bold>
 BOLD_WEBHOOK_SECRET=<misma llave secreta>
@@ -23,6 +26,8 @@ STAGING_SUCCESS_REDIRECT_URL=http://localhost:5173/app?paid=1
 # Prod:
 # STAGING_SUCCESS_REDIRECT_URL=https://marketing.powerupsecosistem.online/app?paid=1
 ```
+
+`JWT_SECRET` quedó en `.env.example` por legado; **ya no autentica** usuarios SaaS si Auth0 está configurado.
 
 SQLite/Postgres crean tablas `app_users`, `credit_wallets` y `payment_records` al iniciar (`schema_patches`).
 
@@ -34,6 +39,8 @@ El flag de UI **no** se lee del `.env` de la API en runtime. Vite lo hornea en e
 
 ```bash
 VITE_STAGING_SAAS=true
+VITE_AUTH0_DOMAIN=dev-ayl6gsakmvf7rb27.us.auth0.com
+VITE_AUTH0_CLIENT_ID=loXNtYYuNPxwCwuxDZv4i1cXAUWILw0L
 ```
 
 **Prod (Docker)** — `infra/docker-compose.prod.yml` pasa el build-arg:
@@ -51,20 +58,28 @@ Tras cambiar `VITE_STAGING_SAAS` en el VPS hay que **rebuild** el contenedor `fr
 | URL | Pantalla |
 |-----|----------|
 | `/` | Landing del departamento de marketing agéntico |
-| `/login` | Registro o login (email único) |
-| `/app` | Estudio de marketing (dashboard) |
+| `/login` | Auth0 Universal Login (botones Continuar / Crear cuenta) |
+| `/app` | Estudio (requiere sesión Auth0) |
+| `/admin` | Panel de negocio (requiere Auth0 + `ADMIN_EMAILS` o `is_admin`) |
 
-Tras **registro exitoso** o login, la UI muestra el **botón Bold** para comprar el paquete de créditos.
+Rutas desconocidas (`/ladmin`, `/foo`) vuelven a la landing; no abren el estudio.
+
+Tras login Auth0, la UI muestra el **botón Bold** para comprar el paquete de créditos (si hay claves Bold).
 
 ## Auth
 
 | Pieza | Detalle |
 |-------|---------|
-| Hash | PBKDF2-HMAC-SHA256, 120 000 iteraciones — **irreversible** |
-| Token | JWT (`sub`=email, `tenant_id`); default TTL 7 días |
-| Legacy | Con `STAGING_SAAS_ENABLED=false`, sigue `API_KEY` Bearer |
+| IdP | Auth0 Universal Login — **única** vía de registro/login SaaS |
+| Token | ID token RS256 (JWKS). La SPA lo manda como `Authorization: Bearer` |
+| Local legado | `POST /api/auth/register` y `/login` → **410 Gone** |
+| Reset | Auth0 Dashboard / Forgot password. El panel admin **no** genera claves locales (410) |
+| Admin | Email en `ADMIN_EMAILS` o `is_admin=true` |
+| Legacy API | Con `STAGING_SAAS_ENABLED=false` (y Auth0 no configurado), sigue `API_KEY` Bearer |
 
-No existe (aún) recuperación pública de contraseña ni rate limiting en login/registro. Un panel admin puede forzar reset sin exponer el hash en claro.
+No abrir `https://{tenant}.auth0.com/u/signup` a mano ni refrescar esa URL: aparece `some body keys are invalid`. Siempre partir de `/login` en la app (`/authorize`).
+
+Friendly Name visible (“Sign Up to …”): Auth0 Dashboard → Settings → General. El hostname `dev-ayl6gsakmvf7rb27` no cambia sin Custom Domain.
 
 ## Bold + webhook
 
@@ -87,22 +102,23 @@ Sin saldo suficiente al publicar → **402 Payment Required**.
 
 ## Endpoints
 
-- `POST /api/auth/register` — email, password, full_name
-- `POST /api/auth/login`
-- `GET /api/auth/me`
+- `GET /api/auth/me` — perfil + `is_admin` + `auth0_sub` (Bearer Auth0)
+- `POST /api/auth/register` · `POST /api/auth/login` — **410** (usar Auth0)
 - `GET /api/billing/credits`
-- `GET /api/billing/bold-checkout` — firma integridad Bold (JWT)
+- `GET /api/billing/bold-checkout` — firma integridad Bold
 - `POST /api/billing/bold-webhook`
+- `/api/admin/*` — ver [`admin-panel.md`](admin-panel.md)
 
 ## Producción (estado actual)
 
-SaaS puede ir **activo** en `marketing.powerupsecosistem.online` con ambos flags en `true` y frontend reconstruido.
+SaaS **UI** puede estar activa en `marketing.powerupsecosistem.online` (flags VITE bake, commit `9fe9e15`). **Auth0 en prod no está cableado**: la app Auth0 solo tiene callback `http://localhost:5173`. Hasta añadir el dominio prod en Auth0 + rebuild con `VITE_AUTH0_*`, el login de producción no es este flujo.
 
-Checklist:
+Checklist cuando se despliegue Auth0 a VPS:
 
-1. `STAGING_SAAS_ENABLED=true` + `JWT_SECRET` fuerte en `.env.production`
-2. `VITE_STAGING_SAAS=true` (build-arg) → `docker compose … up -d --build frontend`
-3. Llaves Bold + webhook HTTPS del dominio
-4. Hard refresh del navegador tras el rebuild
+1. Callbacks / logout / web origins: `https://marketing.powerupsecosistem.online`
+2. `.env.production`: `AUTH0_*` + `ADMIN_EMAILS` + `STAGING_SAAS_ENABLED=true`
+3. Rebuild frontend con `VITE_STAGING_SAAS` + `VITE_AUTH0_DOMAIN` + `VITE_AUTH0_CLIENT_ID`
+4. Llaves Bold + webhook HTTPS del dominio
+5. Hard refresh del navegador tras el rebuild
 
 Con SaaS off (`STAGING_SAAS_ENABLED=false` y rebuild con `VITE_STAGING_SAAS=false`), el modo legacy con `API_KEY` sigue disponible.

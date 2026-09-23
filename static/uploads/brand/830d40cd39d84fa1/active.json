@@ -1,0 +1,48 @@
+{
+  "id": "c2d1e492c0c44fa1b1bc5cc7124f229b",
+  "original_filename": "manual-de-marca-del-estero.pdf",
+  "pdf_filename": "c2d1e492c0c44fa1b1bc5cc7124f229b.pdf",
+  "txt_filename": "c2d1e492c0c44fa1b1bc5cc7124f229b.txt",
+  "visual_filename": "c2d1e492c0c44fa1b1bc5cc7124f229b_visual.json",
+  "char_count": 4543,
+  "extraction_method": "pypdf",
+  "url": "http://localhost:8000/static/uploads/brand/830d40cd39d84fa1/c2d1e492c0c44fa1b1bc5cc7124f229b.pdf",
+  "palette_hex": [
+    "#B8860B",
+    "#C09048",
+    "#D87093",
+    "#CC9E68",
+    "#CB9F70",
+    "#481800",
+    "#FFFFFF",
+    "#8A7056",
+    "#7E4F4C",
+    "#B19980"
+  ],
+  "color_roles": {
+    "primary": "#B8860B",
+    "accent": "#C09048",
+    "secondary": "#D87093"
+  },
+  "logo_filenames": [],
+  "logo_urls": [],
+  "logo_placements": [],
+  "font_names": [
+    "Cinzel Semi",
+    "Playfair Display",
+    "Lora",
+    "Cinzel",
+    "Lora Semi",
+    "Principal",
+    "Serif Cl",
+    "Secundaria"
+  ],
+  "layout_hints": [
+    "logo_zone:top-center",
+    "logo_centrado_superior",
+    "tipografías: Cinzel Semi, Playfair Display, Lora, Cinzel"
+  ],
+  "suggested_archetype": "brand_campaign_piece",
+  "pages_scanned": 4,
+  "embedded_images": 2
+}

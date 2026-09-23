@@ -179,10 +179,19 @@ def _assert_token_not_expired(token_row: OAuthToken) -> None:
 
 
 def _public_image_url(image_url: str) -> str:
-    """Sustituye localhost por PUBLIC_IMAGE_BASE_URL cuando hay túnel público."""
+    """Sustituye localhost/127.0.0.1 por PUBLIC_IMAGE_BASE_URL cuando hay túnel público.
+
+    Meta Graph no descarga http://localhost. En staging local usar ngrok/cloudflared
+    en PUBLIC_IMAGE_BASE_URL; en prod el compose fuerza el DOMAIN.
+    """
+    if not image_url:
+        return image_url
     public_base = get_settings().public_image_base_url.rstrip("/")
-    if image_url.startswith("http://localhost:8000") and public_base != "http://localhost:8000":
-        return image_url.replace("http://localhost:8000", public_base, 1)
+    if not public_base or public_base in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        return image_url
+    for local in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        if image_url.startswith(local):
+            return image_url.replace(local, public_base, 1)
     return image_url
 
 
@@ -435,10 +444,7 @@ def _publish_via_go(
 
     # Sustituye localhost por la URL pública (Meta exige HTTPS accesible externamente)
     content_format = getattr(run, "content_format", None) or "feed"
-    media_url = _media_url(result)
-    public_base = settings.public_image_base_url.rstrip("/")
-    if media_url.startswith("http://localhost:8000"):
-        media_url = media_url.replace("http://localhost:8000", public_base, 1)
+    media_url = _public_image_url(_media_url(result))
 
     try:
         payload = {

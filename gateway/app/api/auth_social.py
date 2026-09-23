@@ -1,4 +1,9 @@
-"""Flujo OAuth nativo: Meta/LinkedIn/Google (OAuth 2.0) y X/Twitter (OAuth 1.0a)."""
+"""Flujo OAuth nativo: Meta/LinkedIn/Google (OAuth 2.0) y X/Twitter (OAuth 1.0a).
+
+Cambio SPA+Auth0: GET /login/{provider} ya no hace RedirectResponse.
+Devuelve JSON { authorize_url } para que el frontend envíe Bearer y luego
+redirija al proveedor. Ver también GET /oauth-config (URIs a registrar en portales).
+"""
 
 from __future__ import annotations
 
@@ -34,8 +39,12 @@ _INSTAGRAM_GRANULAR_SCOPES = frozenset({"instagram_basic", "instagram_content_pu
 def oauth_login(
     provider: str,
     tenant_id: str = Depends(require_auth),
-) -> RedirectResponse:
-    """Redirige al usuario a la URL de autorización de Meta, LinkedIn, Google o X."""
+) -> dict[str, str]:
+    """Devuelve la URL de autorización OAuth (JSON).
+
+    La SPA debe llamar este endpoint con Bearer Auth0 y luego navegar a
+    `authorize_url`. Un `window.location` directo no puede enviar el JWT → 401.
+    """
     s = get_settings()
     if provider == "twitter":
         provider = "x"
@@ -52,7 +61,7 @@ def oauth_login(
             "https://api.twitter.com/oauth/authorize?"
             + urlencode({"oauth_token": request_tok["oauth_token"]})
         )
-        return RedirectResponse(auth_url)
+        return {"authorize_url": auth_url, "provider": provider}
 
     state = secrets.token_urlsafe(16)
     _pending_states[state] = tenant_id
@@ -107,7 +116,7 @@ def oauth_login(
             detail=f"Proveedor '{provider}' no soportado. Usa: meta | linkedin | google | x",
         )
 
-    return RedirectResponse(auth_url)
+    return {"authorize_url": auth_url, "provider": provider}
 
 
 @router.get("/callback/{provider}")
@@ -330,6 +339,31 @@ def token_expiry_info(expires_at: datetime | None, now: datetime | None = None) 
         "expires_in_days": ceil(remaining_days) if not is_expired else 0,
         "is_expired": is_expired,
         "expires_soon": not is_expired and remaining_days <= EXPIRY_WARNING_DAYS,
+    }
+
+
+@router.get("/oauth-config")
+def oauth_config(tenant_id: str = Depends(require_auth)) -> dict:
+    """URIs de callback que el backend está usando (para registrarlas en cada portal).
+
+    Canónico en .env / VPS = marketing.powerupsecosistem.online.
+    Local opcional vía .env.staging.local. Match exacto o LinkedIn/X fallan
+    (redirect_uri mismatch / Callback URL not approved 415).
+    """
+    s = get_settings()
+    return {
+        "oauth_success_redirect_url": (s.oauth_success_redirect_url or "").strip(),
+        "redirect_uris": {
+            "meta": (s.meta_redirect_uri or "").strip(),
+            "linkedin": (s.linkedin_redirect_uri or "").strip(),
+            "google": (s.google_redirect_uri or "").strip(),
+            "x": (s.x_redirect_uri or "").strip(),
+        },
+        "hint": (
+            "Cada URI debe coincidir EXACTO (sin slash final extra) con la lista "
+            "Authorized redirect / Callback URL del portal del proveedor. "
+            "En staging local suele ser http://localhost:8000/api/auth/callback/{provider}."
+        ),
     }
 
 

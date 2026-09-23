@@ -4,6 +4,11 @@ import { BrandMark } from "./BrandMark";
 import { Link } from "./RouterLink";
 import "./staging.css";
 
+/**
+ * Panel /admin (SaaS): KPIs, usuarios, pagos Bold, consumo APIs.
+ * Acceso vía require_admin (is_admin o ADMIN_EMAILS). Auth = Bearer Auth0.
+ */
+
 const COP = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 const NUM = new Intl.NumberFormat("es-CO");
 
@@ -108,7 +113,6 @@ function UserDetail({ userId, onClose, onChanged }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tempPassword, setTempPassword] = useState("");
   const [creditsDelta, setCreditsDelta] = useState("");
   const [creditsReason, setCreditsReason] = useState("");
 
@@ -135,22 +139,6 @@ function UserDetail({ userId, onClose, onChanged }) {
       onChanged?.();
     } catch (e) {
       setError(e.message || "No se pudo actualizar");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resetPassword() {
-    if (!window.confirm("¿Restablecer la contraseña de este usuario? Se generará una nueva contraseña temporal.")) {
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const res = await authFetch(`/admin/users/${userId}/reset-password`, { method: "POST" });
-      setTempPassword(res.temporary_password);
-    } catch (e) {
-      setError(e.message || "No se pudo restablecer la contraseña");
     } finally {
       setBusy(false);
     }
@@ -212,7 +200,13 @@ function UserDetail({ userId, onClose, onChanged }) {
               Total pagado: {COP.format(detail.paid_total_cop || 0)} · Último pago: {fmtDate(detail.last_payment_at)}
             </p>
             <p>
-              Contraseña: cifrada (irreversible) — <code>{detail.password_algo}</code>
+              Identidad: Auth0 {detail.password_algo === "auth0" ? "" : `(legado: ${detail.password_algo})`}
+              {detail.auth0_sub ? (
+                <>
+                  {" "}
+                  · <code>{detail.auth0_sub}</code>
+                </>
+              ) : null}
             </p>
 
             <div className="admin-detail-actions">
@@ -222,30 +216,10 @@ function UserDetail({ userId, onClose, onChanged }) {
               <button disabled={busy} onClick={() => toggle("is_admin")}>
                 {detail.is_admin ? "Quitar admin" : "Hacer admin"}
               </button>
-              <button disabled={busy} onClick={resetPassword}>
-                Restablecer contraseña
-              </button>
             </div>
             <p className="admin-empty" style={{ marginTop: 4 }}>
-              Nota: tras Auth0 este botón pasará a abrir el dashboard del IdP; hoy genera una clave temporal local.
+              Para restablecer acceso, usa el dashboard de Auth0 (ya no hay contraseñas locales).
             </p>
-
-            {tempPassword && (
-              <div className="admin-temp-pass">
-                <p>
-                  Contraseña temporal (se muestra <strong>una sola vez</strong>, guárdala ahora):
-                </p>
-                <p>
-                  <code>{tempPassword}</code>{" "}
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard?.writeText(tempPassword)}
-                  >
-                    Copiar
-                  </button>
-                </p>
-              </div>
-            )}
 
             <form onSubmit={adjustCredits} className="admin-detail-actions">
               <input

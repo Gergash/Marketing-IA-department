@@ -124,18 +124,12 @@ def test_usage_by_provider_shares_sum_to_100(db_session) -> None:
     assert by_provider["fal"]["events"] == 1
 
 
-def test_reset_password_changes_hash_and_new_password_logs_in(db_session) -> None:
+def test_reset_password_endpoint_gone_under_auth0(db_session) -> None:
     admin = _make_user(db_session, email="admin2@example.com", tenant_id="t-admin2", is_admin=True)
     target = _make_user(db_session, email="locked@example.com", tenant_id="t-locked", password="oldpassword1")
-    old_hash = target.password_hash
-
-    resp = admin_api.admin_reset_password(target.id, admin=admin, db=db_session)
-    db_session.refresh(target)
-    assert target.password_hash != old_hash
-
-    logged_in = authenticate_user(db_session, email="locked@example.com", password=resp.temporary_password)
-    assert logged_in is not None
-    assert logged_in.id == target.id
+    with pytest.raises(Exception) as exc_info:
+        admin_api.admin_reset_password(target.id, admin=admin, db=db_session)
+    assert exc_info.value.status_code == 410
 
 
 def test_no_endpoint_response_contains_password_hash(db_session) -> None:
@@ -153,16 +147,23 @@ def test_no_endpoint_response_contains_password_hash(db_session) -> None:
 
 def test_inactive_user_gets_403_via_require_auth(db_session, monkeypatch: pytest.MonkeyPatch) -> None:
     from gateway.app.core.settings import get_settings
-    from gateway.app.services.auth_users import create_access_token
 
     monkeypatch.setenv("STAGING_SAAS_ENABLED", "true")
-    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("AUTH0_DOMAIN", "example.auth0.com")
+    monkeypatch.setenv("AUTH0_CLIENT_ID", "test-client")
     get_settings.cache_clear()
 
     user = _make_user(db_session, email="blocked@example.com", tenant_id="t-blocked", is_active=False)
-    token = create_access_token(email=user.email, tenant_id=user.tenant_id)
-    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
+    def fake_resolve(db, token):
+        return user.tenant_id, user
+
+    monkeypatch.setattr(
+        "gateway.app.services.auth0_jwt.resolve_tenant_from_auth0_token",
+        fake_resolve,
+    )
+
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="a.b.c")
     with pytest.raises(HTTPException) as exc_info:
         require_auth(credentials=credentials, db=db_session)
     assert exc_info.value.status_code == 403

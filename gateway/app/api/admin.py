@@ -8,7 +8,6 @@ usuario bloqueado es `POST /users/{id}/reset-password`.
 
 from __future__ import annotations
 
-import secrets
 from datetime import datetime, timedelta
 
 import structlog
@@ -27,7 +26,6 @@ from gateway.app.models.entities import (
     CreditWallet,
     PaymentRecord,
 )
-from gateway.app.services.auth_users import _hash_password
 from gateway.app.services.credits_service import get_or_create_wallet
 from gateway.app.services.usage_service import record_usage, usage_by_provider
 
@@ -45,6 +43,8 @@ def _ensure_enabled() -> None:
 
 
 def _password_algo(password_hash: str) -> str:
+    if not (password_hash or "").strip():
+        return "auth0"
     return (password_hash or "").split("$", 1)[0] or "desconocido"
 
 
@@ -99,6 +99,7 @@ def _user_item(db: Session, user: AppUser) -> dict:
         "is_active": user.is_active,
         "is_admin": user.is_admin,
         "password_algo": _password_algo(user.password_hash),
+        "auth0_sub": user.auth0_sub,
         **metrics,
     }
 
@@ -433,14 +434,12 @@ def admin_reset_password(
     user = db.get(AppUser, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
-
-    temporary_password = secrets.token_urlsafe(12)
-    user.password_hash = _hash_password(temporary_password)
-    db.commit()
-    _log.info("admin.reset_password", user_id=user.id, tenant_id=user.tenant_id, admin_id=admin.id)
-    return ResetPasswordResponse(
-        temporary_password=temporary_password,
-        note="Guarda esta contraseña temporal ahora: no se volverá a mostrar.",
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=(
+            "Las contraseñas locales ya no existen. Restablece la cuenta en el dashboard de Auth0 "
+            f"(usuario {user.email})."
+        ),
     )
 
 

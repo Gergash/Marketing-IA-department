@@ -119,13 +119,20 @@ class CampaignSchedule(Base):
 
 
 class AppUser(Base):
-    """Usuario SaaS staging: email único, tenant aislado y hash de contraseña."""
+    """Usuario SaaS: email único, tenant aislado.
+
+    Auth0-only: `auth0_sub` es la identidad; `password_hash` queda vacío
+    (registro/login local eliminados → 410). ADMIN_EMAILS hace bootstrap de is_admin.
+    """
 
     __tablename__ = "app_users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(512))
+    # Legacy; Auth0 no usa password. Columna conservada por migraciones existentes.
+    password_hash: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    # subject Auth0 (p.ej. auth0|…). Unique; upsert en auth0_jwt.
+    auth0_sub: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(256), default="")
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

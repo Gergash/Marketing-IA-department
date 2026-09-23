@@ -73,14 +73,10 @@ const FALLBACK_FORMATS = {
 };
 
 // ---------------------------------------------------------------------------
-// API key — almacenada en sessionStorage (no persiste entre sesiones)
+// Auth — Auth0 ID token (vía getter registrado en main.jsx)
 // ---------------------------------------------------------------------------
-function getApiKey() {
+async function resolveBearer() {
   return getAuthToken();
-}
-
-function saveApiKey(key) {
-  sessionStorage.setItem("api_key", key);
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +109,7 @@ function resolveImageUrl(url) {
 
 async function api(path, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
-  const key = getApiKey();
+  const key = await resolveBearer();
   if (key) headers["Authorization"] = `Bearer ${key}`;
 
   const res = await fetch(`${API_BASE}${path}`, {
@@ -130,7 +126,7 @@ async function api(path, method = "GET", body = null) {
 
 async function apiMediaBlob(path) {
   const headers = {};
-  const key = getApiKey();
+  const key = await resolveBearer();
   if (key) headers["Authorization"] = `Bearer ${key}`;
   const res = await fetch(`${API_BASE}${path}`, { headers });
   if (!res.ok) throw new Error(await res.text());
@@ -179,7 +175,7 @@ function DriveTakePreview({ take }) {
 
 async function uploadAsset(file) {
   const headers = {};
-  const key = getApiKey();
+  const key = await resolveBearer();
   if (key) headers["Authorization"] = `Bearer ${key}`;
   const body = new FormData();
   body.append("file", file);
@@ -194,7 +190,7 @@ async function uploadAsset(file) {
 
 async function uploadBrandManual(file) {
   const headers = {};
-  const key = getApiKey();
+  const key = await resolveBearer();
   if (key) headers["Authorization"] = `Bearer ${key}`;
   const body = new FormData();
   body.append("file", file);
@@ -208,11 +204,12 @@ async function uploadBrandManual(file) {
 }
 
 // ---------------------------------------------------------------------------
-// Componente principal
+// Componente principal (studio)
+// bearer = ID token Auth0 (async). En staging no hay API key local; Integrations
+// recibe el mismo JWT para /auth/login/{provider} y /auth/accounts.
 // ---------------------------------------------------------------------------
 export default function App() {
-  const [apiKey, setApiKey] = useState(getApiKey());
-  const [keyInput, setKeyInput] = useState("");
+  const [bearer, setBearer] = useState("");
   const [form, setForm] = useState({
     tema: "",
     publico_objetivo: "",
@@ -266,7 +263,21 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    if (!isStagingMode() || !getAuthToken()) return;
+    let alive = true;
+    const refresh = async () => {
+      const t = await getAuthToken();
+      if (alive) setBearer(t || "");
+    };
+    refresh();
+    const id = setInterval(refresh, 50_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isStagingMode() || !bearer) return;
     let alive = true;
     authFetch("/auth/me")
       .then((me) => alive && setIsAdmin(Boolean(me.is_admin)))
@@ -274,7 +285,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [bearer]);
 
   const loadHistory = async () => {
     try {
@@ -425,6 +436,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!bearer) return;
     loadHistory();
     loadSocialStatus();
     loadSocialAccounts();
@@ -433,7 +445,7 @@ export default function App() {
     loadVideoOptions();
     loadArchetypes();
     loadBrandManual();
-  }, [apiKey]);
+  }, [bearer]);
 
   // Poll de runs async (reels): rellena Resultado cuando pasa a pending_takes / pending_approval
   useEffect(() => {
@@ -469,13 +481,6 @@ export default function App() {
       clearInterval(id);
     };
   }, [result?.run_id, result?.status]);
-
-  const applyKey = () => {
-    saveApiKey(keyInput.trim());
-    setApiKey(keyInput.trim());
-    setKeyInput("");
-    setError(null);
-  };
 
   const createAndRun = async (asyncMode = false) => {
     // Los reels (generados o con clips del usuario) se procesan en la cola video_render
@@ -757,29 +762,17 @@ export default function App() {
         )}
       </header>
 
-      {/* API Key */}
-      <section className="card">
-        <h2>Autenticación</h2>
-        {apiKey ? (
+      {isStagingMode() ? (
+        <section className="card">
+          <h2>Autenticación</h2>
           <p>
-            API Key activa: <code>{"•".repeat(8)}</code>{" "}
-            <button onClick={() => { saveApiKey(""); setApiKey(""); }}>Cambiar</button>
+            Sesión Auth0 activa{bearer ? "" : " (esperando token…)"} — no se usa API key local.
           </p>
-        ) : (
-          <div className="actions">
-            <input
-              placeholder="API_KEY (vacío = dev sin auth)"
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && applyKey()}
-            />
-            <button onClick={applyKey}>Guardar</button>
-          </div>
-        )}
-      </section>
+        </section>
+      ) : null}
 
       {/* Integraciones OAuth */}
-      <Integrations apiKey={apiKey} onAccountsChanged={loadSocialAccounts} />
+      <Integrations apiKey={bearer} onAccountsChanged={loadSocialAccounts} />
 
       {/* Estado redes (sin secretos) */}
       <section className="card">

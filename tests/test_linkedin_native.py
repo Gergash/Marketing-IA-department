@@ -50,7 +50,8 @@ def _linkedin_auth_url(monkeypatch, scopes: str = "openid profile w_member_socia
         "linkedin_scopes": scopes,
     })()
     monkeypatch.setattr(auth_social, "get_settings", lambda: settings)
-    return auth_social.oauth_login("linkedin", tenant_id="demo-tenant").headers["location"]
+    # JSON authorize_url (no Location header): Compatible con Conectar LinkedIn vía Auth0 Bearer.
+    return auth_social.oauth_login("linkedin", tenant_id="demo-tenant")["authorize_url"]
 
 
 def test_auth_url_uses_configured_scopes(monkeypatch) -> None:

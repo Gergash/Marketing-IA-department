@@ -1,20 +1,19 @@
-import { useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { useNavigate } from "./RouterLink";
-import { authFetch, isStagingMode, saveAuthSession } from "./auth";
-import BoldCheckout from "./BoldCheckout";
+import { isAuth0Configured, isStagingMode } from "./auth";
 import { BrandMark } from "./BrandMark";
 import { Link } from "./RouterLink";
 import "./staging.css";
 
+/**
+ * Login SaaS: solo Auth0 Universal Login.
+ * Sustituye el formulario email/password local (endpoints /auth/login|register → 410).
+ * "Crear cuenta" usa screen_hint=signup en el mismo tenant Auth0.
+ */
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState("register");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [error, setError] = useState("");
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const auth0On = isAuth0Configured();
+  const { loginWithRedirect, isAuthenticated, isLoading, user, error } = useAuth0();
 
   if (!isStagingMode()) {
     return (
@@ -25,111 +24,83 @@ export default function LoginPage() {
     );
   }
 
-  async function submit(e) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      const path = mode === "register" ? "/auth/register" : "/auth/login";
-      const body =
-        mode === "register"
-          ? { email, password, full_name: fullName }
-          : { email, password };
-      const data = await authFetch(path, { method: "POST", body: JSON.stringify(body) });
-      saveAuthSession(data);
-      setSession(data);
-    } catch (err) {
-      setError(err.message || "Error de autenticación");
-    } finally {
-      setLoading(false);
-    }
+  if (!auth0On) {
+    return (
+      <div className="staging-page container">
+        <p>Auth0 no configurado (VITE_AUTH0_DOMAIN / VITE_AUTH0_CLIENT_ID).</p>
+        <Link to="/">Volver</Link>
+      </div>
+    );
   }
 
-  return (
-    <div className="staging-page brand-theme">
-      <div className="container staging-auth-wrap">
-        <BrandMark size={48} />
+  if (isLoading) {
+    return (
+      <div className="staging-page brand-theme">
+        <div className="container staging-auth-wrap">
+          <BrandMark size={48} />
+          <p>Cargando Auth0…</p>
+        </div>
+      </div>
+    );
+  }
 
-        {!session ? (
+  if (isAuthenticated) {
+    return (
+      <div className="staging-page brand-theme">
+        <div className="container staging-auth-wrap">
+          <BrandMark size={48} />
           <div className="card staging-auth-card">
-            <h1>{mode === "register" ? "Crear cuenta" : "Iniciar sesión"}</h1>
-            <p className="staging-muted">
-              Un correo por cuenta. Tras registrarte verás el botón de pago Bold para recargar créditos.
-            </p>
-
-            <div className="staging-tabs">
-              <button
-                type="button"
-                className={mode === "register" ? "active" : ""}
-                onClick={() => setMode("register")}
-              >
-                Registro
-              </button>
-              <button
-                type="button"
-                className={mode === "login" ? "active" : ""}
-                onClick={() => setMode("login")}
-              >
-                Login
-              </button>
-            </div>
-
-            <form onSubmit={submit}>
-              {mode === "register" && (
-                <label>
-                  Nombre
-                  <input
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Tu nombre o empresa"
-                  />
-                </label>
-              )}
-              <label>
-                Correo
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@empresa.com"
-                />
-              </label>
-              <label>
-                Contraseña
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                />
-              </label>
-              {error && <p className="staging-error">{error}</p>}
-              <button type="submit" className="staging-btn staging-btn-primary" disabled={loading}>
-                {loading ? "Procesando…" : mode === "register" ? "Crear cuenta" : "Entrar"}
-              </button>
-            </form>
-          </div>
-        ) : (
-          <div className="card staging-auth-card">
-            <h1>¡Bienvenido, {session.full_name || session.email}!</h1>
+            <h1>Sesión Auth0</h1>
             <p>
-              Tu cuenta está lista. Créditos actuales: <strong>{session.credits_balance}</strong>
+              Conectado como <strong>{user?.email || user?.name}</strong>
             </p>
-            <BoldCheckout />
             <div className="staging-cta-row">
               <button
                 type="button"
                 className="staging-btn staging-btn-primary"
                 onClick={() => navigate("/app")}
               >
-                Ir al estudio de marketing
+                Ir al estudio
               </button>
             </div>
           </div>
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="staging-page brand-theme">
+      <div className="container staging-auth-wrap">
+        <BrandMark size={48} />
+        <div className="card staging-auth-card">
+          <h1>Iniciar sesión</h1>
+          <p className="staging-muted">
+            Accede con Auth0 Universal Login (única identidad de la plataforma).
+          </p>
+          {error && <p className="staging-error">{error.message}</p>}
+          <div className="staging-cta-row" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
+            <button
+              type="button"
+              className="staging-btn staging-btn-primary"
+              onClick={() => loginWithRedirect({ appState: { returnTo: "/app" } })}
+            >
+              Continuar con Auth0
+            </button>
+            <button
+              type="button"
+              className="staging-btn staging-btn-ghost"
+              onClick={() =>
+                loginWithRedirect({
+                  appState: { returnTo: "/app" },
+                  authorizationParams: { screen_hint: "signup" },
+                })
+              }
+            >
+              Crear cuenta
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

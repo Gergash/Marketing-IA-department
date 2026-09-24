@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Timeout de la llamada al LLM; debe tolerar la carga inicial del modelo (~5GB)
     llm_timeout_seconds: int = 300
 
-    # Image generation — provider: stable_diffusion | comfyui | fal | venice | openai | canva | mock
+    # Image generation — provider: stable_diffusion | comfyui | fal | venice | openai_image | openai | canva | mock
     image_provider: str = "stable_diffusion"
     stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
     # Nombre exacto del checkpoint en Automatic1111 (como en el desplegable), p. ej. archivo .safetensors
@@ -75,15 +75,24 @@ class Settings(BaseSettings):
     # Edición de foto del usuario (POST /image/edit). Default alineado a gpt-image-2.
     venice_image_edit_model: str = "gpt-image-2-edit"
     venice_image_edit_quality: str = "high"  # low | medium | high
+    # OpenAI Images directo (gpt-image-2) — NO reusar openai_api_key (ese va a OpenRouter para texto)
+    # IMAGE_PROVIDER=openai_image — compara coste vs Venice (mismo modelo, sin margen revendedor)
+    openai_image_api_key: str = ""
+    openai_image_api_base: str = "https://api.openai.com/v1"
+    openai_image_model: str = "gpt-image-2"
+    openai_image_edit_model: str = "gpt-image-2"
+    openai_image_quality: str = "high"  # low | medium | high | auto
+    openai_image_background: str = "opaque"  # opaque | transparent | auto
     # Animación / generación de video Venice
     # video_gen_mode: full = un clip AI | scenes = unir tomas AI | still = stills+Ken Burns
     video_gen_mode: str = "scenes"
     # Compat legacy: still | venice (si venice y mode vacío → scenes)
     video_scene_provider: str = "venice"
-    # Alias: seedance-2.5 | seedance-2.0 | kling-o3 | kling-o3-pro | minimax-h3
-    venice_video_model: str = "seedance-2.0"
-    venice_video_duration: str = "5s"  # 5s | 10s
-    venice_video_resolution: str = "720p"  # 480p | 720p | 1080p
+    # Alias o ID Venice: gemini-omni-flash-1-1 | seedance-2.0 | kling-o3 | …
+    venice_video_model: str = "gemini-omni-flash-1-1-text-to-video"
+    # Gemini Omni: 4s|6s|8s|10s. Seedance/Wan: 5s|10s (el cliente hace snap).
+    venice_video_duration: str = "6s"
+    venice_video_resolution: str = "720p"  # 360p | 720p | 1080p | 4k (según modelo)
 
     # OCR local para manuales de marca escaneados — provider: none | paddle
     # Flujo: pypdf primero; si hay poco texto → PaddleOCR (GPU/CPU)
@@ -186,8 +195,13 @@ class Settings(BaseSettings):
     # Vacío = auth desactivada (dev local). En producción, pon un valor aleatorio largo.
     api_key: str = ""
 
-    # Staging SaaS — landing + login + Bold + créditos (local / pre-prod)
+    # Staging SaaS — landing + Auth0 + Bold + créditos
     staging_saas_enabled: bool = False
+    # Auth0 (única identidad SaaS). Domain sin https://. Audience vacío = client_id (ID token).
+    auth0_domain: str = ""
+    auth0_client_id: str = ""
+    auth0_audience: str = ""
+    # Legacy local JWT — deprecado; se ignora cuando Auth0 está configurado
     jwt_secret: str = ""
     jwt_ttl_minutes: int = 10080  # 7 días
     # Bold — botón de pagos (misma llave secreta firma webhook X-Bold-Signature)
@@ -196,9 +210,16 @@ class Settings(BaseSettings):
     bold_webhook_secret: str = ""
     pack_amount_cop: int = 99000
     credits_per_pack: int = 100
+    # Créditos al crear el primer wallet Auth0 (staging local sin Bold)
+    staging_seed_credits: int = 100
     staging_success_redirect_url: str = "http://localhost:5173/app?paid=1"
     # Slack Incoming Webhook para notificaciones human-in-the-loop
     slack_webhook_url: str = ""
+
+    # Panel de administrador — emails con acceso aunque su fila AppUser.is_admin sea False
+    # (bootstrap: evita el huevo-gallina de tener que ser admin en BD para volverse admin)
+    admin_emails: str = ""
+    admin_panel_enabled: bool = True
 
     # Hilo de pensamiento de los agentes (Marketing Studio)
     thoughts_enabled: bool = True

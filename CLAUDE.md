@@ -4,6 +4,8 @@
 
 MVP de automatización de marketing con agentes de IA. Flujo: brief (+ manual de marca) → estrategia → copy con QA → diseño visual → aprobación humana → publicación en redes.
 
+Capa opcional **SaaS**: landing + **Auth0 Universal Login** (única identidad) + créditos Bold + panel `/admin` (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` + `VITE_AUTH0_*`). E2E local documentado en `docs/staging-e2e.md`. Ver `docs/auth0.md`, `docs/admin-panel.md`, `docs/staging-landing-bold.md`. Snapshot 17-sep: `docs/estado-saas-auth0-2026-09-17.md`. **Meta App Live: esperar bandera.**
+
 **Prioridad de desarrollo:** un solo developer, mediados 2026, iterar rápido sin sobre-ingenierizar.
 
 ---
@@ -32,6 +34,25 @@ Strategist (+ brand + inbound)
 ```
 
 Asesor creativo (`advisor.py`) es **fuera** del pipeline: chat vía `POST /api/advisor/chat`.
+
+### Capa SaaS (landing / login / créditos)
+
+```
+/       LandingPage     ← VITE_STAGING_SAAS=true (bake Vite)
+/login  LoginPage       ← Auth0 Universal Login (única identidad)
+/app    App (estudio)   ← Bearer ID token Auth0; créditos /api/billing/*
+/admin  AdminPanel      ← require_admin (is_admin | ADMIN_EMAILS)
+```
+
+| Flag | Capa | Efecto |
+|------|------|--------|
+| `STAGING_SAAS_ENABLED` | API | Auth0 JWKS, billing Bold, cobro de créditos al publicar |
+| `VITE_STAGING_SAAS` | Frontend build | Rutas landing/login; **rebuild** obligatorio al cambiar |
+| `VITE_AUTH0_*` / `AUTH0_*` | FE bake / API | Domain + client_id (audience vacío = ID token) |
+
+Código: `gateway/app/services/auth0_jwt.py`, `core/auth.py`, `api/auth_users.py` (register/login → **410**), `billing.py`; UI `LoginPage.jsx`, `auth.js`, `main.jsx`.  
+OAuth redes: `GET /api/auth/login/{provider}` → `{authorize_url}` con Bearer (no redirect ciego).  
+Legacy `API_KEY` solo si SaaS/Auth0 off.
 
 Doctrina inbound (HubSpot/Cyberclick/…) vive en
 `agents/marketing_agents/knowledge/` y se inyecta en Strategist, Copywriter y VideoScriptAgent.
@@ -223,7 +244,19 @@ LINKEDIN_API_VERSION=202401     # header LinkedIn-Version de la API /rest
 # Deben estar CONCEDIDOS en la pestaña Auth de la app; si no, LinkedIn rechaza todo el consentimiento.
 # Sin el producto "Sign In with LinkedIn using OpenID Connect": r_basicprofile w_member_social
 LINKEDIN_SCOPES=openid profile w_member_social
+
+# SaaS (landing + login + Bold) — ver docs/staging-landing-bold.md
+STAGING_SAAS_ENABLED=true
+JWT_SECRET=cambia-esto-en-serio
+JWT_TTL_MINUTES=10080
+BOLD_API_KEY=
+BOLD_INTEGRITY_SECRET=
+BOLD_WEBHOOK_SECRET=
+PACK_AMOUNT_COP=99000
+CREDITS_PER_PACK=100
 ```
+
+Frontend (`frontend/.env.local`): `VITE_STAGING_SAAS=true`. En prod Docker el compose pasa el build-arg (default `true`).
 
 **Nunca commitear `.env`.**
 
@@ -290,6 +323,8 @@ ngrok http 8000
 - `GET /api/auth/accounts` / `DELETE /api/auth/accounts/{id}`
 - `POST /api/campaigns/{id}/fire`
 - `GET /api/image/archetypes` / `/image/providers` / `/image/formats` (formatos válidos por red)
+- SaaS: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
+- Billing: `GET /api/billing/credits`, `GET /api/billing/bold-checkout`, `POST /api/billing/bold-webhook`
 
 ---
 
@@ -307,9 +342,13 @@ pytest tests/ -v
 - `tests/test_format_normalization.py` (formatos por red + universal), `test_thought_stream.py`, `test_text_contrast_and_video_models.py`, `test_linkedin_native.py`
 
 3 fallos preexistentes en `test_venice.py` / `test_video_timeline_clips.py` (estructura del edit Shotstack).
+**Hueco residual:** tests JWKS live / billing Bold E2E. Hay `tests/test_admin_panel.py` y `tests/test_auth0_saas.py` (410 + upsert).
 
-Estado canónico: [`estado-actual.txt`](estado-actual.txt).  
-NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).
+Estado canónico: [`estado-actual.txt`](estado-actual.txt) (2026-09-23).  
+E2E staging: [`docs/staging-e2e.md`](docs/staging-e2e.md).  
+Snapshot Auth0 (noche 17-sep): [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md).  
+NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).  
+SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/auth0.md`](docs/auth0.md) · [`docs/admin-panel.md`](docs/admin-panel.md).
 
 ---
 
@@ -332,6 +371,11 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 - **Formatos por red:** catálogo único en `image_specs.py` (`_NETWORK_FORMATS`), servido por `GET /api/image/formats`; el dashboard nunca hardcodea dimensiones
 - **`content_format=universal`** = 1080×1080 idéntico en todas las redes (para publicar la misma pieza en varias); se comporta como `feed` en layout y publicación
 - **TikTok:** generación sí; publish tras App Review. **X:** publish nativo (OAuth 1.0a)
+- **SaaS UI bake-time:** `VITE_STAGING_SAAS` y `VITE_AUTH0_*` se fijan en el build Vite; cambiar flags en prod exige rebuild del contenedor `frontend`
+- **Identidad SaaS:** solo Auth0 ID token. `/api/auth/register` y `/login` locales son **410**. Reset password del panel admin es **410**
+- **OAuth Integraciones:** SPA pide `authorize_url` con Bearer; redirect URIs canónicas = dominio prod (local → `.env.staging.local`)
+- **Panel admin:** lee `app_users` / `payment_records` / `api_usage_events`; bootstrap `ADMIN_EMAILS`. No llama Auth0 Management ni Venice dashboard
+- **Rutas staging:** unknown paths (p.ej. `/ladmin`) van a landing; nunca fallback a `App` sin sesión
 
 ---
 
@@ -341,11 +385,14 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 2. Stable Diffusion local — alternativa; A1111 caído → error explícito
 3. Video v2 — música, captions por palabra; bucket S3/GCS opcional (hoy Drive del cliente)
 4. TikTok fase 2 (auditoría app)
-5. Meta: re-OAuth scopes IG; ngrok dominio fijo
+5. Meta App Live / Review — **esperar bandera del usuario**; código OAuth+Go ya existe
 6. Revise v2 — historial de versiones
 7. CI/CD — Skaffold/Cloud Deploy sin GKE real
 8. Fallback LLM → propagar a UI
 9. Unlimited-OCR descartado (VRAM); PaddleOCR es el camino OCR
+10. SaaS: callbacks Auth0 de prod, rate limit, Custom Domain, tests JWKS live, no skip firma Bold con secret vacío
+11. Deploy Auth0 a VPS (callbacks dominio + rebuild `VITE_AUTH0_*`); Meta App Live esperar bandera
+12. Commit/push working tree Auth0+OAuth cuando se pida
 
 ---
 
@@ -354,3 +401,4 @@ NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebo
 - Rama activa: `main`
 - Commits directamente a `main`; no crear ramas salvo petición explícita
 - `master` es rama estable; fusionar solo cuando el usuario lo indique
+- Deploy prod: `master` en VPS ≈ `main`; tras `git pull`, `up -d --build` (frontend si cambió `VITE_*`)

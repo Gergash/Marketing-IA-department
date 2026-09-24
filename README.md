@@ -14,6 +14,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - Hilo de pensamiento en vivo de los agentes + modo interactivo con checkpoints
 - Publicación nativa Meta/Instagram (OAuth + sidecar Go), LinkedIn (OAuth + Python) y **X/Twitter** (OAuth 1.0a + Python)
 - HITL: tomas (`pending_takes`) → aprobar / rechazar / solicitar cambios el MP4 (`pending_approval` / `revise`)
+- **SaaS opcional:** landing, **Auth0 Universal Login**, créditos Bold, panel `/admin` — ver [`docs/auth0.md`](docs/auth0.md), [`docs/admin-panel.md`](docs/admin-panel.md), [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
 
 ## Stack Tecnológico
 
@@ -48,8 +49,9 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
 - **Paso 17** 🔄 **OpenRouter** como LLM cloud en prod (`OPENAI_API_BASE`); integración OAuth Meta/X documentada en `infra/deploy/`
 - **Paso 18** ✅ **Foto real + edit** Venice `gpt-image-2-edit` **y** fal `FLUX Kontext` (`alter_image_with_ai` → escena; tipografía Pillow; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
+- **Paso 19** ✅ **Capa SaaS** landing + **Auth0-only** + créditos Bold + panel `/admin` (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` bake-time). E2E local login→publish IG verificado. OAuth Integraciones con Bearer + `authorize_url`. URIs OAuth canónicas = prod. **Auth0 en VPS y Meta App Live: pendientes.** — [`docs/staging-e2e.md`](docs/staging-e2e.md), [`docs/auth0.md`](docs/auth0.md), [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado 2026-09-10).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado **2026-09-23**).
 
 ## Formatos de publicación
 
@@ -299,10 +301,22 @@ VENICE_IMAGE_EDIT_MODEL=gpt-image-2-edit
 # VENICE_IMAGE_EDIT_QUALITY=high  # reservado; el cliente NO lo envía (API → 400)
 # Reels: animar escenas con image-to-video
 VIDEO_SCENE_PROVIDER=venice      # o still (Ken Burns)
-VENICE_VIDEO_MODEL=seedance-2.0
+VENICE_VIDEO_MODEL=gemini-omni-flash-1-1-text-to-video
+VENICE_VIDEO_DURATION=6s          # Gemini Omni: 4s|6s|8s|10s
 ```
 
 `GET /api/image/providers` lista Venice si hay key (label con el modelo activo).
+
+**OpenAI Images directo** (`gpt-image-2` sin margen Venice — A/B de coste):
+
+```env
+IMAGE_PROVIDER=openai_image
+OPENAI_IMAGE_API_KEY=sk-proj-...   # key de platform.openai.com (NO la de OpenRouter)
+OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_QUALITY=high          # low | medium | high | auto
+```
+
+Ver [`docs/gpt-image-2-directo.md`](docs/gpt-image-2-directo.md). No confundir con `IMAGE_PROVIDER=openai` (DALL·E 3 legacy).
 
 **fal.ai — Flux** (generación desde cero + edición de foto real con Kontext):
 
@@ -505,6 +519,8 @@ kubectl apply -f k8s/base/go-publisher-deployment.yaml
   - `GET /api/auth/accounts` — multi-cuenta OAuth
   - `POST /api/campaigns`, `POST /api/campaigns/{id}/fire`
 - **Estado del proyecto (canónico):** [`estado-actual.txt`](estado-actual.txt)
+- **Snapshot Auth0/admin 17-sep:** [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md)
+- **Auth0:** [`docs/auth0.md`](docs/auth0.md) · **Panel admin:** [`docs/admin-panel.md`](docs/admin-panel.md)
 - **NotebookLM (fuente para subir):** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) — guía [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)
 - **Pipeline:** [`agents/PIPELINE.md`](agents/PIPELINE.md)
 - **Referencia visual de marca:** [`docs/references/README.md`](docs/references/README.md)

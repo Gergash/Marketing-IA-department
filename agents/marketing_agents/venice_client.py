@@ -466,26 +466,42 @@ def generate_video_bytes(
     if not api_key.strip():
         raise RuntimeError("venice_video_failed: missing API key")
 
+    from .venice_video_models import normalize_venice_video_duration
+
     base = _normalize_base(base_url)
     headers = _auth_headers(api_key)
+    model_used_req = (model or "").strip()
+    # Gemini Omni: 4s|6s|8s|10s (5s → 400). Seedance/Wan: 5s|10s.
+    duration_used = normalize_venice_video_duration(duration, model_used_req)
     payload: dict[str, Any] = {
-        "model": model,
+        "model": model_used_req,
         "prompt": prompt[:2500],
-        "duration": duration,
+        "duration": duration_used,
         "resolution": resolution,
     }
-    if aspect_ratio and "image-to-video" not in model.lower():
+    if aspect_ratio and "image-to-video" not in model_used_req.lower():
         # i2v suele derivar el ratio de la imagen; aspect_ratio puede rechazarse.
         payload["aspect_ratio"] = aspect_ratio
     if image_url:
         payload["image_url"] = image_url
         # Si el modelo por defecto es t2v pero hay imagen, preferir i2v salvo override explícito.
-        if "image-to-video" not in model.lower() and "text-to-video" in model.lower():
-            payload["model"] = model.replace("text-to-video", "image-to-video")
-            model = payload["model"]
+        if "image-to-video" not in model_used_req.lower() and "text-to-video" in model_used_req.lower():
+            payload["model"] = model_used_req.replace("text-to-video", "image-to-video")
+            model_used_req = payload["model"]
+            # Re-snap por si el i2v tiene el mismo set (Gemini sí).
+            duration_used = normalize_venice_video_duration(duration, model_used_req)
+            payload["duration"] = duration_used
             payload.pop("aspect_ratio", None)
     if negative_prompt:
         payload["negative_prompt"] = negative_prompt
+
+    logger.info(
+        "venice.video_queue_request",
+        model=payload["model"],
+        duration=payload["duration"],
+        resolution=payload.get("resolution"),
+        has_image=bool(image_url),
+    )
 
     try:
         queue_resp = httpx.post(
@@ -498,11 +514,11 @@ def generate_video_bytes(
         queued = queue_resp.json()
     except Exception as exc:
         detail = _http_detail(exc)
-        logger.error("venice.video_queue_error", error=detail, model=model)
+        logger.error("venice.video_queue_error", error=detail, model=payload.get("model"))
         raise RuntimeError(f"venice_video_failed:queue: {detail}") from exc
 
     queue_id = queued.get("queue_id")
-    model_used = queued.get("model") or model
+    model_used = queued.get("model") or payload.get("model") or model_used_req
     download_url = queued.get("download_url")
     if not queue_id:
         raise RuntimeError(f"venice_video_failed:queue: missing queue_id in {queued!r}")

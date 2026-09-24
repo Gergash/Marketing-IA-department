@@ -10,17 +10,19 @@ Guía de despliegue base: [`vps-hostinger.md`](vps-hostinger.md)
 
 ---
 
-## Estado del proceso (actualizado 2026-08-30)
+## Estado del proceso (actualizado 2026-09-23)
 
 | Fase | Estado | Notas |
 |------|--------|-------|
 | DNS + Caddy host + Docker compose | ✅ Hecho | Loopback `8000`/`8081`, sin Caddy en compose |
 | Dashboard + API en HTTPS | ✅ Hecho | `/api/health`, SPA en `/` |
 | Legales (`/terminos`, `/privacidad`) | ✅ Hecho | Servidos por FastAPI (TikTok + Meta) |
+| Capa SaaS Auth0 | ✅ E2E local | Auth0-only + créditos + OAuth Bearer; **callbacks Auth0 prod pendientes** |
 | LLM cloud (OpenRouter) | 🔄 En curso | Key en `.env.production`; validar que agentes no usen stub |
-| Meta / Instagram OAuth | 🔄 En curso | Portal en dominio prod; **Conectar Meta** → prueba pendiente |
-| LinkedIn OAuth | 🔄 En curso | Redirect prod; conectar en dashboard |
-| **X OAuth + publish** | 🔄 Casi listo | Portal **Read and write** + `.env.production` en VPS sincronizado; **post de prueba** pendiente |
+| Meta / Instagram OAuth (código) | ✅ OAuth + Go sidecar | Page token o Conectar Meta; URIs canónicas = dominio prod |
+| **Meta App Mode Live / Review** | ⬜ **Esperando bandera del usuario** | No iniciar trámite hasta aviso explícito |
+| LinkedIn OAuth | 🔄 En curso | Redirect prod en `.env`; registrar exacto en portal |
+| **X OAuth + publish** | 🔄 Casi listo | Callback prod en portal; **post de prueba** pendiente |
 | **TikTok App Review** | ⏳ En evaluación | Login Kit + Content Posting solicitados |
 | TikTok publish (código) | ⬜ Fase 2 | Tras aprobación: OAuth + Content Posting API |
 
@@ -124,12 +126,14 @@ curl -sI https://api.powerupsecosistem.online/health   # InsightFlow intacto
 
 ## Próximos pasos inmediatos
 
+- [ ] **Bandera del usuario** para pasar la app Meta a Live / App Review (no adelantar)
 - [ ] **Post de prueba en X** (brief red X, formato feed, aprobar)
-- [ ] Confirmar **Conectar Meta** tras Basic Settings en Meta Developers
+- [ ] Auth0: callbacks de prod + rebuild frontend VPS (cuando se pida deploy SaaS)
 - [ ] OpenRouter: key en prod + logs sin `strategist.using_stub`
 - [ ] Esperar **TikTok App Review**; luego implementar OAuth/publish
 - [ ] Biblioteca multi-imagen reutilizable (WIP)
 - [ ] Endurecer copy/overlay para no repetir texto del brief
 - [x] Foto real + Venice edit (personas/escena; tipografía Pillow) — `docs/foto-real-venice-edit.md`
 - [x] `user_clip_reel` cloud: audio-only + VideoProducer + `pending_takes` + Conectar Google Drive en UI
+- [x] Panel admin `/admin` + Auth0-only en local (working tree 17-sep)
 - [ ] Snapshot VPS en Hostinger tras integraciones estables

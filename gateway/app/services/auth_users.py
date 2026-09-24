@@ -65,6 +65,9 @@ def authenticate_user(db: Session, *, email: str, password: str) -> AppUser | No
     user = db.execute(select(AppUser).where(AppUser.email == email_norm)).scalar_one_or_none()
     if not user or not _verify_password(password, user.password_hash):
         return None
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
     return user
 
 

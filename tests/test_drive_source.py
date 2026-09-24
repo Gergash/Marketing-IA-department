@@ -63,7 +63,8 @@ def test_google_login_url_requests_drive_readonly_scope(monkeypatch: pytest.Monk
     get_settings.cache_clear()
 
     response = auth_social.oauth_login("google", tenant_id="demo-tenant")
-    location = response.headers["location"]
+    # Misma forma JSON que Meta/LinkedIn/X tras el cambio Auth0 SPA.
+    location = response["authorize_url"]
     assert "drive.readonly" in location
     assert "access_type=offline" in location
 

@@ -1,16 +1,74 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: 2026-09-13
-Último foco: fal.ai con paridad Venice para alterar fotos reales (FLUX Kontext) + docs cloud Drive.
+Actualizado: **2026-09-23**
+Último foco: Auth0-only verificado E2E local (login → créditos → Generar → Aprobar → Instagram) + OAuth Integraciones con Bearer + URIs canónicas de **prod**. **Meta App Live: sigue esperando bandera.**
 **Producción:** `https://marketing.powerupsecosistem.online` · VPS `insightflow@2.25.107.229` · compose `marketing-depa-prod`  
 **InsightFlow (no tocar):** `https://api.powerupsecosistem.online`
 
-**NotebookLM:** [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md) · [`docs/notebooklm/COMO-SUBIR.md`](docs/notebooklm/COMO-SUBIR.md)  
-**Foto real + edit:** [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
+### Snapshot operativo (hoy)
+
+| Pieza | Estado |
+|-------|--------|
+| Identidad SaaS | **Auth0-only** (ID token RS256/JWKS). `/register` `/login` locales → **410** |
+| Studio local | `/login` → Auth0 → `/app` con `STAGING_SEED_CREDITS` |
+| Publicar IG | OK vía Page token + go-publisher; imágenes públicas con túnel si `PUBLIC_IMAGE` local |
+| Integraciones OAuth | Conectar = Bearer + JSON `authorize_url` (ya no `window.location` al API) |
+| Redirect URIs `.env` | **Canónicas prod** (`marketing.powerupsecosistem.online`); local opcional en `.env.staging.local` |
+| Panel `/admin` | KPIs BD propia; bootstrap `ADMIN_EMAILS` |
+| Auth0 en VPS | **Pendiente** (callbacks hoy solo `localhost:5173`) |
+| Meta Live / App Review | **Esperando bandera explícita** |
+| Working tree Auth0 | Sin push: `main` ahead vs `origin/main` + cambios locales; commit sugerido: `feat: Auth0-only SaaS e Integraciones OAuth con Bearer` |
+
+**Guías:** [`docs/staging-e2e.md`](docs/staging-e2e.md) · [`docs/auth0.md`](docs/auth0.md) · [`docs/admin-panel.md`](docs/admin-panel.md) · [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · snapshot 17-sep [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md) · foto real [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md) · NotebookLM [`docs/notebooklm/`](docs/notebooklm/)
 
 ---
 
 ### Cronología reciente
+
+#### 2026-09-18..23 — E2E staging + OAuth Auth0 + docs/código comentado
+
+| Entrega | Detalle |
+|---------|---------|
+| **E2E publish** | Brief → `pending_approval` → approve → Instagram (`go-publisher` + `META_PAGE_ACCESS_TOKEN`); créditos debitan |
+| **JWT skew** | Backend `verify_iat=False` + leeway 600s; FE reintenta ID token / refresh |
+| **PyJWT[crypto]** | RS256 Auth0 exige `cryptography` |
+| **OAuth Conectar** | `GET /auth/login/{provider}` → `{authorize_url}`; SPA manda Bearer. Fix del 401 «Autenticación Auth0 requerida» |
+| **`/auth/oauth-config`** | Expone redirect URIs activas (UI Integraciones) |
+| **URIs prod** | `.env` / `.env.example` canónicos en dominio prod; compose prod fuerza `DOMAIN`; local en `.env.staging.local` |
+| **Seed créditos** | `STAGING_SEED_CREDITS`; upsert Auth0 rellena wallet vacío en staging |
+| **`_public_image_url`** | Reescribe localhost/127.0.0.1 → `PUBLIC_IMAGE_BASE_URL` (Meta necesita HTTPS) |
+| **Portales LinkedIn/X** | Deben listar la URI **exacta** del `.env` (prod y/o localhost); mismatch → `redirect_uri` / X 415 |
+| **Venice 402** | Saldo cuenta ≠ tope USD de la API key; subir límite o nueva key en Claves Venice |
+| **Comentarios código** | Auth0/OAuth documentados en FE (`auth.js`, `main.jsx`, Integraciones…) y BE (`auth0_jwt`, `auth_social`…) |
+| **Docs** | `docs/staging-e2e.md` checklist E2E |
+
+#### 2026-09-17 noche — Auth0-only + panel admin verificado en local
+
+| Entrega | Detalle |
+|---------|---------|
+| **IdP** | Única identidad SaaS = Auth0 Universal Login. `POST /api/auth/register\|login` → **410**. Reset admin → **410** (usar dashboard Auth0) |
+| **Token** | ID token RS256 JWKS (`aud` = client_id). Access token / Resource Server **no** creado (MCP sin `create:resource_servers`) |
+| **Upsert** | Primera llamada API con Bearer crea/actualiza `AppUser.auth0_sub` + `tenant_id` + `CreditWallet` |
+| **Tenant Auth0** | `dev-ayl6gsakmvf7rb27.us.auth0.com` · SPA Marketing DEPA IA · client `loXNtYYuNPxwCwuxDZv4i1cXAUWILw0L` · callbacks **solo localhost:5173** (prod Auth0 aún no) |
+| **Admin local** | `ADMIN_EMAILS=info@powerupsagencia.com` en `.env`. Signup **ok** desde `/login` → **Crear cuenta**. Entra al estudio `/app` |
+| **Bug `/ladmin`** | Rutas desconocidas caían a `App` sin sesión. Fix: whitelist; unknown → landing |
+| **Bug signup** | Abrir `/u/signup` a mano o refrescar → `some body keys are invalid`. Flujo correcto: botón de la app (`/authorize`) |
+| **Panel** | `/admin` KPIs desde BD propia. Flujo usuarios/pagos/consumo documentado en `docs/admin-panel.md` |
+| **Friendly Name** | Texto “Sign Up to dev-ayl6gsak…” se cambia en Auth0 Settings → Friendly Name (p.ej. PowerUps), no en código |
+| **Meta Live** | **No iniciado.** Esperar bandera. Guía: `infra/deploy/meta-oauth-production.md` |
+| **Docs** | `docs/auth0.md`, snapshot `docs/estado-saas-auth0-2026-09-17.md`, admin-panel ampliado |
+
+#### 2026-09-17 — Capa SaaS + login en prod (VITE bake)
+
+| Entrega | Detalle |
+|---------|---------|
+| **Flags duales** | API: `STAGING_SAAS_ENABLED=true`. Frontend: `VITE_STAGING_SAAS=true` (Vite bake-time; **no basta** con el `.env` de la API) |
+| **Fix prod** | `Dockerfile.frontend` + `docker-compose.prod.yml` pasan `VITE_STAGING_SAAS` al build; sin eso `/` abre el dashboard legacy |
+| **Rutas UI** | `/` landing · `/login` Auth0 · `/app` estudio · `/admin` panel |
+| **Billing** | Bold checkout + webhook → créditos por tenant; publicar sin saldo → **402** |
+| **Legacy** | Con SaaS off, sigue `API_KEY` Bearer |
+| **Panel admin** | `/admin` — resumen, usuarios, pagos, consumo APIs; `ADMIN_EMAILS` bootstrap |
+| **Docs** | staging-landing-bold, manual-staging, CLAUDE, vps-hostinger, .env.example |
 
 #### 2026-09-13 — fal.ai edición de foto real (paridad Venice)
 
@@ -293,14 +351,35 @@ Modos (`GET /api/video/options`): `full` = clip AI completo con Venice; `scenes`
 - `POST /runs/{id}/approve`, `/reject`, `/revise`
 - `GET /runs`, `/runs/{id}`
 - `POST/GET /campaigns`, `POST /campaigns/{id}/fire`
-- OAuth: `/auth/login|callback/{meta,linkedin,google,x}`, `/auth/status`, `/auth/accounts`, `DELETE /auth/accounts/{id}`
+- OAuth social: `/auth/login|callback/{meta,linkedin,google,x}`, `/auth/status`, `/auth/accounts`, `DELETE /auth/accounts/{id}`
+- SaaS (si `STAGING_SAAS_ENABLED`): `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
+- Billing: `GET /billing/credits`, `GET /billing/bold-checkout`, `POST /billing/bold-webhook`
 
 Estáticos: `static/uploads/`, `static/uploads/brand/`, `static/uploads/clips/{run_id}/shorts/`, `static/images/`, `static/videos/`, `static/fonts/`.
 
 ---
 
+### Capa SaaS (landing + créditos)
+
+Activación **obligatoria en dos sitios**:
+
+| Capa | Variable | Dónde |
+|------|----------|--------|
+| Backend | `STAGING_SAAS_ENABLED=true` | `.env` / `.env.production` |
+| Frontend | `VITE_STAGING_SAAS=true` | `frontend/.env.local` (dev) o build-arg Docker (prod) |
+
+Flujo: landing → registro/login (email único) → JWT → estudio `/app` → comprar créditos (Bold) → publicar consume créditos.
+
+Tablas: `app_users`, `credit_wallets`, `payment_records` (schema_patches al arrancar).  
+Guía: `docs/staging-landing-bold.md`. Manual largo: `docs/manual-staging.md`.
+
+**Prod:** tras cambiar `VITE_STAGING_SAAS`, hay que **rebuild** `frontend` (`docker compose … up -d --build frontend`). Reiniciar solo la API no cambia la UI.
+
+---
+
 ### Frontend (dashboard)
 
+- Con SaaS: landing `/`, login `/login`, estudio `/app` + barra de créditos
 - Brief: descripción producto/evento, público, objetivo, tono
 - Red social + Formato: selects acoplados servidos por `/image/formats` (+ Drive folder, objetivo de edición, N tomas, auto/manual en `user_clip_reel`)
 - Video: modo de generación y modelo Venice (solo en `reel`)
@@ -361,9 +440,19 @@ X_API_KEY=...
 X_API_SECRET=...
 X_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/x
 PUBLIC_IMAGE_BASE_URL=https://marketing.powerupsecosistem.online
+# SaaS (landing + login + Bold)
+STAGING_SAAS_ENABLED=true
+VITE_STAGING_SAAS=true          # build-arg del frontend; rebuild obligatorio
+JWT_SECRET=<secreto-largo>      # NUNCA vacío en prod
+BOLD_API_KEY=...
+BOLD_INTEGRITY_SECRET=...
+BOLD_WEBHOOK_SECRET=...
+PACK_AMOUNT_COP=99000
+CREDITS_PER_PACK=100
 ```
 
-Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d api worker video-worker`
+Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d api worker video-worker`  
+Tras cambiar `VITE_STAGING_SAAS`: mismo comando con `--build frontend` (o `up -d --build`).
 
 **No commitear `.env` ni `.env.production`.**
 
@@ -390,6 +479,8 @@ Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml -
 | 23 OpenRouter LLM en prod | 🔄 Key + validar que no caiga a stub |
 | 24 Biblioteca multi-imagen | ⬜ Modelo `UserAsset` iniciado; API/UI pendiente |
 | 25 Copy sin eco del brief | ⬜ Endurecer strategist/copywriter/QA + overlay |
+| 26 Capa SaaS (landing/Auth0/Bold/créditos) | ✅ Auth0-only E2E local; OAuth Bearer; panel `/admin`; bake VITE; **Auth0 prod y Bold reales pendientes** |
+| 27 Meta App Mode Live / Review | ⬜ **Esperando bandera explícita del usuario** (código OAuth+Go ya existe) |
 
 ---
 
@@ -398,23 +489,27 @@ Tras cambiar secretos en VPS: `docker compose -f infra/docker-compose.prod.yml -
 1. Canva OAuth / Canva-Figma MCP
 2. Video v2: música de fondo, captions por palabra; bucket S3/GCS propio como master store (hoy Drive del cliente)
 3. TikTok: publicación nativa tras App Review
-4. **X:** post de prueba en prod (Integraciones o tokens en env)
-5. **Meta:** verificar Conectar Meta tras Basic Settings en dominio prod
+4. **X / LinkedIn OAuth:** registrar URI prod (y localhost si se usa staging.local) en cada portal; post de prueba en prod
+5. **Meta App Live:** **esperar bandera**. Código OAuth+Go listo; trámite Developers no empezado
 6. **Biblioteca de fotos:** subir varias imágenes reutilizables por tenant (WIP `UserAsset`)
-7. **Copy/overlay:** evitar que texto del brief (tema, público, objetivo, tono) aparezca literal en imagen/caption
-8. CI/CD contra GKE real + Secret Manager
-9. Fallback LLM stub → propagar error a la UI
-10. Revise v2: historial de versiones y notas en copy + overlay Pillow
-11. Formato `universal` en video: hoy solo cubre imagen
-12. LinkedIn: solo perfil personal; solo imagen; token ~60 d sin refresh auto
-13. OAuth `_pending_states` en memoria (rompe con réplicas K8s)
-14. OpenRouter en prod: confirmar agentes usan LLM real, no stub
+7. **SaaS hardening:** callbacks Auth0 de **prod**, rate limit, Custom Domain, tests JWKS live, no saltar firma Bold si secret vacío
+8. **Deploy Auth0 a VPS:** añadir callbacks `https://marketing.powerupsecosistem.online` + rebuild frontend con `VITE_AUTH0_*`
+9. **Commit / push** working tree Auth0+OAuth cuando se pida (`feat: Auth0-only SaaS e Integraciones OAuth con Bearer`)
+10. **Copy/overlay:** evitar que texto del brief aparezca literal en imagen/caption
+11. CI/CD contra GKE real + Secret Manager
+12. Fallback LLM stub → propagar error a la UI
+13. Revise v2: historial de versiones y notas en copy + overlay Pillow
+14. Formato `universal` en video: hoy solo cubre imagen
+15. LinkedIn: solo perfil personal; solo imagen; token ~60 d sin refresh auto
+16. OAuth `_pending_states` en memoria (rompe con réplicas K8s)
+17. OpenRouter en prod: confirmar agentes usan LLM real, no stub
+18. Venice: vigilar tope USD por API key (402 aunque la cuenta tenga créditos)
 
 ---
 
 ### Resumen
 
-MVP **end-to-end**: brief con **manual de marca**, copy con QA e inbound, piezas por red (IG, FB, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento, HITL con revise, publicación **Meta/LinkedIn/X** (multi-cuenta donde aplica).
+MVP **end-to-end**: brief con **manual de marca**, copy con QA e inbound, piezas por red (IG, FB, LinkedIn, TikTok, X + **universal 1:1**), generadores **fal / Venice / SD**, Reels y clips Drive, asesor, hilo de pensamiento, HITL con revise, publicación **Meta/LinkedIn/X** (multi-cuenta donde aplica), más capa **SaaS** (landing + **Auth0 Universal Login** + créditos Bold + panel `/admin`) verificada en local hasta publicar en Instagram.
 
-**Producción:** `marketing.powerupsecosistem.online` en VPS Hostinger junto a InsightFlow.  
-**Docs:** este archivo + `README.md` + `CLAUDE.md` + `infra/arranque-stack.md` (local) + `infra/deploy/vps-hostinger.md` + `infra/deploy/proceso-integracion-redes.md`.
+**Producción:** `marketing.powerupsecosistem.online` en VPS Hostinger junto a InsightFlow. Auth0 en prod **aún no** (callbacks solo localhost). Redirect OAuth del `.env` canónico = dominio prod (compose también fuerza `DOMAIN`).  
+**Docs:** este archivo + `docs/staging-e2e.md` + `docs/auth0.md` + `docs/admin-panel.md` + `docs/staging-landing-bold.md` + `docs/estado-saas-auth0-2026-09-17.md` + `README.md` + `CLAUDE.md` + `infra/deploy/proceso-integracion-redes.md`.

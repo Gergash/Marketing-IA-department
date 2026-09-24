@@ -8,7 +8,12 @@ Sube **un solo archivo** como fuente principal:
 
 Es autocontenido (producto, arquitectura, agentes, marca, API, operación, **OAuth Google Drive / GOOGLE_CLIENT_ID**, límites y glosario). NotebookLM responde mejor con pocas fuentes densas y claras.
 
-Fecha de la fuente: ver cabecera del `.md` (**Actualizado: 2026-09-10**).
+Fecha de la fuente: ver cabecera del `.md` (**Actualizado: 2026-09-10** — **no incluye Auth0-only ni panel admin de la noche del 17-sep**).
+
+Para el estado SaaS/Auth0/admin actual, segunda fuente opcional:
+
+- `estado-actual.txt`
+- `docs/estado-saas-auth0-2026-09-17.md`
 
 ## Pasos en NotebookLM
 
@@ -17,7 +22,7 @@ Fecha de la fuente: ver cabecera del `.md` (**Actualizado: 2026-09-10**).
 3. **Añadir fuente** → **Subir** → elige el `.md` anterior.
    - Si NotebookLM pide PDF: abre el `.md` en VS Code / Word / Google Docs → Exportar o Imprimir a PDF, y sube el PDF.
 4. Espera a que indexe la fuente.
-5. (Opcional) Segunda fuente: `estado-actual.txt` de la raíz del repo (cronología 2026-09-10).
+5. (Opcional) Segunda fuente: `estado-actual.txt` (cronología viva) y/o `docs/estado-saas-auth0-2026-09-17.md` (Auth0 + panel admin 17-sep).
 
 ## No hace falta subir
 

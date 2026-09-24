@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from gateway.app.api.admin import router as admin_router
 from gateway.app.api.auth_social import router as auth_social_router
 from gateway.app.api.auth_users import router as auth_users_router
 from gateway.app.api.billing import router as billing_router
@@ -36,6 +37,7 @@ app.include_router(legal_router)
 app.include_router(tiktok_verify_router)
 app.include_router(auth_users_router)
 app.include_router(billing_router)
+app.include_router(admin_router)
 app.include_router(router)
 app.include_router(auth_social_router)
 

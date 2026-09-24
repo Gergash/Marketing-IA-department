@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
 
+/**
+ * Integraciones OAuth (Meta / LinkedIn / X / Google Drive).
+ *
+ * Cambio Auth0: "Conectar" ya no hace window.location al API (eso no manda Bearer → 401).
+ * Flujo: GET /auth/login/{provider} con JWT → JSON { authorize_url } → redirect al portal.
+ * /auth/oauth-config muestra las redirect URIs activas (prod canónico vs staging.local).
+ */
+
 const API_BASE = (() => {
   const explicit = import.meta.env.VITE_API_URL;
   if (explicit === "" || explicit === "/") return "/api";
@@ -44,14 +52,20 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+  const [redirectUris, setRedirectUris] = useState(null);
 
-  const load = async () => {
+  const load = async ({ notify = false } = {}) => {
+    if (!apiKey) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAccounts(apiKey);
+      const [data, cfg] = await Promise.all([
+        fetchAccounts(apiKey),
+        apiFetch("/auth/oauth-config", apiKey).catch(() => null),
+      ]);
       setAccounts(data.accounts || []);
-      onAccountsChanged?.();
+      if (cfg?.redirect_uris) setRedirectUris(cfg.redirect_uris);
+      if (notify) onAccountsChanged?.();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -59,7 +73,9 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
     }
   };
 
-  useEffect(() => { load(); }, [apiKey]);
+  useEffect(() => {
+    load();
+  }, [apiKey]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -79,8 +95,26 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
 
   const connectedProviders = accounts.map((c) => c.provider);
 
-  const handleConnect = (provider) => {
-    window.location.href = `${API_BASE}/auth/login/${provider}`;
+  const handleConnect = async (provider) => {
+    // No usar window.location directo: el browser no manda Bearer Auth0 → 401.
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const data = await apiFetch(`/auth/login/${provider}`, apiKey);
+      const url = data?.authorize_url;
+      if (!url) throw new Error("El servidor no devolvió authorize_url");
+      window.location.href = url;
+    } catch (e) {
+      const raw = e.message || "No se pudo iniciar la conexión OAuth";
+      const uri = redirectUris?.[provider];
+      const needsPortal =
+        /redirect_uri|Callback URL not approved|415|does not match/i.test(raw);
+      setError(
+        needsPortal && uri
+          ? `${raw}\n\nRegistra EXACTAMENTE esta URI en el portal de ${provider}:\n${uri}`
+          : raw
+      );
+    }
   };
 
   const handleDisconnect = async (account) => {
@@ -89,7 +123,7 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
     setError(null);
     try {
       await apiFetch(`/auth/accounts/${account.id}`, apiKey, "DELETE");
-      await load();
+      await load({ notify: true });
     } catch (e) {
       setError(e.message);
     }
@@ -106,8 +140,38 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
         Google Drive: OAuth solo lectura para <code>user_clip_reel</code>.
       </p>
 
-      {error && <p style={{ color: "red", fontSize: "0.85rem" }}>{error}</p>}
+      {error && (
+        <pre
+          style={{
+            color: "#f88",
+            fontSize: "0.8rem",
+            whiteSpace: "pre-wrap",
+            background: "#2a1515",
+            padding: "0.75rem",
+            borderRadius: "6px",
+          }}
+        >
+          {error}
+        </pre>
+      )}
       {successMsg && <p style={{ color: "#3c3", fontSize: "0.85rem" }}>{successMsg}</p>}
+
+      {redirectUris && (
+        <details open style={{ marginBottom: "0.75rem", fontSize: "0.8rem", color: "#aaa" }}>
+          <summary>URIs activas (deben coincidir con el portal)</summary>
+          <p style={{ margin: "0.5rem 0" }}>
+            Canónico en repo/VPS: <code>marketing.powerupsecosistem.online</code>.
+            Local: overrides en <code>.env.staging.local</code> (gitignored).
+            En cada portal registra <strong>prod y localhost</strong> si pruebas en ambos.
+          </p>
+          <pre style={{ margin: 0, background: "#1a1a2e", padding: "0.75rem", borderRadius: "4px", overflow: "auto" }}>
+{`LinkedIn → ${redirectUris.linkedin}
+X        → ${redirectUris.x}
+Meta     → ${redirectUris.meta}
+Google   → ${redirectUris.google}`}
+          </pre>
+        </details>
+      )}
 
       <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         <button
@@ -219,29 +283,17 @@ export default function Integrations({ apiKey, onAccountsChanged }) {
       )}
 
       <details style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "#888" }}>
-        <summary>Configuración necesaria (.env)</summary>
-        <pre style={{ marginTop: "0.5rem", background: "#1a1a2e", padding: "0.75rem", borderRadius: "4px" }}>{`# Meta OAuth (producción)
-META_CLIENT_ID=...
-META_CLIENT_SECRET=...
-META_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/meta
+        <summary>Configuración (.env canónico = prod)</summary>
+        <pre style={{ marginTop: "0.5rem", background: "#1a1a2e", padding: "0.75rem", borderRadius: "4px" }}>{`# VPS / merge a master — no sustituir por localhost
 OAUTH_SUCCESS_REDIRECT_URL=https://marketing.powerupsecosistem.online/
-
-# LinkedIn OAuth
-LINKEDIN_CLIENT_ID=...
-LINKEDIN_CLIENT_SECRET=...
+META_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/meta
 LINKEDIN_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/linkedin
-
-# X OAuth
-X_API_KEY=...
-X_API_SECRET=...
 X_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/x
+GOOGLE_REDIRECT_URI=https://marketing.powerupsecosistem.online/api/auth/callback/google
+PUBLIC_IMAGE_BASE_URL=https://marketing.powerupsecosistem.online
 
-# Google Drive (solo lectura — user_clip_reel)
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback/google
-
-PUBLIC_IMAGE_BASE_URL=https://marketing.powerupsecosistem.online`}</pre>
+# Local: overrides en .env.staging.local (gitignored)
+# compose prod fuerza las mismas URIs desde DOMAIN`}</pre>
       </details>
     </section>
   );

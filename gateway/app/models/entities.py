@@ -119,15 +119,25 @@ class CampaignSchedule(Base):
 
 
 class AppUser(Base):
-    """Usuario SaaS staging: email único, tenant aislado y hash de contraseña."""
+    """Usuario SaaS: email único, tenant aislado.
+
+    Auth0-only: `auth0_sub` es la identidad; `password_hash` queda vacío
+    (registro/login local eliminados → 410). ADMIN_EMAILS hace bootstrap de is_admin.
+    """
 
     __tablename__ = "app_users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(512))
+    # Legacy; Auth0 no usa password. Columna conservada por migraciones existentes.
+    password_hash: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    # subject Auth0 (p.ej. auth0|…). Unique; upsert en auth0_jwt.
+    auth0_sub: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(256), default="")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -160,6 +170,29 @@ class PaymentRecord(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending")
     payer_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ApiUsageEvent(Base):
+    """Evento de uso de un proveedor externo (imagen/video/voz/transcripción) por tenant y run.
+
+    Telemetría para el panel de administrador: no existe hoy ninguna otra fuente
+    persistida de qué proveedor se usó por run, solo logs structlog efímeros.
+    """
+
+    __tablename__ = "api_usage_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # venice | fal | stable_diffusion | openai | openai_image | shotstack | mock | admin | unknown
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    # image_generate | image_edit | video_render | voice | transcription | credit_adjust
+    operation: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(128), default="", server_default="")
+    units: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    credits_cost: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    success: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class OAuthToken(Base):

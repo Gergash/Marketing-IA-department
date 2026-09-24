@@ -22,6 +22,8 @@ cd frontend && npm install && cd ..
 
 Copia y configura `.env` desde `.env.example` (nunca commitear `.env`).
 
+**Capa SaaS (landing/Auth0/Bold/admin):** `STAGING_SAAS_ENABLED=true` + `AUTH0_*` + `ADMIN_EMAILS` en `.env`; `VITE_STAGING_SAAS=true` + `VITE_AUTH0_*` en `frontend/.env.local`. Guías: [`../docs/auth0.md`](../docs/auth0.md), [`../docs/staging-landing-bold.md`](../docs/staging-landing-bold.md), snapshot [`../docs/estado-saas-auth0-2026-09-17.md`](../docs/estado-saas-auth0-2026-09-17.md).
+
 ---
 
 ## Orden de arranque — 7–8 terminales

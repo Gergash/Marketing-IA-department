@@ -16,7 +16,8 @@ prometheus-fastapi-instrumentator
 apscheduler
 alembic
 anthropic
-PyJWT
+# [crypto] = cryptography: obligatorio para verificar JWT Auth0 RS256 (JWKS).
+PyJWT[crypto]
 pydantic[email]
 openai
 fal-client

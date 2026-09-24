@@ -8,6 +8,8 @@ from PIL import Image
 
 from agents.marketing_agents.text_contrast import pick_text_colors, region_luminance, text_safe_box
 from agents.marketing_agents.venice_video_models import (
+    normalize_venice_video_duration,
+    prefers_text_to_video_full_clip,
     resolve_venice_video_model,
 )
 
@@ -46,6 +48,32 @@ def test_resolve_venice_video_aliases() -> None:
     )
     assert resolve_venice_video_model("kling-o3") == "kling-o3-standard-text-to-video"
     assert "minimax" in resolve_venice_video_model("minimax-h3")
+    assert (
+        resolve_venice_video_model("gemini-omni-flash-1-1-text-to-video")
+        == "gemini-omni-flash-1-1-text-to-video"
+    )
+    assert (
+        resolve_venice_video_model("gemini-omni-flash-1-1")
+        == "gemini-omni-flash-1-1-text-to-video"
+    )
+    assert (
+        resolve_venice_video_model("gemini-omni-flash-1-1", for_image=True)
+        == "gemini-omni-flash-1-1-image-to-video"
+    )
+
+
+def test_normalize_gemini_omni_duration_snaps_5s() -> None:
+    mid = "gemini-omni-flash-1-1-text-to-video"
+    assert normalize_venice_video_duration("5s", mid) == "6s"
+    assert normalize_venice_video_duration("6s", mid) == "6s"
+    assert normalize_venice_video_duration("10s", mid) == "10s"
+    assert normalize_venice_video_duration("5s", "seedance-2-0-text-to-video") == "5s"
+
+
+def test_gemini_full_clip_prefers_text_to_video() -> None:
+    assert prefers_text_to_video_full_clip("gemini-omni-flash-1-1-text-to-video")
+    assert prefers_text_to_video_full_clip("gemini-omni-flash-1-1")
+    assert not prefers_text_to_video_full_clip("seedance-2.0")
 
 
 def test_logo_score_prefers_mark_over_photo() -> None:

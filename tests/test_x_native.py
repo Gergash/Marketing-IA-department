@@ -97,7 +97,8 @@ def test_x_login_redirects_to_authorize(monkeypatch) -> None:
         lambda s: {"oauth_token": "req-tok", "oauth_token_secret": "req-sec"},
     )
     auth_social._pending_x_request_tokens.clear()
-    loc = auth_social.oauth_login("x", tenant_id="demo-tenant").headers["location"]
+    # oauth_login ahora retorna JSON {authorize_url} (SPA+Auth0), no RedirectResponse.
+    loc = auth_social.oauth_login("x", tenant_id="demo-tenant")["authorize_url"]
     assert loc.startswith("https://api.twitter.com/oauth/authorize?")
     assert "oauth_token=req-tok" in loc
     assert auth_social._pending_x_request_tokens["req-tok"]["tenant_id"] == "demo-tenant"

@@ -179,10 +179,19 @@ def _assert_token_not_expired(token_row: OAuthToken) -> None:
 
 
 def _public_image_url(image_url: str) -> str:
-    """Sustituye localhost por PUBLIC_IMAGE_BASE_URL cuando hay túnel público."""
+    """Sustituye localhost/127.0.0.1 por PUBLIC_IMAGE_BASE_URL cuando hay túnel público.
+
+    Meta Graph no descarga http://localhost. En staging local usar ngrok/cloudflared
+    en PUBLIC_IMAGE_BASE_URL; en prod el compose fuerza el DOMAIN.
+    """
+    if not image_url:
+        return image_url
     public_base = get_settings().public_image_base_url.rstrip("/")
-    if image_url.startswith("http://localhost:8000") and public_base != "http://localhost:8000":
-        return image_url.replace("http://localhost:8000", public_base, 1)
+    if not public_base or public_base in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        return image_url
+    for local in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        if image_url.startswith(local):
+            return image_url.replace(local, public_base, 1)
     return image_url
 
 
@@ -296,6 +305,44 @@ def _publish_via_x(
     return "success"
 
 
+def _effective_provider(image_provider: str | None) -> str:
+    """Proveedor efectivo para telemetría: explícito del run o el default de settings."""
+    provider = (image_provider or "").strip().lower()
+    if provider:
+        return provider
+    try:
+        return (get_settings().image_provider or "unknown").strip().lower()
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _record_publish_usage(
+    db: Session,
+    tenant_id: str,
+    *,
+    run_id: int | None,
+    content_format: str,
+    image_provider: str | None,
+    credits_cost: int,
+) -> None:
+    """Telemetría de uso; nunca debe tumbar una publicación si falla."""
+    try:
+        from gateway.app.services.usage_service import record_usage
+
+        fmt = (content_format or "feed").lower()
+        operation = "video_render" if fmt in ("reel", "user_clip_reel") else "image_generate"
+        record_usage(
+            db,
+            tenant_id,
+            _effective_provider(image_provider),
+            operation,
+            run_id=run_id,
+            credits_cost=credits_cost,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("usage.record_failed", tenant_id=tenant_id, run_id=run_id, error=str(exc))
+
+
 def _maybe_debit_publish_credits(
     db: Session,
     tenant_id: str,
@@ -303,6 +350,8 @@ def _maybe_debit_publish_credits(
     content_format: str,
     user_asset_url: str | None,
     alter_image_with_ai: bool,
+    run_id: int | None = None,
+    image_provider: str | None = None,
 ) -> None:
     """Descuenta créditos antes de publicar cuando staging SaaS está activo."""
     settings = get_settings()
@@ -316,6 +365,14 @@ def _maybe_debit_publish_credits(
         alter_image_with_ai=alter_image_with_ai,
     )
     debit_for_publish(db, tenant_id, cost)
+    _record_publish_usage(
+        db,
+        tenant_id,
+        run_id=run_id,
+        content_format=content_format,
+        image_provider=image_provider,
+        credits_cost=cost,
+    )
 
 
 def _publish_run(
@@ -387,10 +444,7 @@ def _publish_via_go(
 
     # Sustituye localhost por la URL pública (Meta exige HTTPS accesible externamente)
     content_format = getattr(run, "content_format", None) or "feed"
-    media_url = _media_url(result)
-    public_base = settings.public_image_base_url.rstrip("/")
-    if media_url.startswith("http://localhost:8000"):
-        media_url = media_url.replace("http://localhost:8000", public_base, 1)
+    media_url = _public_image_url(_media_url(result))
 
     try:
         payload = {
@@ -618,6 +672,8 @@ def execute_pipeline(
             content_format=content_format,
             user_asset_url=user_asset_url,
             alter_image_with_ai=alter_image_with_ai,
+            run_id=run.id,
+            image_provider=(result.get("design") or {}).get("image_provider") or image_provider,
         )
         _publish_run(db, result, brief, run, idempotency_key)
 
@@ -665,6 +721,9 @@ def approve_run(db: Session, run_id: int, *, approved_by: str = "human") -> dict
             content_format=content_format,
             user_asset_url=stored_params.get("user_asset_url"),
             alter_image_with_ai=bool(stored_params.get("alter_image_with_ai", False)),
+            run_id=run.id,
+            image_provider=(result.get("design") or {}).get("image_provider")
+            or stored_params.get("image_provider"),
         )
         go_outcome = _publish_run(db, result, brief, run, run.idempotency_key)
 

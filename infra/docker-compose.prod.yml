@@ -20,6 +20,9 @@ services:
         VITE_API_URL: ""
         # Landing + login (bake-time). Override con VITE_STAGING_SAAS=false si no se quiere en prod.
         VITE_STAGING_SAAS: ${VITE_STAGING_SAAS:-true}
+        # Auth0 SPA — bake-time (mismas credenciales que AUTH0_* del API)
+        VITE_AUTH0_DOMAIN: ${VITE_AUTH0_DOMAIN:-${AUTH0_DOMAIN:-}}
+        VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-${AUTH0_CLIENT_ID:-}}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8081:80"

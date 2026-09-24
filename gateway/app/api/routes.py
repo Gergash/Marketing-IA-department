@@ -120,34 +120,31 @@ def list_archetypes(
 def image_providers(
     tenant_id: str = Depends(require_auth),
 ) -> ImageProvidersResponse:
-    """Lista generadores de imagen disponibles según `.env` (sin secretos)."""
+    """Lista generadores de imagen para el switch del studio (sin secretos).
+
+    Venice queda fuera a propósito: sus créditos se reservan para video (Reels).
+    Stable Diffusion local tampoco se ofrece en UI; el reemplazo es OpenAI gpt-image-2.
+    """
     _ = tenant_id
     s = get_settings()
     providers: list[dict[str, str]] = []
-    if s.stable_diffusion_url.strip():
-        providers.append(
-            {"id": "stable_diffusion", "label": "Stable Diffusion (local A1111/Forge)"}
-        )
-    if s.fal_api_key.strip():
-        providers.append({"id": "fal", "label": "fal.ai (Flux Pro)"})
-    if s.venice_api_key.strip():
-        model = (s.venice_image_model or "venice-sd35").strip()
-        providers.append(
-            {
-                "id": "venice",
-                "label": f"Venice.ai ({model})",
-            }
-        )
     if s.openai_image_api_key.strip():
         model = (s.openai_image_model or "gpt-image-2").strip()
         providers.append(
             {
                 "id": "openai_image",
-                "label": f"OpenAI Images ({model})",
+                "label": f"OpenAI ({model})",
             }
         )
+    if s.fal_api_key.strip():
+        providers.append({"id": "fal", "label": "fal.ai (Flux Pro)"})
+
+    allowed = {p["id"] for p in providers}
+    default = (s.image_provider or "").strip().lower()
+    if default not in allowed:
+        default = providers[0]["id"] if providers else "openai_image"
     return ImageProvidersResponse(
-        default_provider=s.image_provider,
+        default_provider=default,
         providers=providers,
     )
 

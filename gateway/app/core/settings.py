@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Timeout de la llamada al LLM; debe tolerar la carga inicial del modelo (~5GB)
     llm_timeout_seconds: int = 300
 
-    # Image generation — provider: stable_diffusion | comfyui | fal | venice | openai | canva | mock
+    # Image generation — provider: stable_diffusion | comfyui | fal | venice | openai_image | openai | canva | mock
     image_provider: str = "stable_diffusion"
     stable_diffusion_url: str = "http://localhost:7860/sdapi/v1/txt2img"
     # Nombre exacto del checkpoint en Automatic1111 (como en el desplegable), p. ej. archivo .safetensors
@@ -75,15 +75,24 @@ class Settings(BaseSettings):
     # Edición de foto del usuario (POST /image/edit). Default alineado a gpt-image-2.
     venice_image_edit_model: str = "gpt-image-2-edit"
     venice_image_edit_quality: str = "high"  # low | medium | high
+    # OpenAI Images directo (gpt-image-2) — NO reusar openai_api_key (ese va a OpenRouter para texto)
+    # IMAGE_PROVIDER=openai_image — compara coste vs Venice (mismo modelo, sin margen revendedor)
+    openai_image_api_key: str = ""
+    openai_image_api_base: str = "https://api.openai.com/v1"
+    openai_image_model: str = "gpt-image-2"
+    openai_image_edit_model: str = "gpt-image-2"
+    openai_image_quality: str = "high"  # low | medium | high | auto
+    openai_image_background: str = "opaque"  # opaque | transparent | auto
     # Animación / generación de video Venice
     # video_gen_mode: full = un clip AI | scenes = unir tomas AI | still = stills+Ken Burns
     video_gen_mode: str = "scenes"
     # Compat legacy: still | venice (si venice y mode vacío → scenes)
     video_scene_provider: str = "venice"
-    # Alias: seedance-2.5 | seedance-2.0 | kling-o3 | kling-o3-pro | minimax-h3
-    venice_video_model: str = "seedance-2.0"
-    venice_video_duration: str = "5s"  # 5s | 10s
-    venice_video_resolution: str = "720p"  # 480p | 720p | 1080p
+    # Alias o ID Venice: gemini-omni-flash-1-1 | seedance-2.0 | kling-o3 | …
+    venice_video_model: str = "gemini-omni-flash-1-1-text-to-video"
+    # Gemini Omni: 4s|6s|8s|10s. Seedance/Wan: 5s|10s (el cliente hace snap).
+    venice_video_duration: str = "6s"
+    venice_video_resolution: str = "720p"  # 360p | 720p | 1080p | 4k (según modelo)
 
     # OCR local para manuales de marca escaneados — provider: none | paddle
     # Flujo: pypdf primero; si hay poco texto → PaddleOCR (GPU/CPU)

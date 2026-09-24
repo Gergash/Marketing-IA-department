@@ -1,5 +1,7 @@
 # Snapshot 2026-09-17 — SaaS Auth0, panel admin y espera de Meta Live
 
+> **Actualización 2026-09-23:** el estado vivo del departamento está en [`estado-actual.txt`](../estado-actual.txt) y el checklist E2E en [`staging-e2e.md`](staging-e2e.md). Este archivo sigue siendo el inventario detallado de la noche del 17-sep.
+
 Este archivo es el inventario detallado del workstream SaaS/Auth0/admin (sesión 17 sep 2026, noche). **Meta App Review / Live no se toca hasta que el usuario dé la bandera explícita.**
 
 **Quién lo usa:** operador, el siguiente agente, o un revisor que necesita saber qué hay en disco vs qué hay en `origin/main`.

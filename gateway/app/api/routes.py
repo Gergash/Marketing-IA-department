@@ -138,6 +138,14 @@ def image_providers(
                 "label": f"Venice.ai ({model})",
             }
         )
+    if s.openai_image_api_key.strip():
+        model = (s.openai_image_model or "gpt-image-2").strip()
+        providers.append(
+            {
+                "id": "openai_image",
+                "label": f"OpenAI Images ({model})",
+            }
+        )
     return ImageProvidersResponse(
         default_provider=s.image_provider,
         providers=providers,
@@ -169,7 +177,10 @@ def video_options(
     s = get_settings()
     return VideoOptionsResponse(
         default_mode=(s.video_gen_mode or "scenes").strip() or "scenes",
-        default_model=(s.venice_video_model or "seedance-2.0").strip() or "seedance-2.0",
+        default_model=(
+            s.venice_video_model or "gemini-omni-flash-1-1-text-to-video"
+        ).strip()
+        or "gemini-omni-flash-1-1-text-to-video",
         modes=[
             {
                 "id": "full",

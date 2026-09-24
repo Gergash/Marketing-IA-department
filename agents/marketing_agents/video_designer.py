@@ -12,7 +12,10 @@ import structlog
 
 from .image_providers import generate_image
 from .schemas import BriefInput, CopyOutput, StrategyOutput, VideoDesignOutput
-from .venice_video_models import resolve_venice_video_model
+from .venice_video_models import (
+    prefers_text_to_video_full_clip,
+    resolve_venice_video_model,
+)
 from .video_providers import render_video
 from .video_script import VideoScriptAgent
 from .video_timeline import Scene, Timeline, VoiceoverTrack
@@ -48,8 +51,11 @@ def _resolve_mode(settings, *, video_gen_mode: str | None) -> str:
 
 def _model_alias(settings, *, venice_video_model: str | None) -> str:
     return (
-        (venice_video_model or getattr(settings, "venice_video_model", "") or "seedance-2.0")
-        .strip()
+        (
+            venice_video_model
+            or getattr(settings, "venice_video_model", "")
+            or "gemini-omni-flash-1-1-text-to-video"
+        ).strip()
     )
 
 
@@ -71,15 +77,20 @@ def _animate_with_venice(
 
     for_image = bool(image_url)
     model = resolve_venice_video_model(model_alias, for_image=for_image)
+    from .venice_video_models import normalize_venice_video_duration
+
     data_uri = image_url_to_data_uri(image_url) if image_url else None
-    duration_s = _parse_duration_seconds(settings.venice_video_duration, 5.0)
+    duration_str = normalize_venice_video_duration(
+        settings.venice_video_duration or "6s", model
+    )
+    duration_s = _parse_duration_seconds(duration_str, 6.0)
     aspect = venice_aspect_ratio(1080, 1920) if not for_image else None
     raw = generate_video_bytes(
         prompt[:2400],
         api_key=settings.venice_api_key,
         base_url=settings.venice_api_base,
         model=model,
-        duration=settings.venice_video_duration or "5s",
+        duration=duration_str,
         resolution=settings.venice_video_resolution or "720p",
         aspect_ratio=aspect,
         image_url=data_uri,
@@ -225,12 +236,14 @@ class VideoDesignerAgent:
         prompt = _build_full_ai_prompt(
             brief=brief, copy=copy, script=script, brand_prefix=brand_prefix
         )
+        # Gemini Omni (y aliases *-text-to-video): clip puro t2v; no forzar i2v con hero.
+        anchor = None if prefers_text_to_video_full_clip(model_alias) else hero_url
         try:
             video_url, duration_s = _animate_with_venice(
                 prompt=prompt,
                 settings=settings,
                 model_alias=model_alias,
-                image_url=hero_url,
+                image_url=anchor,
                 prefix="venice_full",
             )
         except Exception as exc:

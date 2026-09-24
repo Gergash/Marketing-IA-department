@@ -10,19 +10,19 @@ Guía de despliegue base: [`vps-hostinger.md`](vps-hostinger.md)
 
 ---
 
-## Estado del proceso (actualizado 2026-09-17 noche)
+## Estado del proceso (actualizado 2026-09-23)
 
 | Fase | Estado | Notas |
 |------|--------|-------|
 | DNS + Caddy host + Docker compose | ✅ Hecho | Loopback `8000`/`8081`, sin Caddy en compose |
 | Dashboard + API en HTTPS | ✅ Hecho | `/api/health`, SPA en `/` |
 | Legales (`/terminos`, `/privacidad`) | ✅ Hecho | Servidos por FastAPI (TikTok + Meta) |
-| Capa SaaS UI (VITE bake) | ✅ Código en `main` (ahead origin) | Landing/login flags. Auth0-only **local working tree**; callbacks Auth0 prod pendientes |
+| Capa SaaS Auth0 | ✅ E2E local | Auth0-only + créditos + OAuth Bearer; **callbacks Auth0 prod pendientes** |
 | LLM cloud (OpenRouter) | 🔄 En curso | Key en `.env.production`; validar que agentes no usen stub |
-| Meta / Instagram OAuth (código) | ✅ OAuth + Go sidecar | Conectar en dashboard; usuarios de desarrollo |
+| Meta / Instagram OAuth (código) | ✅ OAuth + Go sidecar | Page token o Conectar Meta; URIs canónicas = dominio prod |
 | **Meta App Mode Live / Review** | ⬜ **Esperando bandera del usuario** | No iniciar trámite hasta aviso explícito |
-| LinkedIn OAuth | 🔄 En curso | Redirect prod; conectar en dashboard |
-| **X OAuth + publish** | 🔄 Casi listo | Portal **Read and write** + `.env.production` en VPS; **post de prueba** pendiente |
+| LinkedIn OAuth | 🔄 En curso | Redirect prod en `.env`; registrar exacto en portal |
+| **X OAuth + publish** | 🔄 Casi listo | Callback prod en portal; **post de prueba** pendiente |
 | **TikTok App Review** | ⏳ En evaluación | Login Kit + Content Posting solicitados |
 | TikTok publish (código) | ⬜ Fase 2 | Tras aprobación: OAuth + Content Posting API |
 

@@ -1,4 +1,4 @@
-"""Generación de imágenes: Stable Diffusion (A1111), fal.ai, Venice.ai, DALL·E, Canva placeholder y dummy."""
+"""Generación de imágenes: Stable Diffusion (A1111), fal.ai, Venice.ai, OpenAI gpt-image-2, DALL·E, Canva placeholder y dummy."""
 
 from __future__ import annotations
 
@@ -119,6 +119,27 @@ def generate_image(
     if provider == "venice" and not s.venice_api_key:
         logger.error("image.venice_missing_key")
         raise RuntimeError("image_gen_failed:venice: missing API key")
+    if provider == "openai_image" and s.openai_image_api_key:
+        url = _openai_image(
+            prompt,
+            api_key=s.openai_image_api_key,
+            base_url=s.openai_image_api_base,
+            model=s.openai_image_model,
+            quality=(s.openai_image_quality or "high").strip() or "high",
+            background=(s.openai_image_background or "opaque").strip() or "opaque",
+            spec=spec,
+            overlay_text=overlay_text,
+            overlay_subline=overlay_subline,
+            overlay_cta=overlay_cta,
+            red_social=red_social,
+            layout_archetype=layout_archetype,
+            content_format=content_format,
+            **overlay_extras,
+        )
+        return url, spec.width, spec.height
+    if provider == "openai_image" and not s.openai_image_api_key:
+        logger.error("image.openai_image_missing_key")
+        raise RuntimeError("image_gen_failed:openai_image: missing API key")
     if provider == "openai" and s.openai_api_key:
         url = _dalle(prompt, s.openai_api_key)
         return url, spec.width, spec.height
@@ -482,6 +503,107 @@ def _venice(
     return local_url
 
 
+def _openai_image(
+    prompt: str,
+    *,
+    api_key: str,
+    base_url: str,
+    model: str,
+    quality: str,
+    background: str,
+    spec,
+    overlay_text: str | None = None,
+    overlay_subline: str | None = None,
+    overlay_cta: str | None = None,
+    red_social: str = "instagram",
+    layout_archetype: str = "typographic_poster",
+    content_format: str = "feed",
+    brand_archetype=None,
+    preferred_font_paths: list[str] | None = None,
+    logo_path: str | None = None,
+    tagline: str | None = None,
+    brand_names: list[str] | None = None,
+    font_seed: str | None = None,
+    title_size_scale: float = 1.0,
+    force_text_hex: str | None = None,
+    high_contrast: bool = False,
+    typography_style: str | None = None,
+    typography_family_id: str | None = None,
+    force_uppercase: bool | None = None,
+) -> str:
+    """Genera imagen con OpenAI gpt-image-2 directo y tipografía Pillow."""
+    from .openai_image_client import generate_image_bytes, truncate_prompt
+    from .user_assets import fit_image_to_spec
+    from .visual_prompt_guards import with_photo_only_guard
+
+    want_people = "critical scene requirement" in (prompt or "").lower() or (
+        "includes the requested people" in (prompt or "").lower()
+    )
+    guarded = with_photo_only_guard(
+        f"{prompt}. Aspect ratio {spec.label}.",
+        allow_people=want_people,
+    )
+    visual_prompt = truncate_prompt(guarded)
+    try:
+        raw = generate_image_bytes(
+            visual_prompt,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            width=spec.width,
+            height=spec.height,
+            quality=quality,
+            background=background,
+        )
+    except Exception as exc:
+        logger.error(
+            "image.openai_image_api_error",
+            error=str(exc),
+            prompt_preview=visual_prompt[:160],
+        )
+        raise RuntimeError(f"image_gen_failed:openai_image: {exc}") from exc
+
+    try:
+        raw = fit_image_to_spec(raw, spec)
+    except Exception as exc:
+        logger.warning("image.openai_image_fit_skipped", error=str(exc))
+
+    if overlay_text:
+        raw = _apply_layout_overlay(
+            raw,
+            overlay_text,
+            overlay_subline,
+            overlay_cta,
+            layout_archetype=layout_archetype,
+            font_seed=font_seed or red_social,
+            content_format=content_format,
+            brand_archetype=brand_archetype,
+            preferred_font_paths=preferred_font_paths,
+            logo_path=logo_path,
+            tagline=tagline,
+            brand_names=brand_names,
+            title_size_scale=title_size_scale,
+            force_text_hex=force_text_hex,
+            high_contrast=high_contrast,
+            typography_style=typography_style,
+            typography_family_id=typography_family_id,
+            force_uppercase=force_uppercase,
+        )
+
+    _STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"openai_image_{uuid.uuid4().hex}.png"
+    (_STATIC_DIR / filename).write_bytes(raw)
+    local_url = f"http://localhost:8000/static/images/{filename}"
+    logger.info(
+        "image.openai_image_generated",
+        url=local_url,
+        model=model,
+        size=f"{spec.width}x{spec.height}",
+        quality=quality,
+    )
+    return local_url
+
+
 def _dalle(prompt: str, api_key: str) -> str:
     """Genera imagen con DALL·E 3 y devuelve la URL remota de OpenAI."""
     try:
@@ -576,8 +698,8 @@ def compose_from_user_asset(
 ) -> tuple[str, int, int, str]:
     """
     Design-as-Code: foto del usuario como capa base + overlay Pillow.
-    Si alter_with_ai=True, edita la foto con Venice (/image/edit) o fal
-    (FLUX Kontext / edit, o img2img legacy) antes del overlay tipográfico.
+    Si alter_with_ai=True, edita la foto con OpenAI gpt-image-2, Venice (/image/edit)
+    o fal (FLUX Kontext / edit, o img2img legacy) antes del overlay tipográfico.
     Retorna (url, width, height, design_source).
     """
     from gateway.app.core.settings import get_settings
@@ -604,7 +726,19 @@ def compose_from_user_asset(
             provider=provider,
             prompt_preview=prompt[:220],
         )
-        if provider == "venice" and s.venice_api_key:
+        if provider == "openai_image" and s.openai_image_api_key:
+            fitted = _openai_image_edit(
+                fitted,
+                prompt,
+                api_key=s.openai_image_api_key,
+                base_url=s.openai_image_api_base,
+                model=(s.openai_image_edit_model or s.openai_image_model or "gpt-image-2").strip(),
+                quality=(s.openai_image_quality or "high").strip() or "high",
+                background=(s.openai_image_background or "opaque").strip() or "opaque",
+                spec=spec,
+            )
+            design_source = "user_img2img"
+        elif provider == "venice" and s.venice_api_key:
             fitted = _venice_edit(
                 fitted,
                 prompt,
@@ -630,12 +764,16 @@ def compose_from_user_asset(
         else:
             logger.warning(
                 "user_asset.img2img_skipped",
-                reason="alter_with_ai requiere image_provider=venice o fal con API key",
+                reason=(
+                    "alter_with_ai requiere image_provider=openai_image|venice|fal "
+                    "con API key"
+                ),
                 provider=provider,
             )
             raise RuntimeError(
-                "image_edit_unavailable: elige Venice (gpt-image-2-edit) o fal.ai "
-                "(FLUX Kontext / edit) con API key para modificar fotos reales."
+                "image_edit_unavailable: elige OpenAI Images (gpt-image-2), Venice "
+                "(gpt-image-2-edit) o fal.ai (FLUX Kontext / edit) con API key "
+                "para modificar fotos reales."
             )
 
     if overlay_text:
@@ -699,6 +837,40 @@ def _venice_edit(
     except Exception as exc:
         logger.error("image.venice_edit_error", error=str(exc), model=model)
         raise RuntimeError(f"image_gen_failed:venice_edit: {exc}") from exc
+
+
+def _openai_image_edit(
+    img_bytes: bytes,
+    prompt: str,
+    *,
+    api_key: str,
+    base_url: str,
+    model: str,
+    quality: str,
+    background: str,
+    spec,
+) -> bytes:
+    """Edita foto real vía OpenAI POST /images/edits (gpt-image-2)."""
+    from .openai_image_client import edit_image_bytes
+
+    edit_prompt = (prompt or "").strip()
+    try:
+        out = edit_image_bytes(
+            img_bytes,
+            edit_prompt,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            width=spec.width,
+            height=spec.height,
+            quality=quality,
+            background=background,
+        )
+        logger.info("image.openai_image_edit_ok", model=model, out_bytes=len(out))
+        return out
+    except Exception as exc:
+        logger.error("image.openai_image_edit_error", error=str(exc), model=model)
+        raise RuntimeError(f"image_gen_failed:openai_image_edit: {exc}") from exc
 
 
 def _fal_edit_mode(model: str) -> str:

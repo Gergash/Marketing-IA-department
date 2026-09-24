@@ -1,6 +1,8 @@
 # Staging E2E — Login Auth0 → publicar en red
 
-Flujo local completo del departamento (opción A: SQLite, sin Docker Redis/Celery).
+Actualizado: **2026-09-23**. Flujo local completo del departamento (opción A: SQLite, sin Docker Redis/Celery).
+
+Estado canónico del proyecto: [`../estado-actual.txt`](../estado-actual.txt).
 
 ## Quick path
 

@@ -2,7 +2,7 @@
 
 Landing, **Auth0 Universal Login** (única identidad), botón Bold y créditos para publicar en redes.
 
-Identidad: [`auth0.md`](auth0.md). Panel admin: [`admin-panel.md`](admin-panel.md). Snapshot 17-sep: [`estado-saas-auth0-2026-09-17.md`](estado-saas-auth0-2026-09-17.md). Guía larga (manual local + ngrok): [`manual-staging.md`](manual-staging.md).
+**Estado (2026-09-23):** Auth0-only E2E local OK hasta publicar en Instagram. Checklist: [`staging-e2e.md`](staging-e2e.md). Identidad: [`auth0.md`](auth0.md). Panel: [`admin-panel.md`](admin-panel.md). Snapshot 17-sep: [`estado-saas-auth0-2026-09-17.md`](estado-saas-auth0-2026-09-17.md). Manual largo: [`manual-staging.md`](manual-staging.md).
 
 ## Activar
 
@@ -58,9 +58,9 @@ Tras cambiar `VITE_STAGING_SAAS` en el VPS hay que **rebuild** el contenedor `fr
 | URL | Pantalla |
 |-----|----------|
 | `/` | Landing del departamento de marketing agéntico |
-| `/login` | Auth0 Universal Login (botones Continuar / Crear cuenta) |
-| `/app` | Estudio (requiere sesión Auth0) |
-| `/admin` | Panel de negocio (requiere Auth0 + `ADMIN_EMAILS` o `is_admin`) |
+| `/login` | Auth0 Universal Login (única identidad; `/register` API → 410) |
+| `/app` | Estudio (Bearer ID token Auth0) |
+| `/admin` | Panel administrador (`ADMIN_EMAILS` / `is_admin`) |
 
 Rutas desconocidas (`/ladmin`, `/foo`) vuelven a la landing; no abren el estudio.
 

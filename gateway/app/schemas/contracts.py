@@ -84,7 +84,7 @@ class RunRequest(BaseModel):
     interactive: bool = False
     # Reels: full = clip AI completo | scenes = unir tomas AI | still = stills+Shotstack
     video_gen_mode: Literal["full", "scenes", "still"] | None = None
-    # Alias Venice: seedance-2.5 | seedance-2.0 | kling-o3 | kling-o3-pro | minimax-h3
+    # Alias Venice: gemini-omni-flash-1-1 | seedance-2.0 | kling-o3 | kling-o3-pro | minimax-h3
     venice_video_model: str | None = None
 
     @model_validator(mode="after")

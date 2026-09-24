@@ -48,7 +48,10 @@ class RunRequest(BaseModel):
     # universal = pieza 1:1 pensada para publicarse en varias redes a la vez sin recortes
     content_format: Literal["feed", "story", "reel", "user_clip_reel", "universal"] = "feed"
     # Override del generador de imagen por run (si None, usa IMAGE_PROVIDER del .env)
-    image_provider: Literal["stable_diffusion", "fal", "venice"] | None = None
+    # openai_image = gpt-image-2 directo; venice/SD siguen válidos en API pero el switch UI no los ofrece
+    image_provider: Literal[
+        "openai_image", "fal", "venice", "stable_diffusion", "openai", "mock"
+    ] | None = None
     # Override manual del arquetipo visual (si None, el agente lo elige automáticamente)
     archetype_override: Literal[
         "brand_campaign_piece",

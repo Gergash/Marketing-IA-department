@@ -223,7 +223,7 @@ export default function App() {
   const [contentFormat, setContentFormat] = useState("feed");
   const [networks, setNetworks] = useState(FALLBACK_NETWORKS);
   const [formatsByNetwork, setFormatsByNetwork] = useState(FALLBACK_FORMATS);
-  const [imageProvider, setImageProvider] = useState("venice");
+  const [imageProvider, setImageProvider] = useState("openai_image");
   const [imageProviders, setImageProviders] = useState([]);
   const [videoGenMode, setVideoGenMode] = useState("scenes");
   const [veniceVideoModel, setVeniceVideoModel] = useState("seedance-2.0");
@@ -382,10 +382,10 @@ export default function App() {
       }
     } catch {
       setImageProviders([
-        { id: "stable_diffusion", label: "Stable Diffusion" },
+        { id: "openai_image", label: "OpenAI (gpt-image-2)" },
         { id: "fal", label: "fal.ai (Flux)" },
-        { id: "venice", label: "Venice.ai" },
       ]);
+      setImageProvider("openai_image");
     }
   };
 
@@ -950,7 +950,7 @@ export default function App() {
             {(imageProviders.length > 0
               ? imageProviders
               : [
-                  { id: "stable_diffusion", label: "Stable Diffusion" },
+                  { id: "openai_image", label: "OpenAI (gpt-image-2)" },
                   { id: "fal", label: "fal.ai (Flux)" },
                 ]
             ).map((provider) => (
@@ -967,10 +967,10 @@ export default function App() {
           </div>
           <p className="hint">
             {imageProvider === "fal"
-              ? "Flux Pro vía API. Alterar foto real: FLUX Kontext (edición por instrucción), misma capacidad que Venice."
-              : imageProvider === "venice"
-                ? "Venice.ai + gpt-image-2 / gpt-image-2-edit. Si cambias .env, recarga esta página (settings se re-leen por mtime)."
-                : "Generación local con Automatic1111/Forge en :7860."}
+              ? "Flux Pro vía API. Alterar foto real: FLUX Kontext (edición por instrucción)."
+              : imageProvider === "openai_image"
+                ? "gpt-image-2 directo contra OpenAI (sin margen Venice). Venice queda para video/Reels."
+                : "Generador de imagen seleccionado."}
           </p>
         </div>
         <div className="archetype-block">

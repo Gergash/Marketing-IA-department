@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     openai_api_base: str = ""
     # Modelo chat cuando LLM_PROVIDER=openai (ids OpenAI u OpenRouter, ej. google/gemini-2.0-flash-001)
     openai_model: str = "gpt-4o-mini"
+    # Solo OpenRouter: modelos de respaldo separados por coma (máx. 2 útiles; OpenRouter acepta 3 en total)
+    openai_model_fallbacks: str = ""
+    # Reintentos ante 429/5xx o respuesta vacía (frecuente en modelos `:free`)
+    llm_max_retries: int = 3
+    # Solo OpenRouter: apaga el razonamiento; los razonadores `:free` agotan max_tokens y devuelven vacío
+    openrouter_disable_reasoning: bool = True
     # Headers opcionales de atribución OpenRouter
     openrouter_http_referer: str = ""
     openrouter_app_title: str = "Marketing DEPA IA"

@@ -4,7 +4,9 @@
 
 MVP de automatización de marketing con agentes de IA. Flujo: brief (+ manual de marca) → estrategia → copy con QA → diseño visual → aprobación humana → publicación en redes.
 
-Capa opcional **SaaS**: landing + **Auth0 Universal Login** (única identidad) + créditos Bold + panel `/admin` (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` + `VITE_AUTH0_*`). E2E local documentado en `docs/staging-e2e.md`. Ver `docs/auth0.md`, `docs/admin-panel.md`, `docs/staging-landing-bold.md`. Snapshot 17-sep: `docs/estado-saas-auth0-2026-09-17.md`. **Meta App Live: esperar bandera.**
+Capa opcional **SaaS**: landing + **Auth0 Universal Login** (única identidad) + créditos Bold + panel `/admin` (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` + `VITE_AUTH0_*`). Activa en local **y en prod**. E2E local documentado en `docs/staging-e2e.md`. Ver `docs/auth0.md`, `docs/admin-panel.md`, `docs/staging-landing-bold.md`. Snapshot 17-sep: `docs/estado-saas-auth0-2026-09-17.md`. **Meta App Live: esperar bandera.**
+
+**Proveedores vigentes (2026-09-30):** texto = OpenRouter modelos `:free` en prod (Ollama solo local); imagen = **OpenAI gpt-image-2 directo** (`openai_image`) o fal; video = **Venice Gemini Omni Flash 1.1**. Venice ya no aparece en el switch de imagen.
 
 **Prioridad de desarrollo:** un solo developer, mediados 2026, iterar rápido sin sobre-ingenierizar.
 
@@ -66,10 +68,10 @@ Pirámide: **Entretener → Informacion → Conexion**.
 |------|-----------|
 | API | FastAPI + Alembic (Python 3.10) |
 | Agentes | LangGraph + LangChain |
-| LLM | Ollama / Anthropic / OpenAI / **OpenRouter** — configurable vía `.env` |
-| Imágenes | **fal.ai** (principal) + **Venice.ai** + SD / DALL·E |
+| LLM | Ollama (local) / Anthropic / OpenAI / **OpenRouter** (prod: `:free` + fallbacks + reintentos) — configurable vía `.env` |
+| Imágenes | **OpenAI gpt-image-2 directo** (`openai_image`, default) + **fal.ai**; backend soporta también Venice / SD / DALL·E |
 | Marca | PDF + PaddleOCR + `brand_scan` (paleta/logos) + fonts OFL |
-| Video (Reels) | **Shotstack**; escenas `still` o Venice i2v (`VIDEO_SCENE_PROVIDER`) |
+| Video (Reels) | **Shotstack**; clip AI **Venice Gemini Omni Flash 1.1** (`full`), escenas Venice i2v (`scenes`) o `still` |
 | Voz (voiceover) | **fal.ai Kokoro Spanish** (dev) / ElevenLabs / OpenAI TTS |
 | Transcripción (clips usuario) | **Whisper** (`whisper-1`) |
 | Fuente de clips | Google Drive (OAuth `drive.readonly`) — Integraciones → **Conectar Google Drive** |
@@ -103,6 +105,7 @@ agents/marketing_agents/
   caption.py            — caption publicable (hashtags + link_url)
   publisher.py          — publicación vía proveedor social
   image_providers.py    — generación, overlay, compose_from_user_asset (edit)
+  openai_image_client.py — gpt-image-2 directo (generations + edits multipart, b64_json)
   user_assets.py        — carga y fit de fotos del usuario
   visual_prompt_guards.py — anti-texto en prompts de generación
   layout_archetypes.py  — 5 arquetipos (incl. brand_campaign_piece)
@@ -119,14 +122,14 @@ agents/marketing_agents/
   clip_assets.py / clip_editor.py / clip_reel_designer.py
   thought_stream.py     — hilo de pensamiento (eventos en vivo + checkpoints interactivos)
   pipeline.py           — MarketingPipeline
-  llm.py                — Ollama/Anthropic/OpenAI/OpenRouter (+ keep_alive)
+  llm.py                — Ollama/Anthropic/OpenAI/OpenRouter (+ keep_alive; reintentos, fallbacks `models`, razonamiento off)
   overlay_text.py       — tipografía OFL + Windows fonts
   social_providers.py   — Meta (Go), LinkedIn y X nativo (Python)
   schemas.py
   image_specs.py        — dimensiones + catálogo de formatos por red (fuente única)
   text_contrast.py      — color de texto según luminancia del fondo
   visual_prompt_guards.py — sufijo/negativos anti-texto para fal/Venice/SD
-  venice_video_models.py  — aliases UI/.env → model IDs Venice
+  venice_video_models.py  — aliases UI/.env → model IDs Venice (default Gemini Omni; duraciones 4/6/8/10s)
   knowledge/            — doctrina inbound
 
 gateway/app/
@@ -136,7 +139,7 @@ gateway/app/
   core/auth.py           — dependencia require_auth usada por los endpoints
   core/logging.py        — configuración de logging
   db/session.py          — sesión SQLAlchemy
-  db/schema_patches.py   — parches de esquema fuera de Alembic
+  db/schema_patches.py   — parches de esquema fuera de Alembic (solo SQLite; Postgres = Alembic, head 0010)
   models/entities.py     — modelos ORM
   services/pipeline_service.py   — orquestación del pipeline
   services/scheduler_service.py  — lógica de campañas/APScheduler
@@ -198,16 +201,18 @@ fal.ai escala proporcionalmente si altura > 1440px.
 ## Config `.env` típica en dev
 
 ```env
-IMAGE_PROVIDER=venice              # evaluación / foto real; o fal | stable_diffusion
+IMAGE_PROVIDER=openai_image        # gpt-image-2 directo; o fal
+OPENAI_IMAGE_API_KEY=sk-proj-...   # platform.openai.com; NO reutilizar OPENAI_API_KEY (OpenRouter)
+OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_QUALITY=high
 FAL_API_KEY=...                    # si usas fal
 FAL_MODEL=fal-ai/flux-pro/v1.1
-VENICE_API_KEY=...
+VENICE_API_KEY=...                 # solo video
 VENICE_API_BASE=https://api.venice.ai/api/v1
-VENICE_IMAGE_MODEL=gpt-image-2
-VENICE_IMAGE_RESOLUTION=2K
-VENICE_IMAGE_EDIT_MODEL=gpt-image-2-edit
-# No enviar quality a /image/edit (API 400). Ver docs/foto-real-venice-edit.md
-VIDEO_SCENE_PROVIDER=still         # o venice
+VIDEO_GEN_MODE=full                # full | scenes | still
+VIDEO_SCENE_PROVIDER=venice        # o still
+VENICE_VIDEO_MODEL=gemini-omni-flash-1-1-text-to-video
+VENICE_VIDEO_DURATION=6s           # Gemini Omni: 4s | 6s | 8s | 10s
 OCR_PROVIDER=paddle
 OCR_LANG=es
 OCR_USE_GPU=true
@@ -229,10 +234,17 @@ GOOGLE_CLIENT_SECRET=...
 THOUGHTS_ENABLED=true          # hilo de pensamiento de los agentes
 THOUGHTS_TTL_SECONDS=7200
 THOUGHTS_CHECKPOINT_TIMEOUT_SECONDS=180
-LLM_PROVIDER=ollama
+LLM_PROVIDER=ollama               # local; prod usa openai + OpenRouter (ver abajo)
 OLLAMA_MODEL=llama3.1
 OLLAMA_KEEP_ALIVE=30m
 LLM_TIMEOUT_SECONDS=300
+# Prod / sin Ollama:
+# LLM_PROVIDER=openai
+# OPENAI_API_BASE=https://openrouter.ai/api/v1
+# OPENAI_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# OPENAI_MODEL_FALLBACKS=google/gemma-4-26b-a4b-it:free,dots-studio/dots-3-note-preview:free
+# LLM_MAX_RETRIES=3
+# OPENROUTER_DISABLE_REASONING=true
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5433/marketing_mvp
 REDIS_URL=redis://localhost:6379/0
 SOCIAL_PROVIDER=meta
@@ -256,7 +268,7 @@ PACK_AMOUNT_COP=99000
 CREDITS_PER_PACK=100
 ```
 
-Frontend (`frontend/.env.local`): `VITE_STAGING_SAAS=true`. En prod Docker el compose pasa el build-arg (default `true`).
+Frontend (`frontend/.env.local`): `VITE_STAGING_SAAS=true` + `VITE_AUTH0_DOMAIN` + `VITE_AUTH0_CLIENT_ID`. En prod Docker el compose pasa los build-args (`VITE_AUTH0_*` cae a `AUTH0_*` si no está).
 
 **Nunca commitear `.env`.**
 
@@ -323,7 +335,9 @@ ngrok http 8000
 - `GET /api/auth/accounts` / `DELETE /api/auth/accounts/{id}`
 - `POST /api/campaigns/{id}/fire`
 - `GET /api/image/archetypes` / `/image/providers` / `/image/formats` (formatos válidos por red)
-- SaaS: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
+- `GET /api/image/providers` — switch de imagen: solo `openai_image` + `fal`
+- `GET /api/video/options` — modos y modelos Venice (default Gemini Omni)
+- SaaS: `GET /api/auth/me`; `POST /api/auth/register` y `/login` → **410** (Auth0)
 - Billing: `GET /api/billing/credits`, `GET /api/billing/bold-checkout`, `POST /api/billing/bold-webhook`
 
 ---
@@ -334,17 +348,18 @@ ngrok http 8000
 pytest tests/ -v
 ```
 
-~**271 tests** collected. Archivos clave además de pipeline/video/clips:
+~**342 tests** collected. Archivos clave además de pipeline/video/clips:
 
 - `tests/test_brand_and_advisor.py`, `test_brand_scan.py`, `test_brand_visual.py`
 - `tests/test_venice.py`, `test_venice_edit.py`, `test_revision_prompt.py`, `test_premium_fonts.py`, `test_caption.py`
-- `tests/test_revise_run.py`, `test_multi_account.py`, `test_llm_keep_alive.py`
+- `tests/test_revise_run.py`, `test_multi_account.py`, `test_llm_keep_alive.py`, `test_openrouter_llm.py` (fallbacks + reintentos)
+- `tests/test_openai_image.py` (gpt-image-2 directo)
 - `tests/test_format_normalization.py` (formatos por red + universal), `test_thought_stream.py`, `test_text_contrast_and_video_models.py`, `test_linkedin_native.py`
 
-3 fallos preexistentes en `test_venice.py` / `test_video_timeline_clips.py` (estructura del edit Shotstack).
+9 fallos preexistentes (video pipeline/timeline/designer, `test_venice`, brand/advisor, `test_x_native`); fallan igual sin los cambios recientes.
 **Hueco residual:** tests JWKS live / billing Bold E2E. Hay `tests/test_admin_panel.py` y `tests/test_auth0_saas.py` (410 + upsert).
 
-Estado canónico: [`estado-actual.txt`](estado-actual.txt) (2026-09-23).  
+Estado canónico: [`estado-actual.txt`](estado-actual.txt) (2026-09-30).  
 E2E staging: [`docs/staging-e2e.md`](docs/staging-e2e.md).  
 Snapshot Auth0 (noche 17-sep): [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md).  
 NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).  
@@ -364,8 +379,10 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/a
 - **Reel async-only** + cola `video_render` + **sin autoretry** en video
 - **Contrato Shotstack:** overlays = clips `TitleAsset`, nunca propiedad `title_asset`
 - **ffmpeg** solo para `user_clip_reel`
-- **LLM stub silencioso** si Ollama apagado — mitigado con `keep_alive`/timeout; falta error en UI
-- **Imagen fail-loudly** (fal/Venice/SD); mock solo con `IMAGE_PROVIDER=mock`
+- **LLM fallback de plantilla silencioso** si el LLM falla (`creative_copy_fallback`) — en prod **nunca** `LLM_PROVIDER=ollama` (no hay Ollama en contenedores); OpenRouter `:free` con fallbacks + reintentos + razonamiento off; falta aviso en UI
+- **Imagen fail-loudly** (OpenAI/fal/Venice/SD); mock solo con `IMAGE_PROVIDER=mock`
+- **Credenciales separadas:** `OPENAI_API_KEY` = OpenRouter (texto); `OPENAI_IMAGE_API_KEY` = OpenAI oficial (gpt-image-2)
+- **Venice = solo video** en la UI; el switch de imagen ofrece `openai_image` + `fal`
 - **Foto real + edit:** tipografía solo Pillow; Venice `/image/edit` **sin** campo `quality` (schema 400); un solo proceso en `:8000`
 - **HITL revise** nunca publica; multi-cuenta vía `social_account_id`
 - **Formatos por red:** catálogo único en `image_specs.py` (`_NETWORK_FORMATS`), servido por `GET /api/image/formats`; el dashboard nunca hardcodea dimensiones
@@ -390,9 +407,9 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/a
 7. CI/CD — Skaffold/Cloud Deploy sin GKE real
 8. Fallback LLM → propagar a UI
 9. Unlimited-OCR descartado (VRAM); PaddleOCR es el camino OCR
-10. SaaS: callbacks Auth0 de prod, rate limit, Custom Domain, tests JWKS live, no skip firma Bold con secret vacío
-11. Deploy Auth0 a VPS (callbacks dominio + rebuild `VITE_AUTH0_*`); Meta App Live esperar bandera
-12. Commit/push working tree Auth0+OAuth cuando se pida
+10. SaaS: rate limit, Custom Domain, tests JWKS live, no skip firma Bold con secret vacío
+11. OpenRouter free tier: tope diario y saturación; si crece el uso, créditos o OpenAI directo
+12. 9 tests preexistentes en rojo (dependencia del `.env` local)
 
 ---
 
@@ -401,4 +418,5 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/a
 - Rama activa: `main`
 - Commits directamente a `main`; no crear ramas salvo petición explícita
 - `master` es rama estable; fusionar solo cuando el usuario lo indique
-- Deploy prod: `master` en VPS ≈ `main`; tras `git pull`, `up -d --build` (frontend si cambió `VITE_*`)
+- Deploy prod: el usuario mergea PR `main` → `master` en GitHub; en VPS `git pull origin master` + `docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d --build` (frontend `build --no-cache` si cambió `VITE_*`)
+- Commits **sin co-autoría** (sin trailer `Co-authored-by`)

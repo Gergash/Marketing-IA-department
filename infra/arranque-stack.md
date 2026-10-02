@@ -211,7 +211,7 @@ En Meta Developers → Valid OAuth Redirect URIs: pegar la **URI completa** (pat
 ## Flujo de prueba rápida (fal.ai / Venice + marca + HITL)
 
 1. T1–T5 levantados (T4b solo para Reels; T6–T7 solo si publicas en IG). **Un solo** Uvicorn en `:8000`.
-2. `.env`: `IMAGE_PROVIDER=venice` + `VENICE_API_KEY` (o `fal` + `FAL_API_KEY`), `LLM_PROVIDER=ollama`, `OCR_PROVIDER=paddle` si usas PDFs escaneados.
+2. `.env`: `IMAGE_PROVIDER=openai_image` + `OPENAI_IMAGE_API_KEY` (o `fal` + `FAL_API_KEY`), `VENICE_API_KEY` solo para Reels, `LLM_PROVIDER=ollama` (o `openai` + OpenRouter como en prod), `OCR_PROVIDER=paddle` si usas PDFs escaneados.
 3. Dashboard → **Manual de marca (PDF)** → subir brand book (aparecen paleta + logos si el scan encuentra).
 4. Crear brief → elegir **Red social** y **Formato** (feed / story / universal) → **Cuenta destino** → **Enviar async** (o Sync en feed).
 5. Esperar `pending_approval` con pieza (con marca: arquetipo campaña + logo).

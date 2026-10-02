@@ -124,7 +124,8 @@ El catálogo de qué formatos ofrece cada red vive en `image_specs._NETWORK_FORM
 ## Rama Reels (`content_format="reel"`)
 
 - Tras copy/QA, `MarketingPipeline` delega a `VideoScriptAgent` + `VideoDesignerAgent` en lugar de `DesignerAgent`.
-- `video_gen_mode`: `full` (Venice genera un clip completo), `scenes` (Venice anima cada toma + Shotstack las une) o `still` (stills + Ken Burns, sin video AI). Modelos resueltos por `venice_video_models.py`; degrada a still si Venice falla.
+- `video_gen_mode`: `full` (Venice genera un clip completo), `scenes` (Venice anima cada toma + Shotstack las une) o `still` (stills + Ken Burns, sin video AI). Modelos resueltos por `venice_video_models.py` (default **Gemini Omni Flash 1.1**: en `full` es text-to-video puro sin ancla de imagen; duraciones 4/6/8/10s, 5s → 6s); degrada a still si Venice falla.
+- Strategist, Copywriter y VideoScript llaman a `llm.get_llm()`; si el LLM falla caen a `creative_fallback.py` (plantilla) y lo registran como `*.llm_error`. En prod el LLM es OpenRouter `:free` con fallbacks y reintentos (`OpenAILLM._create`).
 - Render async vía Celery cola `video_render` (no usar `/runs/sync`).
 - Con fal.ai, fondos/voz → Shotstack como URLs `fal.media`; `PUBLIC_IMAGE_BASE_URL` (ngrok) para Meta y assets locales.
 - `result["design"]` incluye `video_url` (reels) o `image_url` (feed/story).

@@ -2,14 +2,14 @@
 
 Única identidad SaaS. El login/registro local (email + JWT propio) fue eliminado.
 
-**Estado (2026-09-23):** E2E local verificado — Auth0 → estudio → créditos → Generar → Aprobar → Instagram. Checklist: [`staging-e2e.md`](staging-e2e.md). Snapshot histórico 17-sep: [`estado-saas-auth0-2026-09-17.md`](estado-saas-auth0-2026-09-17.md).
+**Estado (2026-09-30):** E2E local verificado — Auth0 → estudio → créditos → Generar → Aprobar → Instagram. **Prod activo** en `https://marketing.powerupsecosistem.online` desde el 24-sep. Checklist: [`staging-e2e.md`](staging-e2e.md). Snapshot histórico 17-sep: [`estado-saas-auth0-2026-09-17.md`](estado-saas-auth0-2026-09-17.md).
 
 | Dato | Valor |
 |------|--------|
 | App SPA | Marketing DEPA IA |
 | Domain | `dev-ayl6gsakmvf7rb27.us.auth0.com` |
 | Client ID | `loXNtYYuNPxwCwuxDZv4i1cXAUWILw0L` |
-| Callbacks hoy | `http://localhost:5173/` (prod **aún no**) |
+| Callbacks / Logout / Web Origins | `http://localhost:5173, https://marketing.powerupsecosistem.online` |
 | Dashboard | [Application settings](https://manage.auth0.com/dashboard/us/dev-ayl6gsakmvf7rb27/applications/loXNtYYuNPxwCwuxDZv4i1cXAUWILw0L/settings) |
 | Users (IdP) | [User Management](https://manage.auth0.com/dashboard/us/dev-ayl6gsakmvf7rb27/users) |
 
@@ -69,12 +69,22 @@ Detalle del flujo y del **Resumen**: [`admin-panel.md`](admin-panel.md).
 
 El MCP actual no pudo crear un Resource Server (`create:resource_servers`). Hoy se valida el ID token. Si más adelante creas una API en Auth0, pon su identifier en `AUTH0_AUDIENCE` y en el `Auth0Provider` (`authorizationParams.audience`).
 
-## Prod (pendiente)
+## Prod (activo desde 2026-09-24)
 
-Antes de desplegar este login al VPS hay que añadir en la Application Auth0:
+Application Auth0 → Allowed Callback URLs, Allowed Logout URLs y Allowed Web Origins:
 
-- Allowed Callback URLs: `https://marketing.powerupsecosistem.online`
-- Allowed Logout URLs: `https://marketing.powerupsecosistem.online`
-- Allowed Web Origins: `https://marketing.powerupsecosistem.online`
+```text
+http://localhost:5173, https://marketing.powerupsecosistem.online
+```
 
-y rebuild del frontend con `VITE_AUTH0_*`.
+Lo que se necesitó en el VPS (por si hay que repetirlo):
+
+1. `.env.production`: `STAGING_SAAS_ENABLED=true`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `ADMIN_EMAILS` (y opcional `VITE_AUTH0_DOMAIN` / `VITE_AUTH0_CLIENT_ID`; si faltan, el compose usa `AUTH0_*`).
+2. `infra/docker/Dockerfile.frontend` + `infra/docker-compose.prod.yml` pasan `VITE_AUTH0_*` como **build-args**. Son bake-time: rebuild con `docker compose … build --no-cache frontend && docker compose … up -d frontend`.
+3. Migración Alembic `0010` (`app_users.auth0_sub` + índice único). En Postgres el esquema lo gestiona solo Alembic; sin ella la API responde `column app_users.auth0_sub does not exist`.
+
+| Síntoma | Causa |
+|---------|-------|
+| «Auth0 no está configurado. Define VITE_AUTH0_DOMAIN…» | Frontend compilado sin los build-args `VITE_AUTH0_*` |
+| «Callback URL mismatch» en Auth0 | Falta el dominio prod en Allowed Callback URLs |
+| `UndefinedColumn app_users.auth0_sub` | Falta `alembic upgrade head` (0010) |

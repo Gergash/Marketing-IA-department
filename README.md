@@ -4,7 +4,9 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 
 ## Capacidades
 
-- Generación de piezas gráficas (fal.ai / Venice.ai / SD) con overlays editoriales, tipografía premium y contraste adaptativo
+- Generación de piezas gráficas (**OpenAI gpt-image-2 directo** / fal.ai) con overlays editoriales, tipografía premium y contraste adaptativo
+- Reels con clip AI de **Venice Gemini Omni Flash 1.1** (Venice se reserva para video)
+- Copy escrito por LLM (prod: **OpenRouter modelos gratuitos** con fallbacks y reintentos)
 - **Foto real del local** (Design-as-Code): Venice `gpt-image-2-edit` altera la escena (p. ej. personas en sillas); Pillow aplica tipografía limpia — ver [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
 - Formatos por red social (Instagram, Facebook, LinkedIn, TikTok, X) + **formato universal 1:1** para publicar la misma pieza en varias redes
 - Manual de marca PDF: OCR (PaddleOCR), paleta de color, logos → prioridad máxima en diseño
@@ -21,16 +23,16 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 | Capa | Tecnología |
 |---|---|
 | Orquestación IA | LangGraph + LangChain |
-| Modelos IA | LLMs vía API (OpenAI, Anthropic, Ollama) |
+| Modelos IA | LLMs vía API (OpenRouter, OpenAI, Anthropic) u Ollama local |
 | Backend API | FastAPI (Python 3.10) |
 | Microservicios | Go (`social-publisher-go`) |
 | Base de datos | PostgreSQL + Redis |
 | Migraciones | Alembic |
 | Cola de tareas | Celery (default + `video_render`) |
 | Frontend | React + Vite |
-| Contenido visual | fal.ai (Flux) + Venice.ai + Pillow + brand scan + foto usuario |
+| Contenido visual | OpenAI gpt-image-2 directo + fal.ai (Flux) + Pillow + brand scan + foto usuario |
 | Marca / OCR | pypdf + PaddleOCR + PyMuPDF (`brand_manual` / `brand_scan`) |
-| Video (Reels) | Shotstack + fal TTS (Kokoro) / ElevenLabs / OpenAI; escenas still o Venice i2v |
+| Video (Reels) | Shotstack + fal TTS (Kokoro) / ElevenLabs / OpenAI; clip Venice Gemini Omni, escenas Venice i2v o still |
 | Contenedores | Docker (+ esqueleto K8s / Skaffold) |
 
 ## Estado del roadmap
@@ -47,11 +49,13 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 14** ✅ Hilo de pensamiento (`GET /api/thoughts/{trace_id}`) + modo interactivo con checkpoints
 - **Paso 15** ✅ Formatos por red + `content_format=universal` (`GET /api/image/formats`). TikTok: generación sí; publish tras App Review. **X: publish nativo** (tweet + imagen)
 - **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
-- **Paso 17** 🔄 **OpenRouter** como LLM cloud en prod (`OPENAI_API_BASE`); integración OAuth Meta/X documentada en `infra/deploy/`
+- **Paso 17** ✅ **OpenRouter** como LLM cloud en prod con modelos `:free` + `OPENAI_MODEL_FALLBACKS` + reintentos + razonamiento apagado (antes prod caía a plantillas por `LLM_PROVIDER=ollama`). Fix en `main`, pendiente de deploy. Integración OAuth Meta/X documentada en `infra/deploy/`
 - **Paso 18** ✅ **Foto real + edit** Venice `gpt-image-2-edit` **y** fal `FLUX Kontext` (`alter_image_with_ai` → escena; tipografía Pillow; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
-- **Paso 19** ✅ **Capa SaaS** landing + **Auth0-only** + créditos Bold + panel `/admin` (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` bake-time). E2E local login→publish IG verificado. OAuth Integraciones con Bearer + `authorize_url`. URIs OAuth canónicas = prod. **Auth0 en VPS y Meta App Live: pendientes.** — [`docs/staging-e2e.md`](docs/staging-e2e.md), [`docs/auth0.md`](docs/auth0.md), [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
+- **Paso 19** ✅ **Capa SaaS** landing + **Auth0-only** + créditos Bold + panel `/admin` (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` bake-time). E2E local login→publish IG verificado. OAuth Integraciones con Bearer + `authorize_url`. URIs OAuth canónicas = prod. **Auth0 activo en VPS**; Meta App Live pendiente de bandera. — [`docs/staging-e2e.md`](docs/staging-e2e.md), [`docs/auth0.md`](docs/auth0.md), [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
+- **Paso 20** ✅ **gpt-image-2 directo** contra OpenAI (`IMAGE_PROVIDER=openai_image`); el switch de imagen ofrece OpenAI + fal — [`docs/gpt-image-2-directo.md`](docs/gpt-image-2-directo.md)
+- **Paso 21** ✅ Video Venice **Gemini Omni Flash 1.1** (`full`, text-to-video, 4/6/8/10s)
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado **2026-09-23**).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado **2026-09-30**).
 
 ## Formatos de publicación
 
@@ -111,8 +115,9 @@ No es necesario para el resto del pipeline (feed/story/reel generado).
 
 ## Proveedores de imagen
 
-> **Evaluación / foto real del local: `IMAGE_PROVIDER=venice`** (`gpt-image-2` + `gpt-image-2-edit`) — ver sección 3B y [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md).  
-> **fal.ai** sigue siendo opción sólida para generación desde cero (Flux).  
+> **Default: `IMAGE_PROVIDER=openai_image`** (gpt-image-2 directo contra OpenAI, generación + edición de foto real) — ver sección 3B y [`docs/gpt-image-2-directo.md`](docs/gpt-image-2-directo.md).  
+> **fal.ai** es la segunda opción del switch (Flux + Kontext para foto real).  
+> **Venice** sigue soportado en backend (`IMAGE_PROVIDER=venice`, [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)) pero ya no aparece en el switch: sus créditos se reservan para video.  
 > **ComfyUI: descartado** (GPU local insuficiente para Flux).
 
 **Stable Diffusion local (Automatic1111 / Forge)** — alternativa sin GPU cloud:
@@ -271,26 +276,32 @@ LLM_MODEL=claude-haiku-4-5-20251001   # más rápido y económico; cambiar a cla
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-O con OpenAI / OpenRouter (misma interfaz):
+O con OpenAI / OpenRouter (misma interfaz; **config actual de prod**, modelos gratuitos):
 
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-or-v1-...          # key de OpenRouter (o sk-... de OpenAI)
 OPENAI_API_BASE=https://openrouter.ai/api/v1
-OPENAI_MODEL=google/gemini-2.0-flash-001
+OPENAI_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# Solo OpenRouter: respaldo si el primario está saturado (máx. 3 modelos en total)
+OPENAI_MODEL_FALLBACKS=google/gemma-4-26b-a4b-it:free,dots-studio/dots-3-note-preview:free
+LLM_MAX_RETRIES=3                    # 429 / 5xx / respuesta 200 sin choices
+OPENROUTER_DISABLE_REASONING=true    # los razonadores :free agotan max_tokens y devuelven vacío
 OPENROUTER_HTTP_REFERER=https://marketing.powerupsecosistem.online
 OPENROUTER_APP_TITLE=Marketing DEPA IA
 ```
 
-Sin `OPENAI_API_BASE`, el cliente apunta a la API oficial de OpenAI. Si la key es de OpenRouter, mantén `IMAGE_PROVIDER=fal` / `VOICE_PROVIDER=fal` (DALL·E, TTS y Whisper oficiales no usan esa key).
+Con créditos en OpenRouter se puede usar un modelo de pago (p. ej. `google/gemini-2.5-flash`); `google/gemini-2.0-flash-001` ya no existe. Sin créditos, OpenRouter limita las peticiones diarias a modelos `:free`.
 
-Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto estático (stub).
+Sin `OPENAI_API_BASE`, el cliente apunta a la API oficial de OpenAI. Si la key es de OpenRouter, no uses `IMAGE_PROVIDER=openai` / `VOICE_PROVIDER=openai` / Whisper oficial con esa key; gpt-image-2 directo usa su propia `OPENAI_IMAGE_API_KEY`.
 
-> **Gotcha — texto genérico en las imágenes:** si el LLM no responde, estratega y copywriter caen a un **stub** de plantilla y el copy sale genérico **sin error visible**. Con `LLM_PROVIDER=ollama`, esto pasa si `ollama serve` está apagado o si la **primera** llamada hace timeout (cold-start del modelo > 180s). Ollama descarga el modelo tras ~5 min inactivo, así que el cold-start reaparece. Solución: mantén `ollama serve` corriendo y el modelo pre-cargado antes de generar (`ollama run llama3.1 ""`), o usa un proveedor cloud (`LLM_PROVIDER=anthropic`). Verifica en los logs que **no** aparezcan `strategist.using_stub` / `strategist.llm_error` / `copywriter.llm_error`.
+Si `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` están vacías, los agentes usan texto de plantilla (`creative_fallback.py`).
+
+> **Gotcha — copy de plantilla:** si el LLM no responde, estratega y copywriter caen a `creative_copy_fallback` y el copy sale genérico (tema pegado literal, hashtags fuera de contexto) **sin error visible**. Causas vistas: `LLM_PROVIDER=ollama` en Docker/VPS (no hay Ollama en los contenedores — así estuvo prod hasta sep-2026), `ollama serve` apagado o cold-start local, modelo retirado de OpenRouter (404), cuenta sin créditos (402), modelos `:free` saturados (429). En local con Ollama: mantén `ollama serve` y pre-carga el modelo (`ollama run llama3.1 ""`). Verifica en los logs que **no** aparezcan `strategist.llm_error` / `copywriter.llm_error` / `*.using_creative_fallback`; `llm.retry` indica reintentos.
 
 ### 3B — Imagen (diseño de posts)
 
-**Venice.ai** (recomendado para evaluación y **edición de foto real**; base `https://api.venice.ai/api/v1`):
+**Venice.ai** (hoy dedicado a **video**; imagen solo por `.env`, fuera del switch de la UI; base `https://api.venice.ai/api/v1`):
 
 ```env
 IMAGE_PROVIDER=venice
@@ -305,9 +316,9 @@ VENICE_VIDEO_MODEL=gemini-omni-flash-1-1-text-to-video
 VENICE_VIDEO_DURATION=6s          # Gemini Omni: 4s|6s|8s|10s
 ```
 
-`GET /api/image/providers` lista Venice si hay key (label con el modelo activo).
+`GET /api/image/providers` ya **no** lista Venice (solo `openai_image` + `fal`); `GET /api/video/options` expone los modelos de video Venice.
 
-**OpenAI Images directo** (`gpt-image-2` sin margen Venice — A/B de coste):
+**OpenAI Images directo** (`gpt-image-2` sin margen Venice — **default del switch de imagen**):
 
 ```env
 IMAGE_PROVIDER=openai_image

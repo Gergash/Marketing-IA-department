@@ -111,14 +111,14 @@ Sin saldo suficiente al publicar → **402 Payment Required**.
 
 ## Producción (estado actual)
 
-SaaS **UI** puede estar activa en `marketing.powerupsecosistem.online` (flags VITE bake, commit `9fe9e15`). **Auth0 en prod no está cableado**: la app Auth0 solo tiene callback `http://localhost:5173`. Hasta añadir el dominio prod en Auth0 + rebuild con `VITE_AUTH0_*`, el login de producción no es este flujo.
+SaaS **UI + Auth0** activos en `marketing.powerupsecosistem.online` desde el **2026-09-24** (callbacks prod en Auth0, build-args `VITE_AUTH0_*`, migración `0010`). Detalle y síntomas típicos: [`auth0.md`](auth0.md#prod-activo-desde-2026-09-24).
 
-Checklist cuando se despliegue Auth0 a VPS:
+Checklist de despliegue (hecho salvo Bold):
 
-1. Callbacks / logout / web origins: `https://marketing.powerupsecosistem.online`
-2. `.env.production`: `AUTH0_*` + `ADMIN_EMAILS` + `STAGING_SAAS_ENABLED=true`
-3. Rebuild frontend con `VITE_STAGING_SAAS` + `VITE_AUTH0_DOMAIN` + `VITE_AUTH0_CLIENT_ID`
-4. Llaves Bold + webhook HTTPS del dominio
-5. Hard refresh del navegador tras el rebuild
+1. ✅ Callbacks / logout / web origins: `http://localhost:5173, https://marketing.powerupsecosistem.online`
+2. ✅ `.env.production`: `AUTH0_*` + `ADMIN_EMAILS` + `STAGING_SAAS_ENABLED=true`
+3. ✅ Rebuild frontend (`--no-cache`) con `VITE_STAGING_SAAS` + `VITE_AUTH0_DOMAIN` + `VITE_AUTH0_CLIENT_ID`
+4. ⬜ Llaves Bold reales + webhook HTTPS del dominio
+5. Hard refresh del navegador tras cada rebuild
 
 Con SaaS off (`STAGING_SAAS_ENABLED=false` y rebuild con `VITE_STAGING_SAAS=false`), el modo legacy con `API_KEY` sigue disponible.

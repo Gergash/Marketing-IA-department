@@ -10,15 +10,16 @@ Guía de despliegue base: [`vps-hostinger.md`](vps-hostinger.md)
 
 ---
 
-## Estado del proceso (actualizado 2026-09-23)
+## Estado del proceso (actualizado 2026-09-30)
 
 | Fase | Estado | Notas |
 |------|--------|-------|
 | DNS + Caddy host + Docker compose | ✅ Hecho | Loopback `8000`/`8081`, sin Caddy en compose |
 | Dashboard + API en HTTPS | ✅ Hecho | `/api/health`, SPA en `/` |
 | Legales (`/terminos`, `/privacidad`) | ✅ Hecho | Servidos por FastAPI (TikTok + Meta) |
-| Capa SaaS Auth0 | ✅ E2E local | Auth0-only + créditos + OAuth Bearer; **callbacks Auth0 prod pendientes** |
-| LLM cloud (OpenRouter) | 🔄 En curso | Key en `.env.production`; validar que agentes no usen stub |
+| Capa SaaS Auth0 | ✅ Prod | Callbacks prod en Auth0 + build-args `VITE_AUTH0_*` + migración `0010` |
+| LLM cloud (OpenRouter) | ✅ Config / 🔄 deploy | Modelos `:free` con fallbacks + reintentos; `.env.production` listo. Código `49cbd0f` pendiente de merge a `master` |
+| Imagen / video | ✅ Hecho | Imagen: gpt-image-2 directo (`OPENAI_IMAGE_*`) + fal. Video: Venice Gemini Omni Flash 1.1 |
 | Meta / Instagram OAuth (código) | ✅ OAuth + Go sidecar | Page token o Conectar Meta; URIs canónicas = dominio prod |
 | **Meta App Mode Live / Review** | ⬜ **Esperando bandera del usuario** | No iniciar trámite hasta aviso explícito |
 | LinkedIn OAuth | 🔄 En curso | Redirect prod en `.env`; registrar exacto en portal |
@@ -80,7 +81,10 @@ Plantilla: [`.env.production.example`](../../.env.production.example)
 | Grupo | Variables clave |
 |-------|-----------------|
 | Dominio | `DOMAIN`, `OAUTH_SUCCESS_REDIRECT_URL`, `PUBLIC_IMAGE_BASE_URL`, `CORS_ORIGINS` |
-| LLM | `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_API_BASE`, `OPENAI_MODEL` |
+| LLM | `LLM_PROVIDER=openai` (nunca `ollama` en VPS), `OPENAI_API_KEY` (OpenRouter), `OPENAI_API_BASE`, `OPENAI_MODEL`, `OPENAI_MODEL_FALLBACKS`, `LLM_MAX_RETRIES`, `OPENROUTER_DISABLE_REASONING` |
+| Imagen | `IMAGE_PROVIDER=openai_image`, `OPENAI_IMAGE_API_KEY` (OpenAI oficial), `FAL_API_KEY` |
+| Video | `VIDEO_GEN_MODE=full`, `VIDEO_SCENE_PROVIDER=venice`, `VENICE_API_KEY`, `VENICE_VIDEO_MODEL`, `VENICE_VIDEO_DURATION` |
+| SaaS | `STAGING_SAAS_ENABLED`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `ADMIN_EMAILS` (+ build-args `VITE_*`) |
 | Meta | `META_CLIENT_ID`, `META_CLIENT_SECRET`, `META_REDIRECT_URI` |
 | X | `X_API_KEY`, `X_API_SECRET`, `X_REDIRECT_URI`, opc. `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `X_BEARER_TOKEN`, `X_CLIENT_ID`, `X_CLIENT_SECRET` |
 | TikTok verify | `TIKTOK_VERIFY_FILENAME`, `TIKTOK_VERIFY_CONTENT` |
@@ -128,8 +132,9 @@ curl -sI https://api.powerupsecosistem.online/health   # InsightFlow intacto
 
 - [ ] **Bandera del usuario** para pasar la app Meta a Live / App Review (no adelantar)
 - [ ] **Post de prueba en X** (brief red X, formato feed, aprobar)
-- [ ] Auth0: callbacks de prod + rebuild frontend VPS (cuando se pida deploy SaaS)
-- [ ] OpenRouter: key en prod + logs sin `strategist.using_stub`
+- [x] Auth0: callbacks de prod + rebuild frontend VPS + migración `0010`
+- [x] OpenRouter: `.env.production` con modelos `:free` + fallbacks (validado en worker)
+- [ ] Merge `49cbd0f` → `master` + `git pull` VPS + `up -d --build api worker video-worker`; post de prueba sin `copywriter.llm_error`
 - [ ] Esperar **TikTok App Review**; luego implementar OAuth/publish
 - [ ] Biblioteca multi-imagen reutilizable (WIP)
 - [ ] Endurecer copy/overlay para no repetir texto del brief

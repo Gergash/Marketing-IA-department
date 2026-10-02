@@ -1,7 +1,8 @@
 # gpt-image-2 directo (OpenAI) — comparar coste vs Venice
 
-> **Estado: IMPLEMENTADO.** Proveedor `openai_image` listo para A/B de coste contra Venice.
-> El default del `.env` local puede seguir en `venice`; activar `openai_image` solo para la prueba.
+> **Estado (2026-09-30): EN PRODUCCIÓN.** `openai_image` es el **default** del switch de imagen en local y prod
+> (`IMAGE_PROVIDER=openai_image`). El switch solo ofrece `openai_image` + `fal`; Venice quedó fuera
+> para que sus créditos se usen únicamente en video (Gemini Omni Flash 1.1).
 
 ## Por qué
 
@@ -24,7 +25,7 @@ OPENAI_IMAGE_BACKGROUND=opaque
 **No reutilizar `OPENAI_API_KEY`** si esa key apunta a OpenRouter (LLM de texto). Credenciales
 de imagen son propias.
 
-En la UI, `GET /api/image/providers` lista `OpenAI Images (gpt-image-2)` cuando hay key.
+En la UI, `GET /api/image/providers` lista `OpenAI Images (gpt-image-2)` cuando hay key (y fal si hay `FAL_API_KEY`); si `IMAGE_PROVIDER` no está entre los permitidos, el default es el primero de la lista.
 Al publicar en staging, `api_usage_events.provider` = `openai_image` (panel admin → Uso por proveedor).
 Los logs de gateway incluyen `openai_image.usage` con tokens de la respuesta OpenAI.
 

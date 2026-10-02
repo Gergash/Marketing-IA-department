@@ -111,8 +111,11 @@ nano .env.production
 | `POSTGRES_PASSWORD` | Fuerte y **distinto** al de InsightFlow |
 | `API_KEY` | Obligatorio en prod (dashboard) |
 | `CORS_ORIGINS` | `https://marketing.powerupsecosistem.online` |
-| `LLM_PROVIDER` | `openai` + OpenRouter (`OPENAI_API_BASE`) o `anthropic` — no Ollama en VPS compartida |
-| `IMAGE_PROVIDER` / `FAL_API_KEY` | fal.ai |
+| `LLM_PROVIDER` | `openai` + OpenRouter (`OPENAI_API_BASE`) o `anthropic` — **nunca `ollama`**: no hay Ollama en los contenedores y los agentes caen a plantillas sin error visible |
+| `OPENAI_MODEL` / `OPENAI_MODEL_FALLBACKS` | Hoy `nvidia/nemotron-3-super-120b-a12b:free` + `google/gemma-4-26b-a4b-it:free,dots-studio/dots-3-note-preview:free`; con `LLM_MAX_RETRIES=3` y `OPENROUTER_DISABLE_REASONING=true` |
+| `IMAGE_PROVIDER` / `OPENAI_IMAGE_API_KEY` / `FAL_API_KEY` | `openai_image` (gpt-image-2 directo, key OpenAI oficial) + fal.ai |
+| `VIDEO_GEN_MODE` / `VENICE_*` | `full` + Venice `gemini-omni-flash-1-1-text-to-video`, `6s` |
+| `AUTH0_DOMAIN` / `AUTH0_CLIENT_ID` | Auth0 SaaS; el compose los pasa también como build-args `VITE_AUTH0_*` |
 | `VIDEO_PROVIDER` / `SHOTSTACK_*` | Shotstack |
 | OAuth secrets | Meta, LinkedIn, Google, X |
 
@@ -214,21 +217,25 @@ Sustituye `DOMAIN` por el hostname real.
 
 ## Capa SaaS en producción
 
-La UI de landing/login **no** se activa solo con el `.env` de la API. Hace falta el build-arg Vite:
+La UI de landing/login **no** se activa solo con el `.env` de la API. Hacen falta los build-args Vite (activos desde 2026-09-24):
 
 ```bash
 # En .env.production
 STAGING_SAAS_ENABLED=true
 VITE_STAGING_SAAS=true
+AUTH0_DOMAIN=dev-ayl6gsakmvf7rb27.us.auth0.com
+AUTH0_CLIENT_ID=...          # VITE_AUTH0_* opcionales; el compose cae a AUTH0_*
+ADMIN_EMAILS=...
 JWT_SECRET=<secreto-largo>
 BOLD_API_KEY=...
 BOLD_INTEGRITY_SECRET=...
 BOLD_WEBHOOK_SECRET=...
 
-docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d --build frontend api
+C="docker compose -f infra/docker-compose.prod.yml --env-file .env.production"
+$C build --no-cache frontend && $C up -d frontend api
 ```
 
-Detalle: [`../../docs/staging-landing-bold.md`](../../docs/staging-landing-bold.md).
+En Auth0, Allowed Callback/Logout URLs y Web Origins deben incluir `https://marketing.powerupsecosistem.online`. Detalle y síntomas: [`../../docs/auth0.md`](../../docs/auth0.md) · [`../../docs/staging-landing-bold.md`](../../docs/staging-landing-bold.md).
 
 ---
 
@@ -240,9 +247,15 @@ cd ~/apps/marketing-depa-ia
 # Logs
 docker compose -f infra/docker-compose.prod.yml --env-file .env.production logs -f api worker
 
-# Actualizar código
-git pull
+# Actualizar código (el checkout sigue master; el usuario mergea PR main → master)
+git pull origin master
 docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d --build
+
+# Migraciones (Postgres = solo Alembic; schema_patches no aplica)
+docker compose -f infra/docker-compose.prod.yml --env-file .env.production exec api python -m alembic upgrade head
+
+# Tras cambiar solo .env.production
+docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d --force-recreate api worker video-worker
 
 # No tocar
 # ~/apps/insightflow

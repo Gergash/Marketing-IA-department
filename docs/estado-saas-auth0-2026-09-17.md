@@ -1,6 +1,8 @@
 # Snapshot 2026-09-17 — SaaS Auth0, panel admin y espera de Meta Live
 
 > **Actualización 2026-09-23:** el estado vivo del departamento está en [`estado-actual.txt`](../estado-actual.txt) y el checklist E2E en [`staging-e2e.md`](staging-e2e.md). Este archivo sigue siendo el inventario detallado de la noche del 17-sep.
+>
+> **Actualización 2026-09-30:** Auth0 ya está **desplegado en prod** (callbacks del dominio + rebuild con `VITE_AUTH0_*`). En Postgres la columna `auth0_sub` la crea la migración Alembic **`0010`**, no `schema_patches` (que solo aplica a SQLite). Los pendientes de VPS listados abajo quedaron cerrados salvo Bold real.
 
 Este archivo es el inventario detallado del workstream SaaS/Auth0/admin (sesión 17 sep 2026, noche). **Meta App Review / Live no se toca hasta que el usuario dé la bandera explícita.**
 

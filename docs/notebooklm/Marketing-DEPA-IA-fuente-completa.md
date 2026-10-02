@@ -2,8 +2,8 @@
 
 **Proyecto:** Marketing DEPA IA (PowerUps)  
 **Tipo:** MVP de automatización de marketing con agentes de IA  
-**Actualizado:** 2026-09-10  
-**Nota 2026-09-17:** esta fuente **no** cubre Auth0-only ni el panel `/admin`. Usar `estado-actual.txt` + `docs/estado-saas-auth0-2026-09-17.md` como complemento hasta reescribir esta página.  
+**Actualizado:** 2026-09-30  
+**Nota:** el detalle de Auth0-only y del panel `/admin` vive en `estado-actual.txt`, `docs/auth0.md` y `docs/admin-panel.md`. Resumen: la identidad SaaS es solo Auth0 (activo en prod), los créditos se compran con Bold y `/admin` lee tablas propias.  
 **Idioma:** español  
 
 Este documento es **autocontenido**: súbelo como única fuente (o como fuente principal) a NotebookLM. No depende de enlaces internos del repositorio.
@@ -47,9 +47,10 @@ brief (+ manual de marca)
 | Base de datos | PostgreSQL | host 5433 → contenedor 5432 |
 | Cola | Redis + Celery | 6379; colas `celery` y `video_render` |
 | Publicación | Go (`social-publisher-go`) | 8088 |
-| LLM | Ollama / Anthropic / OpenAI | 11434 si Ollama |
-| Imagen | fal.ai (Flux), Venice.ai, Stable Diffusion, DALL·E | configurable |
-| Video | Shotstack + TTS (fal Kokoro / ElevenLabs / OpenAI) | Reels async |
+| LLM | OpenRouter (prod, modelos gratuitos) / Anthropic / OpenAI / Ollama (solo local) | 11434 si Ollama |
+| Imagen | **OpenAI gpt-image-2 directo** (default), fal.ai (Flux); backend: Venice, SD, DALL·E | configurable |
+| Video | Shotstack + Venice Gemini Omni Flash 1.1 + TTS (fal Kokoro / ElevenLabs / OpenAI) | Reels async |
+| Identidad SaaS | Auth0 Universal Login (ID token RS256) | prod activo |
 | Marca / OCR | pypdf + PaddleOCR + PyMuPDF + escaneo visual | PDF ≤ 20 MB |
 | Scheduler | APScheduler | campañas programadas |
 | Observabilidad | Prometheus opcional | `/metrics` si está activo |
@@ -152,8 +153,9 @@ El catálogo vive en `image_specs.py` y se sirve por `GET /api/image/formats`; e
 ## 8. Proveedores de imagen y video
 
 ### Imagen
-- **Venice.ai** — recomendado para evaluación y **edición de foto real** (`gpt-image-2` + `gpt-image-2-edit` vía `/image/edit`). Tipografía = Pillow, no la IA. Guía: `docs/foto-real-venice-edit.md`.
-- **fal.ai** — generación desde cero (Flux); img2img opcional (puede deformar textos ya en la foto).
+- **OpenAI gpt-image-2 directo** (`openai_image`) — **default** del switch de imagen: generación y edición de foto real sin el margen de Venice. Credencial propia `OPENAI_IMAGE_API_KEY`. Tipografía = Pillow, no la IA.
+- **fal.ai** — segunda opción del switch: generación desde cero (Flux) + edición con Kontext.
+- **Venice.ai** — soportado en backend (`gpt-image-2` + `gpt-image-2-edit`), pero **fuera del switch** desde sep-2026: sus créditos se reservan para video. Guía: `docs/foto-real-venice-edit.md`.
 - **Stable Diffusion** — Automatic1111/Forge local.
 - **OpenAI DALL·E** — si hay key.
 - **mock** — solo desarrollo/tests.
@@ -163,7 +165,7 @@ El catálogo vive en `image_specs.py` y se sirve por `GET /api/image/formats`; e
 ### Video
 - Render: Shotstack (`stage` sandbox o `v1` producción).
 - Modos de generación (`video_gen_mode`): `full` = Venice genera un clip completo; `scenes` = Venice anima cada toma y Shotstack las une; `still` = stills + Ken Burns sin video AI.
-- Modelos Venice: Seedance 2.5 / 2.0, Kling O3, MiniMax H3 (aliases resueltos en `venice_video_models.py`).
+- Modelos Venice: **Gemini Omni Flash 1.1** (default; text-to-video en `full`, 4/6/8/10s), Seedance 2.5 / 2.0, Kling O3, MiniMax H3 (aliases resueltos en `venice_video_models.py`).
 - Voz: fal Kokoro Spanish (típico en dev), ElevenLabs u OpenAI TTS.
 - Clips propios (`user_clip_reel`): Drive cloud sin máster local — audio-only STT → VideoProducer (N tomas) → `pending_takes` → ffmpeg seek de shorts → Shotstack.
 - URLs públicas: ngrok / `PUBLIC_IMAGE_BASE_URL` obligatorio para Meta y assets locales; fondos fal pueden ir a Shotstack como URLs `fal.media`.
@@ -274,10 +276,10 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 
 ## 13. Tests y calidad
 
-- Suite pytest de **271 tests** (2026-08-11).
-- Cobertura fuerte: pipeline, layouts, formatos por red, video, clips, revise, multi-cuenta, marca, Venice, captions, hilo de pensamiento, LinkedIn nativo.
-- Migraciones Alembic relevantes: `0005` video_url, `0006` revise fields, `0007` multi-cuenta OAuth.
-- 3 fallos conocidos y preexistentes en `test_venice.py` y `test_video_timeline_clips.py` (estructura del edit Shotstack).
+- Suite pytest de **342 tests** (2026-09-29).
+- Cobertura fuerte: pipeline, layouts, formatos por red, video, clips, revise, multi-cuenta, marca, Venice, gpt-image-2 directo, OpenRouter (fallbacks/reintentos), Auth0/admin, captions, hilo de pensamiento, LinkedIn nativo.
+- Migraciones Alembic relevantes: `0005` video_url, `0006` revise fields, `0007` multi-cuenta OAuth, `0008` usuarios/créditos SaaS, `0009` panel admin, `0010` `app_users.auth0_sub`.
+- 9 fallos conocidos y preexistentes (video pipeline/timeline/designer, Venice, brand/advisor, X).
 
 ---
 
@@ -290,7 +292,11 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 | Reels + clips Drive | Hecho |
 | Revise API + multi-cuenta | Hecho (revise superficial en diseño) |
 | Manual de marca OCR + scan + campaña | Hecho |
-| Venice.ai imagen / escenas + **edit foto real** | Hecho (`user_img2img`; sin `quality` en `/image/edit`) |
+| Venice.ai imagen / escenas + **edit foto real** | Hecho (`user_img2img`; sin `quality` en `/image/edit`); hoy Venice solo video en la UI |
+| gpt-image-2 directo (OpenAI) | Hecho — default del switch de imagen |
+| Video Venice Gemini Omni Flash 1.1 | Hecho — default de video |
+| SaaS Auth0 + créditos + `/admin` | Hecho (Auth0 en prod; Bold real pendiente) |
+| LLM real en prod (OpenRouter gratis) | Hecho en código; pendiente de deploy |
 | Asesor creativo | Hecho |
 | Sidecar Go | Hecho |
 | Hilo de pensamiento + modo interactivo | Hecho |
@@ -307,7 +313,7 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 
 ## 15. Deuda y riesgos operativos
 
-1. Stub silencioso del LLM si Ollama/API falla → copy genérico sin aviso claro en UI.
+1. Fallback de plantilla silencioso si el LLM falla → copy genérico sin aviso en UI. Prod estuvo así hasta sep-2026 (`LLM_PROVIDER=ollama` sin Ollama en contenedores); ahora OpenRouter `:free` con fallbacks, reintentos y tope diario del free tier.
 2. Meta/Instagram: scopes OAuth, tokens de Página, ngrok con dominio estable.
 3. Reels: sin worker `video_render` el job queda encolado para siempre.
 4. Canva OAuth y plantillas MCP no implementados.

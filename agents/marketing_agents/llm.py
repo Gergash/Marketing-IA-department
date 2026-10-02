@@ -4,7 +4,20 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
+
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+# OpenRouter rechaza el array `models` con más de 3 entradas.
+_OPENROUTER_MAX_MODELS = 3
+_RETRY_BACKOFF_SECONDS = (2.0, 5.0, 10.0)
+
+
+class EmptyLLMResponse(RuntimeError):
+    """El proveedor respondió 200 sin `choices` o sin contenido (típico de modelos `:free`)."""
 
 
 class OllamaLLM:
@@ -122,8 +135,20 @@ class OpenAILLM:
         *,
         base_url: str | None = None,
         default_headers: dict[str, str] | None = None,
+        fallback_models: list[str] | None = None,
+        max_retries: int = 3,
+        timeout_seconds: int | None = None,
+        disable_reasoning: bool = False,
     ) -> None:
-        """Crea el cliente OpenAI; `base_url` apunta a OpenRouter u otro proxy compatible."""
+        """Crea el cliente OpenAI; `base_url` apunta a OpenRouter u otro proxy compatible.
+
+        `fallback_models` solo aplica con OpenRouter: se envía como `models` para que la
+        pasarela enrute al siguiente modelo si el primario está saturado (429/503), lo
+        habitual en los modelos gratuitos `:free`.
+
+        `disable_reasoning` (solo OpenRouter): los modelos razonadores gratuitos gastan el
+        `max_tokens` pensando y devuelven `content` vacío en prompts largos del copywriter.
+        """
         from openai import OpenAI
 
         kwargs: dict[str, Any] = {"api_key": api_key}
@@ -131,9 +156,63 @@ class OpenAILLM:
             kwargs["base_url"] = base_url.rstrip("/")
         if default_headers:
             kwargs["default_headers"] = default_headers
+        if timeout_seconds:
+            kwargs["timeout"] = timeout_seconds
         self._client = OpenAI(**kwargs)
         self._model = model
         self._base_url = (base_url or "").rstrip("/")
+        self._fallback_models = [m for m in (fallback_models or []) if m and m != model]
+        self._max_retries = max(1, max_retries)
+        self._disable_reasoning = disable_reasoning
+
+    @property
+    def _is_openrouter(self) -> bool:
+        return "openrouter.ai" in self._base_url
+
+    def _create(self, **kwargs: Any) -> str:
+        """Chat completion con reintentos ante saturación o respuestas vacías; devuelve el texto."""
+        from openai import APIConnectionError, APIStatusError, APITimeoutError
+
+        if self._is_openrouter:
+            extra: dict[str, Any] = {}
+            if self._fallback_models:
+                extra["models"] = [self._model, *self._fallback_models][:_OPENROUTER_MAX_MODELS]
+            if self._disable_reasoning:
+                extra["reasoning"] = {"enabled": False}
+            if extra:
+                kwargs["extra_body"] = extra
+
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries):
+            try:
+                resp = self._client.chat.completions.create(**kwargs)
+                choices = getattr(resp, "choices", None)
+                content = choices[0].message.content if choices else None
+                if not content or not str(content).strip():
+                    finish = choices[0].finish_reason if choices else None
+                    raise EmptyLLMResponse(
+                        f"modelo={getattr(resp, 'model', None)} finish={finish} "
+                        f"error={getattr(resp, 'error', None)}"
+                    )
+                return str(content)
+            except APIStatusError as exc:
+                if exc.status_code != 429 and exc.status_code < 500:
+                    raise
+                last_exc = exc
+            except (APIConnectionError, APITimeoutError, EmptyLLMResponse) as exc:
+                last_exc = exc
+            if attempt + 1 < self._max_retries:
+                wait = _RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)]
+                logger.warning(
+                    "llm.retry",
+                    model=self._model,
+                    attempt=attempt + 1,
+                    wait_seconds=wait,
+                    error=str(last_exc)[:200],
+                )
+                time.sleep(wait)
+        assert last_exc is not None
+        raise last_exc
 
     def complete_json(self, system: str, user: str, *, max_tokens: int = 1024) -> dict[str, Any]:
         """Obtiene un objeto JSON del asistente y lo parsea."""
@@ -150,21 +229,21 @@ class OpenAILLM:
             ],
         }
         # Algunos modelos vía OpenRouter no soportan response_format=json_object.
-        if not self._base_url or "openrouter.ai" not in self._base_url:
+        if not self._is_openrouter:
             kwargs["response_format"] = {"type": "json_object"}
         try:
-            resp = self._client.chat.completions.create(**kwargs)
+            content = self._create(**kwargs)
         except Exception:
             if "response_format" in kwargs:
                 kwargs.pop("response_format", None)
-                resp = self._client.chat.completions.create(**kwargs)
+                content = self._create(**kwargs)
             else:
                 raise
-        return _parse_json(resp.choices[0].message.content)
+        return _parse_json(content)
 
     def complete_text(self, system: str, user: str, *, max_tokens: int = 1024) -> str:
         """Respuesta de texto libre (chat asesor)."""
-        resp = self._client.chat.completions.create(
+        content = self._create(
             model=self._model,
             max_tokens=max_tokens,
             messages=[
@@ -172,14 +251,20 @@ class OpenAILLM:
                 {"role": "user", "content": user},
             ],
         )
-        return str(resp.choices[0].message.content or "").strip()
+        return content.strip()
 
 
 def _parse_json(text: str) -> dict[str, Any]:
-    """Quita fences Markdown opcionales y decodifica JSON estricto."""
+    """Quita fences Markdown opcionales y decodifica JSON; tolera texto alrededor del objeto."""
     cleaned = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
-    cleaned = re.sub(r"```\s*$", "", cleaned.strip(), flags=re.MULTILINE)
-    return json.loads(cleaned.strip())
+    cleaned = re.sub(r"```\s*$", "", cleaned.strip(), flags=re.MULTILINE).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        return json.loads(cleaned[start : end + 1])
 
 
 def get_llm() -> OllamaLLM | AnthropicLLM | OpenAILLM | None:
@@ -208,10 +293,15 @@ def get_llm() -> OllamaLLM | AnthropicLLM | OpenAILLM | None:
                 headers["HTTP-Referer"] = referer
             if title:
                 headers["X-Title"] = title
+        fallbacks = [m.strip() for m in (s.openai_model_fallbacks or "").split(",") if m.strip()]
         return OpenAILLM(
             s.openai_api_key,
             model=model,
             base_url=base,
             default_headers=headers or None,
+            fallback_models=fallbacks,
+            max_retries=s.llm_max_retries,
+            timeout_seconds=s.llm_timeout_seconds,
+            disable_reasoning=s.openrouter_disable_reasoning,
         )
     return None

@@ -38,6 +38,7 @@ App → **Use cases** → permisos típicos para IG/Facebook:
 - `pages_manage_posts`
 - `instagram_basic`
 - `instagram_content_publish`
+- `instagram_manage_messages` · `pages_messaging` · `pages_manage_metadata` (agente de DMs, ver §7)
 
 ---
 
@@ -119,6 +120,59 @@ Fan Page ID en `.env` (referencia): `META_FACEBOOK_PAGE_ID=1073015845905959`.
 | Popup Meta OK pero vuelve con error | `OAUTH_SUCCESS_REDIRECT_URL` incorrecto |
 | No aparece IG en cuentas | Página sin IG Business o permisos no concedidos |
 | Publicación falla en imagen | `PUBLIC_IMAGE_BASE_URL` debe ser HTTPS producción |
+| DMs no llegan a la bandeja | Webhook sin verificar, campo `messages` no suscrito o cuenta conectada antes de los permisos de mensajería (reconectar) |
+| La bandeja recibe pero el agente no responde | Interruptor del agente apagado en la cuenta, conversación pausada / `requiere_humano`, o worker Celery caído |
+
+---
+
+## 7. Agente de DMs (Instagram + Messenger)
+
+El agente responde DMs con tono humano, pide nombre, teléfono/WhatsApp y ciudad/barrio (uno a la vez),
+registra el motivo y deja todo en **Estudio → Bandeja de DMs**. Si el tema lo requiere (quejas, pagos,
+pide hablar con alguien) marca `requiere_humano` y deja de responder. Si el LLM falla **no** envía
+plantillas: la conversación pasa a humano. Si le preguntan, dice con honestidad que es el asistente virtual.
+
+### 7.1 Portal Meta Developers
+
+1. App → **Webhooks** (o *Messenger* / *Instagram* → *Webhooks*):
+   - **Callback URL:** `https://marketing.powerupsecosistem.online/api/webhooks/meta`
+   - **Verify token:** el mismo valor de `META_WEBHOOK_VERIFY_TOKEN` en `.env.production`
+   - Suscribir el campo **`messages`** en los objetos **Page** e **Instagram**.
+2. Añadir los permisos `instagram_manage_messages`, `pages_messaging`, `pages_manage_metadata`.
+3. Instagram → la cuenta profesional debe tener activado **Permitir acceso a mensajes** (Configuración → Privacidad → Mensajes → Herramientas conectadas).
+
+### 7.2 Estudio
+
+1. **Reconectar Meta** en Integraciones (las cuentas conectadas antes no tienen los permisos de mensajería).
+   Al conectar, el gateway suscribe cada Fan Page a `messages` (`POST /{page_id}/subscribed_apps`).
+2. En **Bandeja de DMs**, activar el interruptor **Agente** en cada cuenta (apagado por defecto).
+   Activarlo vuelve a intentar la suscripción de la página.
+
+### 7.3 Modo Development vs Live
+
+En **Development** solo funcionan DMs de personas con rol en la app (admins / testers). Para el público
+general hace falta **App Review** de los permisos de mensajería y pasar la app a **Live**.
+**No pasar a Live hasta que el usuario dé la bandera** (ver nota al inicio).
+
+### 7.4 Reglas de envío
+
+- Ventana de 24 h de Meta: el agente responde siempre dentro de la ventana (contesta a un mensaje entrante);
+  la respuesta manual desde la bandeja se bloquea si pasaron más de 24 h desde el último mensaje de la persona.
+- `DM_DEBOUNCE_SECONDS` agrupa mensajes seguidos en una sola respuesta; `DM_AGENT_REPLY_DELAY_SECONDS`
+  controla la pausa "escribiendo…" (tope 4 s).
+- Responder a mano desde la bandeja **pausa** al agente en esa conversación; *Reanudar agente* lo reactiva.
+- `DM_AGENT_DRY_RUN` debe quedar en `false` (o sin definir) en `.env.production`: con `true` el agente no envía nada a Meta.
+
+### 7.5 Bandeja de DMs (estudio)
+
+- Chips de estado con luz parpadeante de su color: **Nuevo** (azul), **En conversación** (ámbar), **Datos completos** (verde), **Requiere humano** (rojo), **Cerrado** (gris). Con conversaciones en ese estado la luz late más rápido; clic filtra la tabla.
+- Filtros por cuenta y motivo, búsqueda (nombre, teléfono, ciudad, motivo), **Exportar CSV** (abre bien en Excel).
+- Al abrir un contacto: datos, motivo, resumen, conversación en burbujas (persona / agente / equipo), pausar/reanudar, cambiar estado, notas internas y respuesta manual.
+
+### 7.6 Probar antes de producción
+
+En staging local con DMs simulados (`DM_AGENT_DRY_RUN=true` + `scripts/simulate_dm.py`) o reales vía túnel:
+[`docs/staging-e2e.md`](../../docs/staging-e2e.md#agente-de-dms-en-staging-local).
 
 ---
 

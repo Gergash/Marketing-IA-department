@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import AdvisorChatBubble from "./AdvisorChatBubble";
 import AgentThoughtThread from "./AgentThoughtThread";
 import Integrations from "./Integrations";
+import InboxPanel from "./InboxPanel";
 import { BrandMark } from "./BrandMark";
 import { Link } from "./RouterLink";
 import { authFetch, getAuthToken, isStagingMode } from "./auth";
@@ -773,6 +774,7 @@ export default function App() {
 
       {/* Integraciones OAuth */}
       <Integrations apiKey={bearer} onAccountsChanged={loadSocialAccounts} />
+      <InboxPanel apiKey={bearer} accountsVersion={socialAccounts.length} />
 
       {/* Estado redes (sin secretos) */}
       <section className="card">

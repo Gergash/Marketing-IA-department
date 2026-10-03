@@ -15,6 +15,7 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - Asesor creativo conversacional (burbuja en el dashboard)
 - Hilo de pensamiento en vivo de los agentes + modo interactivo con checkpoints
 - Publicación nativa Meta/Instagram (OAuth + sidecar Go), LinkedIn (OAuth + Python) y **X/Twitter** (OAuth 1.0a + Python)
+- **Agente de DMs** Instagram + Messenger: conversa como una persona del equipo, recoge nombre, teléfono y ciudad, registra el motivo y lo deja en la **Bandeja de DMs** del estudio
 - HITL: tomas (`pending_takes`) → aprobar / rechazar / solicitar cambios el MP4 (`pending_approval` / `revise`)
 - **SaaS opcional:** landing, **Auth0 Universal Login**, créditos Bold, panel `/admin` — ver [`docs/auth0.md`](docs/auth0.md), [`docs/admin-panel.md`](docs/admin-panel.md), [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
 
@@ -49,13 +50,14 @@ Plataforma avanzada de automatización de marketing digital basada en agentes de
 - **Paso 14** ✅ Hilo de pensamiento (`GET /api/thoughts/{trace_id}`) + modo interactivo con checkpoints
 - **Paso 15** ✅ Formatos por red + `content_format=universal` (`GET /api/image/formats`). TikTok: generación sí; publish tras App Review. **X: publish nativo** (tweet + imagen)
 - **Paso 16** ✅ **Producción VPS** (`marketing.powerupsecosistem.online`) coexistiendo con InsightFlow — ver `infra/deploy/vps-hostinger.md`
-- **Paso 17** ✅ **OpenRouter** como LLM cloud en prod con modelos `:free` + `OPENAI_MODEL_FALLBACKS` + reintentos + razonamiento apagado (antes prod caía a plantillas por `LLM_PROVIDER=ollama`). Fix en `main`, pendiente de deploy. Integración OAuth Meta/X documentada en `infra/deploy/`
+- **Paso 17** ✅ **OpenRouter** como LLM cloud en prod con modelos `:free` + `OPENAI_MODEL_FALLBACKS` + reintentos + razonamiento apagado (antes prod caía a plantillas por `LLM_PROVIDER=ollama`). Desplegado en prod (PR #19). Integración OAuth Meta/X documentada en `infra/deploy/`
 - **Paso 18** ✅ **Foto real + edit** Venice `gpt-image-2-edit` **y** fal `FLUX Kontext` (`alter_image_with_ai` → escena; tipografía Pillow; `design_source=user_img2img`) — [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md)
 - **Paso 19** ✅ **Capa SaaS** landing + **Auth0-only** + créditos Bold + panel `/admin` (`STAGING_SAAS_ENABLED` + `VITE_STAGING_SAAS` bake-time). E2E local login→publish IG verificado. OAuth Integraciones con Bearer + `authorize_url`. URIs OAuth canónicas = prod. **Auth0 activo en VPS**; Meta App Live pendiente de bandera. — [`docs/staging-e2e.md`](docs/staging-e2e.md), [`docs/auth0.md`](docs/auth0.md), [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md)
 - **Paso 20** ✅ **gpt-image-2 directo** contra OpenAI (`IMAGE_PROVIDER=openai_image`); el switch de imagen ofrece OpenAI + fal — [`docs/gpt-image-2-directo.md`](docs/gpt-image-2-directo.md)
 - **Paso 21** ✅ Video Venice **Gemini Omni Flash 1.1** (`full`, text-to-video, 4/6/8/10s)
+- **Paso 22** 🟡 **Agente de DMs** (Instagram + Messenger): responde con tono humano, pide nombre / teléfono / ciudad, registra el motivo y deriva a humano; **Bandeja de DMs** en el estudio (filtros, conversación, pausa, respuesta manual, CSV). Chips de estado con luz parpadeante del color de cada estado. Código listo y probado en staging local (`DM_AGENT_DRY_RUN` + `scripts/simulate_dm.py`, ver [`docs/staging-e2e.md`](docs/staging-e2e.md)); pendiente deploy + webhook en Meta Developers; público general tras App Review + Live (esperar bandera) — [`infra/deploy/meta-oauth-production.md`](infra/deploy/meta-oauth-production.md) §7
 
-Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado **2026-09-30**).
+Estado narrativo detallado: [`estado-actual.txt`](estado-actual.txt) (actualizado **2026-10-03**).
 
 ## Formatos de publicación
 

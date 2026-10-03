@@ -58,6 +58,11 @@ def apply_lightweight_migrations(engine: Engine) -> None:
                         text("ALTER TABLE agent_runs ADD COLUMN revision_count INTEGER DEFAULT 0")
                     )
             conn.execute(text(_CREATE_OAUTH_TOKENS_SQLITE))
+            cols_ot = {r[1] for r in conn.execute(text("PRAGMA table_info(oauth_tokens)")).fetchall()}
+            if "dm_agent_enabled" not in cols_ot:
+                conn.execute(
+                    text("ALTER TABLE oauth_tokens ADD COLUMN dm_agent_enabled BOOLEAN NOT NULL DEFAULT 0")
+                )
             conn.execute(
                 text(
                     """

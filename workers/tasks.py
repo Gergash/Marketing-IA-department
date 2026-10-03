@@ -115,6 +115,17 @@ def render_clip_takes_task(self, run_id: int) -> dict:  # noqa: ANN001
         return result
 
 
+@celery_app.task(bind=True, base=Task)
+def handle_dm_task(self, contact_id: int, trigger_message_id: int) -> dict:  # noqa: ANN001
+    """Turno del agente de DMs. Task plano (SIN autoretry): reintentar podría enviar el mismo DM dos veces."""
+    from gateway.app.services.dm_service import handle_agent_turn
+
+    with SessionLocal() as db:
+        outcome = handle_agent_turn(db, contact_id, trigger_message_id)
+    logger.info("handle_dm_task.done", contact_id=contact_id, outcome=outcome)
+    return {"status": outcome}
+
+
 @celery_app.task(name="workers.healthcheck_task")
 def healthcheck_task() -> dict:
     """Tarea mínima para comprobar que el worker puede consumir y ejecutar jobs."""

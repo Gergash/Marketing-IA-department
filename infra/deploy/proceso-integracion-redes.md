@@ -10,7 +10,7 @@ Guía de despliegue base: [`vps-hostinger.md`](vps-hostinger.md)
 
 ---
 
-## Estado del proceso (actualizado 2026-09-30)
+## Estado del proceso (actualizado 2026-10-03)
 
 | Fase | Estado | Notas |
 |------|--------|-------|
@@ -18,7 +18,8 @@ Guía de despliegue base: [`vps-hostinger.md`](vps-hostinger.md)
 | Dashboard + API en HTTPS | ✅ Hecho | `/api/health`, SPA en `/` |
 | Legales (`/terminos`, `/privacidad`) | ✅ Hecho | Servidos por FastAPI (TikTok + Meta) |
 | Capa SaaS Auth0 | ✅ Prod | Callbacks prod en Auth0 + build-args `VITE_AUTH0_*` + migración `0010` |
-| LLM cloud (OpenRouter) | ✅ Config / 🔄 deploy | Modelos `:free` con fallbacks + reintentos; `.env.production` listo. Código `49cbd0f` pendiente de merge a `master` |
+| LLM cloud (OpenRouter) | ✅ Prod | Modelos `:free` con fallbacks + reintentos; desplegado con PR #19 (`master` = `6b711f3`) |
+| **Agente de DMs (IG + Messenger)** | 🔄 Código listo | Webhook `/api/webhooks/meta` + Bandeja en el estudio; probado en staging local. Falta deploy, verify token, webhook en Meta Developers y reconectar Meta. Público general tras Live (bandera) |
 | Imagen / video | ✅ Hecho | Imagen: gpt-image-2 directo (`OPENAI_IMAGE_*`) + fal. Video: Venice Gemini Omni Flash 1.1 |
 | Meta / Instagram OAuth (código) | ✅ OAuth + Go sidecar | Page token o Conectar Meta; URIs canónicas = dominio prod |
 | **Meta App Mode Live / Review** | ⬜ **Esperando bandera del usuario** | No iniciar trámite hasta aviso explícito |
@@ -54,6 +55,7 @@ Sustituye solo si cambia el subdominio.
 | Terms of Service | `https://marketing.powerupsecosistem.online/terminos` |
 | Privacy Policy | `https://marketing.powerupsecosistem.online/privacidad` |
 | Meta OAuth callback | `https://marketing.powerupsecosistem.online/api/auth/callback/meta` |
+| Meta Webhook (DMs) | `https://marketing.powerupsecosistem.online/api/webhooks/meta` (verify token = `META_WEBHOOK_VERIFY_TOKEN`) |
 | LinkedIn OAuth callback | `https://marketing.powerupsecosistem.online/api/auth/callback/linkedin` |
 | Google OAuth callback | `https://marketing.powerupsecosistem.online/api/auth/callback/google` |
 | X OAuth callback | `https://marketing.powerupsecosistem.online/api/auth/callback/x` |
@@ -86,6 +88,7 @@ Plantilla: [`.env.production.example`](../../.env.production.example)
 | Video | `VIDEO_GEN_MODE=full`, `VIDEO_SCENE_PROVIDER=venice`, `VENICE_API_KEY`, `VENICE_VIDEO_MODEL`, `VENICE_VIDEO_DURATION` |
 | SaaS | `STAGING_SAAS_ENABLED`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `ADMIN_EMAILS` (+ build-args `VITE_*`) |
 | Meta | `META_CLIENT_ID`, `META_CLIENT_SECRET`, `META_REDIRECT_URI` |
+| Agente de DMs | `META_WEBHOOK_VERIFY_TOKEN`, `DM_AGENT_REPLY_DELAY_SECONDS`, `DM_DEBOUNCE_SECONDS`, `DM_PRIVACY_URL`, `DM_AGENT_DRY_RUN=false` |
 | X | `X_API_KEY`, `X_API_SECRET`, `X_REDIRECT_URI`, opc. `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `X_BEARER_TOKEN`, `X_CLIENT_ID`, `X_CLIENT_SECRET` |
 | TikTok verify | `TIKTOK_VERIFY_FILENAME`, `TIKTOK_VERIFY_CONTENT` |
 
@@ -104,6 +107,7 @@ docker compose -f infra/docker-compose.prod.yml --env-file .env.production up -d
 
 1. Abrir `https://marketing.powerupsecosistem.online`
 2. **Integraciones** → Conectar Meta / LinkedIn / X / **Google Drive**
+   - **Bandeja de DMs** (debajo): interruptor del agente por cuenta Meta, contactos con motivo y estado, conversación, pausa y respuesta manual
 3. En el brief: elegir **Red social** + **Cuenta destino** (y, si clips: formato Drive + ID de carpeta + objetivo/N tomas)
 4. Ejecutar pipeline → HITL (`pending_takes` si clips; luego `pending_approval`) → **Aprobar** → publicación
 
@@ -134,7 +138,8 @@ curl -sI https://api.powerupsecosistem.online/health   # InsightFlow intacto
 - [ ] **Post de prueba en X** (brief red X, formato feed, aprobar)
 - [x] Auth0: callbacks de prod + rebuild frontend VPS + migración `0010`
 - [x] OpenRouter: `.env.production` con modelos `:free` + fallbacks (validado en worker)
-- [ ] Merge `49cbd0f` → `master` + `git pull` VPS + `up -d --build api worker video-worker`; post de prueba sin `copywriter.llm_error`
+- [x] Merge del fix LLM → `master` (PR #19) + `git pull` VPS + rebuild sin caché de todos los contenedores
+- [ ] Agente de DMs: commit + deploy + `alembic upgrade head` (`0011`) + `META_WEBHOOK_VERIFY_TOKEN` + webhook en Meta Developers + reconectar Meta + activar agente por cuenta — [`meta-oauth-production.md`](meta-oauth-production.md) §7
 - [ ] Esperar **TikTok App Review**; luego implementar OAuth/publish
 - [ ] Biblioteca multi-imagen reutilizable (WIP)
 - [ ] Endurecer copy/overlay para no repetir texto del brief

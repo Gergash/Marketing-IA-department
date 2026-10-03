@@ -2,7 +2,7 @@
 
 **Proyecto:** Marketing DEPA IA (PowerUps)  
 **Tipo:** MVP de automatización de marketing con agentes de IA  
-**Actualizado:** 2026-09-30  
+**Actualizado:** 2026-10-03  
 **Nota:** el detalle de Auth0-only y del panel `/admin` vive en `estado-actual.txt`, `docs/auth0.md` y `docs/admin-panel.md`. Resumen: la identidad SaaS es solo Auth0 (activo en prod), los créditos se compran con Bold y `/admin` lee tablas propias.  
 **Idioma:** español  
 
@@ -12,7 +12,7 @@ Este documento es **autocontenido**: súbelo como única fuente (o como fuente p
 
 ## 1. En una frase
 
-Marketing DEPA IA genera piezas de redes (feed, story, Reel, clips propios o formato universal multi-red) a partir de un brief y un manual de marca PDF, pasa por aprobación humana (incluye HITL de tomas en clips Drive) y publica en Instagram/Meta, LinkedIn o X.
+Marketing DEPA IA genera piezas de redes (feed, story, Reel, clips propios o formato universal multi-red) a partir de un brief y un manual de marca PDF, pasa por aprobación humana (incluye HITL de tomas en clips Drive) y publica en Instagram/Meta, LinkedIn o X. Además, un **agente de DMs** responde los mensajes directos de Instagram y Messenger, recoge los datos de quien escribe y su motivo, y los deja en una **Bandeja de DMs** dentro del estudio.
 
 ---
 
@@ -88,6 +88,7 @@ Infra local típica: Docker Compose solo para Postgres y Redis; el resto corre e
 | ClipReelDesigner + VideoProducerAgent | Drive cloud: audio-only → N tomas → pending_takes → shorts → Shotstack |
 | PublisherAgent | Publicación (imagen); video vía Go al aprobar |
 | CreativeAdvisorAgent | Chat de asesoría (fuera del pipeline) |
+| DmResponderAgent | Responde DMs de Instagram/Messenger con tono humano; pide nombre, teléfono/WhatsApp y ciudad/barrio de a uno; registra motivo y categoría; deriva a humano (`requiere_humano`). Fuera del pipeline, disparado por el webhook de Meta |
 | Hilo de pensamiento (`thought_stream`) | Eventos en vivo de cada agente por `trace_id`; en modo interactivo el pipeline se detiene en checkpoints y espera `continue` / `adjust` / `cancel` |
 
 Doctrina de marketing inbound: pirámide **Entretener → Información → Conexión**; el contenido debe apuntar a la comunidad del brief (`publico_objetivo`), no a audiencia genérica.
@@ -195,6 +196,17 @@ La UI y el endpoint están conectados. Mejoras 2026-09:
 
 Pendiente: pasar notas al copywriter de forma específica; ajustar color/contraste del overlay solo con notas tipográficas.
 
+### Agente de DMs y Bandeja (Instagram + Messenger)
+
+- **Flujo:** la persona escribe → Meta llama al webhook `/api/webhooks/meta` (firma `X-Hub-Signature-256`) → se guarda el mensaje (sin duplicados por `mid`) → tarea Celery `handle_dm_task` → `DmResponderAgent` (LLM OpenRouter) → respuesta por Graph API con el Page token.
+- **Tono:** cálido y humano, mensajes cortos, una pregunta a la vez. Si le preguntan si es un bot, dice que es el asistente virtual de la marca.
+- **Datos:** nombre, teléfono/WhatsApp, ciudad/barrio; motivo en una frase y categoría (compra, cotización, soporte, queja, colaboración, información, otro).
+- **Privacidad (Ley 1581):** la primera vez que pide datos comparte el enlace `/privacidad`; el código lo garantiza aunque el LLM lo olvide.
+- **Control humano:** apagado por defecto en cada cuenta; quejas, pagos o pedir hablar con alguien → `requiere_humano` y deja de responder. Si el LLM falla no manda plantillas: pasa a humano. Responder a mano desde la Bandeja pausa al agente en esa conversación.
+- **Reglas de Meta:** ventana de 24 h (la respuesta manual se bloquea después); en modo Development solo responde a cuentas con rol en la app; el público general requiere App Review + Live (esperando bandera del usuario).
+- **Bandeja:** chips de estado con luz parpadeante del color de cada estado, filtros por cuenta/motivo, búsqueda, conversación en burbujas, notas, exportar CSV.
+- **Prueba local:** `DM_AGENT_DRY_RUN=true` guarda la respuesta sin enviarla a Meta y `scripts/simulate_dm.py` simula DMs firmados como Meta.
+
 ### Contraste de texto (resuelto)
 `text_contrast.py` muestrea la luminancia de la región donde va el texto (`region_luminance`, `text_safe_box`) y elige color y viñeta en consecuencia (`pick_text_colors`). Ya no depende solo de sombras fijas del arquetipo.
 
@@ -227,6 +239,11 @@ Prefijo típico: `/api`.
 | GET | `/auth/me` | Perfil + créditos (JWT) |
 | GET | `/billing/credits`, `/billing/bold-checkout` | Saldo / firma Bold |
 | POST | `/billing/bold-webhook` | Confirmación de pago Bold |
+| GET/POST | `/webhooks/meta` | Verificación y eventos de DMs de Meta (firmados) |
+| GET/PATCH | `/inbox/accounts`, `/inbox/accounts/{id}` | Cuentas Meta + interruptor del agente de DMs |
+| GET | `/inbox/contacts`, `/inbox/contacts.csv` | Contactos DM con filtros / exportación |
+| GET/PATCH | `/inbox/contacts/{id}` | Conversación; pausa, estado, notas |
+| POST | `/inbox/contacts/{id}/reply` | Respuesta manual (pausa al agente) |
 
 Swagger local: `http://127.0.0.1:8000/docs`.
 
@@ -245,6 +262,7 @@ Swagger local: `http://127.0.0.1:8000/docs`.
 - Selector de cuenta destino, enlace opcional, CTA en imagen opcional.
 - Modo interactivo + hilo de pensamiento en vivo de los agentes.
 - Sync / Async, historial, Integraciones OAuth (Meta / LinkedIn / X / **Google Drive**), burbuja del Asesor.
+- **Bandeja de DMs** (debajo de Integraciones): interruptor del agente por cuenta, chips de estado con luz parpadeante, tabla de contactos, conversación, pausar/reanudar, respuesta manual, notas y CSV. Polling cada 20 s.
 
 ---
 
@@ -276,9 +294,9 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 
 ## 13. Tests y calidad
 
-- Suite pytest de **342 tests** (2026-09-29).
-- Cobertura fuerte: pipeline, layouts, formatos por red, video, clips, revise, multi-cuenta, marca, Venice, gpt-image-2 directo, OpenRouter (fallbacks/reintentos), Auth0/admin, captions, hilo de pensamiento, LinkedIn nativo.
-- Migraciones Alembic relevantes: `0005` video_url, `0006` revise fields, `0007` multi-cuenta OAuth, `0008` usuarios/créditos SaaS, `0009` panel admin, `0010` `app_users.auth0_sub`.
+- Suite pytest de **368 tests** (2026-10-03).
+- Cobertura fuerte: pipeline, layouts, formatos por red, video, clips, revise, multi-cuenta, marca, Venice, gpt-image-2 directo, OpenRouter (fallbacks/reintentos), Auth0/admin, captions, hilo de pensamiento, LinkedIn nativo, agente de DMs (webhook, agente, Bandeja).
+- Migraciones Alembic relevantes: `0005` video_url, `0006` revise fields, `0007` multi-cuenta OAuth, `0008` usuarios/créditos SaaS, `0009` panel admin, `0010` `app_users.auth0_sub`, `0011` bandeja de DMs (`dm_contacts`, `dm_messages`, `oauth_tokens.dm_agent_enabled`).
 - 9 fallos conocidos y preexistentes (video pipeline/timeline/designer, Venice, brand/advisor, X).
 
 ---
@@ -296,7 +314,8 @@ Dependencias de sistema: Python 3.10, Node, Docker, Go (publicar), ffmpeg (clips
 | gpt-image-2 directo (OpenAI) | Hecho — default del switch de imagen |
 | Video Venice Gemini Omni Flash 1.1 | Hecho — default de video |
 | SaaS Auth0 + créditos + `/admin` | Hecho (Auth0 en prod; Bold real pendiente) |
-| LLM real en prod (OpenRouter gratis) | Hecho en código; pendiente de deploy |
+| LLM real en prod (OpenRouter gratis) | Hecho y desplegado |
+| Agente de DMs + Bandeja (IG + Messenger) | Hecho en código y probado en staging local; pendiente deploy y webhook en Meta; público general tras Live |
 | Asesor creativo | Hecho |
 | Sidecar Go | Hecho |
 | Hilo de pensamiento + modo interactivo | Hecho |
@@ -453,6 +472,10 @@ Contraseñas: PBKDF2 120k, irreversibles. Guía: `docs/staging-landing-bold.md`.
 | `GOOGLE_CLIENT_ID` | ID de cliente OAuth web de Google Cloud para Conectar Google Drive |
 | `drive.readonly` | Scope OAuth: lectura de Drive; no escribe ni borra archivos |
 | `pending_takes` | HITL de tomas antes de renderizar el MP4 de clips |
+| Bandeja de DMs | Panel del estudio con quién escribe por DM, sus datos y motivo |
+| `requiere_humano` | Estado de una conversación DM que el agente pasó al equipo y ya no responde |
+| Ventana de 24 h | Regla de Meta: solo se puede responder libremente hasta 24 h después del último mensaje de la persona |
+| `DM_AGENT_DRY_RUN` | Modo de prueba: guarda la respuesta del agente sin enviarla a Meta (solo staging) |
 
 ---
 
@@ -472,9 +495,12 @@ Contraseñas: PBKDF2 120k, irreversibles. Guía: `docs/staging-landing-bold.md`.
 - **Dame el paso a paso exacto para obtener y configurar GOOGLE_CLIENT_ID y conectar Google Drive en local (y qué cambia en producción).**
 - Si aparece `redirect_uri_mismatch`, ¿qué debo comparar y corregir?
 - Tras conectar Drive, ¿cómo obtengo el `drive_folder_id` y cuál es el flujo `pending_takes`?
+- ¿Cómo funciona el agente de DMs y cuándo pasa una conversación a humano?
+- ¿Qué hay que configurar en Meta Developers para que lleguen los DMs a la Bandeja?
+- ¿Cómo pruebo el agente de DMs en local sin enviar mensajes reales?
 
 ---
 
 ## 20. Resumen ejecutivo
 
-Marketing DEPA IA es un MVP local completo para generar copy e identidades visuales con agentes, respetar un brand book (OCR + paleta + logos), **editar fotos reales del local con Venice** (escena) y tipografía Pillow, producir Reels o clips desde Drive (cloud + HITL de tomas), elegir el formato correcto de cada red (o uno universal) y publicar con control humano en Meta, LinkedIn o X. Lo más maduro es generación + marca + foto real + formatos + HITL + multi-cuenta + OAuth Google Drive. TikTok se genera; publish tras App Review.
+Marketing DEPA IA es un MVP local completo para generar copy e identidades visuales con agentes, respetar un brand book (OCR + paleta + logos), **editar fotos reales del local con Venice** (escena) y tipografía Pillow, producir Reels o clips desde Drive (cloud + HITL de tomas), elegir el formato correcto de cada red (o uno universal) y publicar con control humano en Meta, LinkedIn o X. Lo más maduro es generación + marca + foto real + formatos + HITL + multi-cuenta + OAuth Google Drive. TikTok se genera; publish tras App Review. Lo más nuevo es el **agente de DMs** de Instagram/Messenger con su Bandeja en el estudio (listo en código, pendiente de deploy y de la configuración del webhook en Meta).

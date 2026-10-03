@@ -8,6 +8,8 @@ Capa opcional **SaaS**: landing + **Auth0 Universal Login** (única identidad) +
 
 **Proveedores vigentes (2026-09-30):** texto = OpenRouter modelos `:free` en prod (Ollama solo local); imagen = **OpenAI gpt-image-2 directo** (`openai_image`) o fal; video = **Venice Gemini Omni Flash 1.1**. Venice ya no aparece en el switch de imagen.
 
+**Agente de DMs (2026-10-03, sin deploy):** responde DMs de Instagram + Messenger con tono humano, pide nombre / teléfono / ciudad, registra el motivo y lo muestra en **Bandeja de DMs** del estudio. Webhook `/api/webhooks/meta` → `handle_dm_task` (Celery) → `DmResponderAgent`. Handoff a humano (`requiere_humano`) y pausa por conversación. Prueba local: `DM_AGENT_DRY_RUN=true` + `scripts/simulate_dm.py` (ver `docs/staging-e2e.md`). Guía Meta: `infra/deploy/meta-oauth-production.md` §7.
+
 **Prioridad de desarrollo:** un solo developer, mediados 2026, iterar rápido sin sobre-ingenierizar.
 
 ---
@@ -100,6 +102,8 @@ agents/marketing_agents/
   brand_scan.py         — paleta dominante + logos embebidos/cabecera
   brand_visual.py       — cues (hex/fuentes/logos) → prompts y arquetipo
   advisor.py            — CreativeAdvisorAgent (chat)
+  dm_responder.py       — DmResponderAgent: respuesta humana a DMs + extracción nombre/teléfono/ciudad/motivo
+  dm_sender.py          — Graph API /me/messages (texto + typing), perfil del remitente, subscribed_apps
   venice_client.py      — HTTP client Venice.ai (imagen + /image/edit + video queue)
   revision_prompt.py    — notas de revisión + build_scene_edit_prompt (solo escena)
   caption.py            — caption publicable (hashtags + link_url)
@@ -135,17 +139,21 @@ agents/marketing_agents/
 gateway/app/
   api/routes.py          — endpoints principales
   api/auth_social.py     — OAuth Meta/LinkedIn/Google (2.0) + X (1.0a); multi-cuenta + /auth/accounts
+  api/webhooks_meta.py   — webhook DMs Meta (GET verify + POST firmado X-Hub-Signature-256)
+  api/inbox.py           — /api/inbox: contactos DM, conversación, pausa, respuesta manual, toggle agente, CSV
   core/settings.py       — configuración (carga .env)
   core/auth.py           — dependencia require_auth usada por los endpoints
   core/logging.py        — configuración de logging
   db/session.py          — sesión SQLAlchemy
-  db/schema_patches.py   — parches de esquema fuera de Alembic (solo SQLite; Postgres = Alembic, head 0010)
-  models/entities.py     — modelos ORM
+  db/schema_patches.py   — parches de esquema fuera de Alembic (solo SQLite; Postgres = Alembic, head 0011)
+  models/entities.py     — modelos ORM (incl. DmContact / DmMessage)
   services/pipeline_service.py   — orquestación del pipeline
+  services/dm_service.py — bandeja DMs: registro entrante, turno del agente (debounce/pausa), respuesta manual
   services/scheduler_service.py  — lógica de campañas/APScheduler
   schemas/contracts.py   — Pydantic schemas entrada/salida
 
-workers/tasks.py        — tareas Celery
+workers/tasks.py        — tareas Celery (incl. handle_dm_task)
+scripts/simulate_dm.py  — DM firmado como Meta contra el webhook local (staging)
 
 skaffold.yaml           — build de las 3 imágenes + deploy vía overlays kustomize
 clouddeploy.yaml        — pipeline Cloud Deploy staging → prod (prod requiere aprobación)
@@ -359,7 +367,7 @@ pytest tests/ -v
 9 fallos preexistentes (video pipeline/timeline/designer, `test_venice`, brand/advisor, `test_x_native`); fallan igual sin los cambios recientes.
 **Hueco residual:** tests JWKS live / billing Bold E2E. Hay `tests/test_admin_panel.py` y `tests/test_auth0_saas.py` (410 + upsert).
 
-Estado canónico: [`estado-actual.txt`](estado-actual.txt) (2026-09-30).  
+Estado canónico: [`estado-actual.txt`](estado-actual.txt) (2026-10-03).  
 E2E staging: [`docs/staging-e2e.md`](docs/staging-e2e.md).  
 Snapshot Auth0 (noche 17-sep): [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md).  
 NotebookLM: [`docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md`](docs/notebooklm/Marketing-DEPA-IA-fuente-completa.md).  
@@ -393,6 +401,8 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/a
 - **OAuth Integraciones:** SPA pide `authorize_url` con Bearer; redirect URIs canónicas = dominio prod (local → `.env.staging.local`)
 - **Panel admin:** lee `app_users` / `payment_records` / `api_usage_events`; bootstrap `ADMIN_EMAILS`. No llama Auth0 Management ni Venice dashboard
 - **Rutas staging:** unknown paths (p.ej. `/ladmin`) van a landing; nunca fallback a `App` sin sesión
+- **Agente de DMs:** apagado por defecto por cuenta (`oauth_tokens.dm_agent_enabled`); `handle_dm_task` **sin autoretry** (no duplicar DMs); si el LLM falla **no** hay plantilla → `requiere_humano`. Responder a mano pausa al agente. Dice que es asistente virtual si se lo preguntan. Aviso de privacidad (Ley 1581) con enlace `/privacidad` la primera vez que pide datos. Respuesta manual bloqueada fuera de la ventana de 24 h de Meta. `DM_AGENT_DRY_RUN` solo en staging (en prod siempre `false`)
+- **Estilos de la Bandeja:** el estudio es de fondo blanco; los chips/botones del panel usan clases `.inbox-*` de `styles.css` (texto oscuro, color del estado en `--chip`, luz parpadeante). No volver a estilos inline de tema oscuro
 
 ---
 
@@ -410,6 +420,7 @@ SaaS: [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · [`docs/a
 10. SaaS: rate limit, Custom Domain, tests JWKS live, no skip firma Bold con secret vacío
 11. OpenRouter free tier: tope diario y saturación; si crece el uso, créditos o OpenAI directo
 12. 9 tests preexistentes en rojo (dependencia del `.env` local)
+13. Agente de DMs: DMs de público general requieren App Review de `instagram_manage_messages` / `pages_messaging` + Live (esperar bandera); sin notificaciones push de `requiere_humano`
 
 ---
 

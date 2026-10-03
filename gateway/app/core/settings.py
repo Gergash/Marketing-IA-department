@@ -156,6 +156,18 @@ class Settings(BaseSettings):
     meta_redirect_uri: str = "http://localhost:8000/api/auth/callback/meta"
     oauth_success_redirect_url: str = "http://localhost:5173/"
 
+    # Agente de DMs (Instagram / Messenger) — webhook /api/webhooks/meta
+    # Mismo valor que el "Verify token" configurado en Meta Developers → Webhooks
+    meta_webhook_verify_token: str = ""
+    # Pausa "escribiendo…" antes de responder (segundos por cada ~80 caracteres, tope 4s)
+    dm_agent_reply_delay_seconds: float = 2.0
+    # Espera para agrupar varios mensajes seguidos de la persona en una sola respuesta
+    dm_debounce_seconds: int = 6
+    # Enlace a la política de datos que el agente comparte al pedir datos (habeas data)
+    dm_privacy_url: str = "https://marketing.powerupsecosistem.online/privacidad"
+    # Staging: guarda la respuesta en la bandeja sin enviarla a Meta (probar con DMs simulados)
+    dm_agent_dry_run: bool = False
+
     # OAuth 2.0 — LinkedIn
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""

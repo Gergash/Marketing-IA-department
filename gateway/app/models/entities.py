@@ -221,5 +221,51 @@ class OAuthToken(Base):
     page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Desconexión lógica: False oculta la cuenta sin borrar historial
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Agente de DMs (IG / Messenger): apagado hasta que el usuario lo active por cuenta
+    dm_agent_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DmContact(Base):
+    """Persona que escribió por DM a una cuenta conectada: datos recogidos y motivo del contacto."""
+
+    __tablename__ = "dm_contacts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "platform", "sender_id", name="uq_dm_contact_tenant_platform_sender"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    oauth_token_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    platform: Mapped[str] = mapped_column(String(16))  # instagram | messenger
+    sender_id: Mapped[str] = mapped_column(String(64))  # IGSID / PSID (scoped a la página)
+    display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    motive: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motive_category: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # nuevo | en_conversacion | datos_completos | requiere_humano | cerrado
+    status: Mapped[str] = mapped_column(String(32), default="nuevo", server_default="nuevo", index=True)
+    bot_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    privacy_notice_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DmMessage(Base):
+    """Mensaje de una conversación DM (entrante de la persona o saliente del agente/humano)."""
+
+    __tablename__ = "dm_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    contact_id: Mapped[int] = mapped_column(Integer, index=True)
+    direction: Mapped[str] = mapped_column(String(8))  # in | out
+    sent_by: Mapped[str] = mapped_column(String(16))  # contact | agent | human
+    text: Mapped[str] = mapped_column(Text, default="")
+    # Meta reintenta webhooks: el mid evita procesar dos veces el mismo mensaje
+    meta_mid: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

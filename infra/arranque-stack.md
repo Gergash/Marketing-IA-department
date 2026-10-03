@@ -109,8 +109,11 @@ Al arrancar, el banner **`[tasks]`** debe listar al menos:
 ```
 . workers.tasks.execute_pipeline_task
 . workers.tasks.execute_video_pipeline_task
+. workers.tasks.handle_dm_task
 . workers.healthcheck_task
 ```
+
+`handle_dm_task` es el turno del **agente de DMs** (cola `celery`, sin autoretry). Sin este worker los DMs se guardan en la Bandeja pero nadie responde.
 
 Si `[tasks]` aparece vacío, el worker descartará jobs (`unregistered task`). Causa habitual: proceso viejo sin reiniciar tras cambios en `workers/celery_app.py` (ese módulo importa `workers.tasks` al cargar).
 
@@ -258,6 +261,8 @@ Si Shotstack responde `400`, el log de T4b incluye `body=...` con el detalle de 
 | Publicar en Instagram (imagen o reel) | + T6, T7 (ngrok + OAuth scopes IG) |
 | Multi-cuenta (Cliente A / Cliente B) | T3 + Integraciones + selector **Cuenta destino**; migración `0007` |
 | Prueba de fuego scheduler | T3 (+ seed script, sin Celery obligatorio) |
+| Agente de DMs (simulado) | Redis (T1), T3, T4, T5 + `DM_AGENT_DRY_RUN=true` + `scripts/simulate_dm.py`; LLM OpenRouter. Paso a paso: [`../docs/staging-e2e.md`](../docs/staging-e2e.md#agente-de-dms-en-staging-local) |
+| Agente de DMs (DMs reales) | + túnel HTTPS (T7) como callback del webhook en Meta Developers, `DM_AGENT_DRY_RUN=false`; solo cuentas con rol en la app mientras siga en Development |
 
 Runbook scheduler: [`prueba-de-fuego-scheduler.md`](prueba-de-fuego-scheduler.md)
 

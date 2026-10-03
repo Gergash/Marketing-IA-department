@@ -69,7 +69,11 @@ def oauth_login(
     if provider == "meta":
         if not s.meta_client_id:
             raise HTTPException(status_code=400, detail="META_CLIENT_ID no configurado en .env")
-        scopes = "pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts"
+        scopes = (
+            "pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,"
+            # Agente de DMs: leer/responder mensajes y suscribir la página al webhook
+            "instagram_manage_messages,pages_messaging,pages_manage_metadata"
+        )
         auth_url = (
             f"https://www.facebook.com/dialog/oauth"
             f"?client_id={s.meta_client_id}"
@@ -324,6 +328,20 @@ def _upsert_oauth_account(
 
 
 EXPIRY_WARNING_DAYS = 7
+
+def _subscribe_meta_pages_to_messages(accounts: list[dict], s) -> None:
+    """Suscribe cada Fan Page al webhook de mensajes; un fallo no bloquea la conexión de la cuenta."""
+    from agents.marketing_agents.dm_sender import subscribe_page_to_messages
+
+    for acc in accounts:
+        page_id, page_token = acc.get("page_id"), acc.get("access_token")
+        if not (page_id and page_token):
+            continue
+        try:
+            subscribe_page_to_messages(page_id, page_token, graph_version=s.graph_api_version)
+        except Exception:  # noqa: BLE001
+            continue
+
 
 
 def token_expiry_info(expires_at: datetime | None, now: datetime | None = None) -> dict:

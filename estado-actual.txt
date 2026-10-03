@@ -1,7 +1,7 @@
 ## Estado actual del proyecto — Marketing DEPA IA
 
-Actualizado: **2026-09-30**
-Último foco: agentes escriben copy real con **LLM gratuito de OpenRouter** (antes caían a plantillas en prod) + **gpt-image-2 directo** en el switch de imagen + **Venice Gemini Omni Flash 1.1** solo para video + **Auth0 desplegado en prod**. **Meta App Live: sigue esperando bandera.**
+Actualizado: **2026-10-03**
+Último foco: **agente de DMs** (Instagram + Messenger) que conversa con tono humano, recoge nombre / teléfono / ciudad y el motivo, con **Bandeja de DMs** en el estudio. Staging local levantado y verificado; modo de prueba `DM_AGENT_DRY_RUN` + `scripts/simulate_dm.py` (código local, sin commit ni deploy). Antes: copy real con **LLM gratuito de OpenRouter** desplegado en prod (PR #19). **Meta App Live: sigue esperando bandera.**
 **Producción:** `https://marketing.powerupsecosistem.online` · VPS `insightflow@2.25.107.229` · compose `marketing-depa-prod`  
 **InsightFlow (no tocar):** `https://api.powerupsecosistem.online`
 
@@ -16,18 +16,36 @@ Actualizado: **2026-09-30**
 | Integraciones OAuth | Conectar = Bearer + JSON `authorize_url` (ya no `window.location` al API) |
 | Redirect URIs `.env` | **Canónicas prod** (`marketing.powerupsecosistem.online`); local opcional en `.env.staging.local` |
 | Panel `/admin` | KPIs BD propia; bootstrap `ADMIN_EMAILS` |
-| LLM de texto (prod) | OpenRouter **gratis**: `nvidia/nemotron-3-super-120b-a12b:free` → `google/gemma-4-26b-a4b-it:free` → `dots-studio/dots-3-note-preview:free`, reintentos y razonamiento apagado. Código en `main` (`49cbd0f`), **pendiente merge a `master` + deploy** |
+| LLM de texto (prod) | OpenRouter **gratis**: `nvidia/nemotron-3-super-120b-a12b:free` → `google/gemma-4-26b-a4b-it:free` → `dots-studio/dots-3-note-preview:free`, reintentos y razonamiento apagado. **Desplegado** (PR #19) |
 | Imagen (switch UI) | `openai_image` (gpt-image-2 directo, default) + `fal`. Venice y SD fuera del switch |
 | Video | Venice `gemini-omni-flash-1-1-text-to-video`, `VIDEO_GEN_MODE=full`, 6s (4/6/8/10s) |
-| BD prod | Postgres gestionado **solo por Alembic**; head `0010` (`app_users.auth0_sub`) |
-| Meta Live / App Review | **Esperando bandera explícita** |
-| Prod desplegado | `master` = `3a4d7d5` (PR #18). `main` va 1 commit adelante (`49cbd0f`, fix LLM) |
+| BD prod | Postgres gestionado **solo por Alembic**; prod en `0010` (`app_users.auth0_sub`). Código en `0011` (bandeja DMs) → `alembic upgrade head` al desplegar |
+| Agente de DMs | Código local + 26 tests verdes; staging local probado (API + worker + Redis + Vite, webhook verifica). **Falta** commit, deploy, `META_WEBHOOK_VERIFY_TOKEN` en `.env.production`, webhook en Meta Developers y reconectar Meta (scopes de mensajería) |
+| Staging local DMs | `uvicorn … --env-file .env.staging.local` + worker con `source .env.staging.local` + Redis de `infra/docker-compose.yml`. BD `marketing_staging.db` **sin cuentas Meta**: iniciar sesión y Conectar Meta antes de simular — ver [`docs/staging-e2e.md`](docs/staging-e2e.md) |
+| Meta Live / App Review | **Esperando bandera explícita** (los DMs de público general la necesitan) |
+| Prod desplegado | `master` = `6b711f3` (PR #19), rebuild sin caché de todos los contenedores |
 
 **Guías:** [`docs/staging-e2e.md`](docs/staging-e2e.md) · [`docs/auth0.md`](docs/auth0.md) · [`docs/admin-panel.md`](docs/admin-panel.md) · [`docs/staging-landing-bold.md`](docs/staging-landing-bold.md) · gpt-image-2 [`docs/gpt-image-2-directo.md`](docs/gpt-image-2-directo.md) · snapshot 17-sep [`docs/estado-saas-auth0-2026-09-17.md`](docs/estado-saas-auth0-2026-09-17.md) · foto real [`docs/foto-real-venice-edit.md`](docs/foto-real-venice-edit.md) · NotebookLM [`docs/notebooklm/`](docs/notebooklm/)
 
 ---
 
 ### Cronología reciente
+
+#### 2026-10-03 — Agente de DMs (Instagram + Messenger) + Bandeja en el estudio
+
+| Entrega | Detalle |
+|---------|---------|
+| **Decisiones** | Redes: IG DMs + Messenger. Autonomía: responde solo y deriva (`requiere_humano`), pausa por conversación. Datos: nombre, teléfono/WhatsApp, ciudad/barrio. Identidad: tono humano, honesto si preguntan si es bot. Consentimiento: aviso natural + enlace `/privacidad` (Ley 1581) |
+| **Modelo** | `dm_contacts` (datos, motivo, categoría, estado, `bot_paused`, resumen, notas) + `dm_messages` (`meta_mid` único) + `oauth_tokens.dm_agent_enabled` (apagado por defecto). Migración `0011`; SQLite vía `schema_patches` |
+| **Webhook** | `GET/POST /api/webhooks/meta`: verify token, firma `X-Hub-Signature-256` con el App Secret, ignora ecos, dedupe por `mid`, IG por `account_id` y Messenger por `page_id`; encola `handle_dm_task` con `DM_DEBOUNCE_SECONDS` |
+| **Agente** | `DmResponderAgent` (OpenRouter): un dato a la vez, aviso de privacidad garantizado la primera vez, categorías compra/cotización/soporte/queja/colaboración/información/otro. Si el LLM falla no envía nada → `requiere_humano` |
+| **Envío** | `dm_sender`: `/me/messages` con Page token + `typing_on` + pausa proporcional. Task sin autoretry (no duplicar DMs). OAuth Meta pide `instagram_manage_messages,pages_messaging,pages_manage_metadata` y suscribe la página a `messages` |
+| **Bandeja** | `/api/inbox/*` + `InboxPanel.jsx` bajo Integraciones: interruptor por cuenta, chips por estado, filtros, búsqueda, conversación en burbujas, pausar/reanudar, respuesta manual (pausa al agente; bloqueada fuera de 24 h), notas, CSV |
+| **UI legible** | Chips de estado con texto oscuro 0,95 rem sobre fondo blanco, borde/fondo tenue del color del estado y **luz parpadeante** (azul nuevo, ámbar en conversación, verde datos completos, rojo requiere humano, gris cerrado); late más rápido si el estado tiene conversaciones. Badge con luz en la tabla. Clases `.inbox-*` en `frontend/src/styles.css`; respeta `prefers-reduced-motion` |
+| **Modo de prueba** | `DM_AGENT_DRY_RUN=true`: la respuesta del agente (y la manual) se guarda en la Bandeja **sin** llamar a Meta. Solo staging; en prod siempre `false` |
+| **Simulador** | `scripts/simulate_dm.py "texto" [--sender id] [--platform messenger]`: firma el payload con el App Secret como Meta y lo manda a `/api/webhooks/meta` usando la primera cuenta Meta activa |
+| **Staging local** | `.env.staging.local` con OpenRouter (igual que prod), `META_WEBHOOK_VERIFY_TOKEN` aleatorio, `DM_DEBOUNCE_SECONDS=4`, `DM_AGENT_DRY_RUN=true`. Verificado: health 200, `/api/inbox` 401 sin login, verify token correcto → challenge / incorrecto → 403, tablas `dm_*` creadas en SQLite, worker con `handle_dm_task` |
+| **Pendiente** | Commit + deploy; `META_WEBHOOK_VERIFY_TOKEN`; webhook en Meta Developers; reconectar Meta; público general tras App Review + Live (**esperar bandera**) |
 
 #### 2026-09-29 — Agentes escriben copy con LLM real (OpenRouter gratis)
 

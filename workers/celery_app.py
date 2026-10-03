@@ -29,6 +29,11 @@ celery_app.conf.update(
             "time_limit": 1200,
             "soft_time_limit": 1080,
         },
+        # LLM con reintentos/fallbacks de OpenRouter + pausa de "escribiendo…"
+        "workers.tasks.handle_dm_task": {
+            "time_limit": 240,
+            "soft_time_limit": 210,
+        },
     },
 )
 

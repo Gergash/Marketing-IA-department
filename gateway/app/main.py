@@ -11,9 +11,11 @@ from gateway.app.api.admin import router as admin_router
 from gateway.app.api.auth_social import router as auth_social_router
 from gateway.app.api.auth_users import router as auth_users_router
 from gateway.app.api.billing import router as billing_router
+from gateway.app.api.inbox import router as inbox_router
 from gateway.app.api.legal import router as legal_router
 from gateway.app.api.routes import router
 from gateway.app.api.tiktok_verify import router as tiktok_verify_router
+from gateway.app.api.webhooks_meta import router as webhooks_meta_router
 from gateway.app.core.logging import configure_logging
 from gateway.app.core.settings import get_settings
 from gateway.app.db.session import Base, engine
@@ -40,6 +42,8 @@ app.include_router(billing_router)
 app.include_router(admin_router)
 app.include_router(router)
 app.include_router(auth_social_router)
+app.include_router(webhooks_meta_router)
+app.include_router(inbox_router)
 
 if settings.prometheus_enabled:
     try:
